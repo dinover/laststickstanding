@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>Last One Standing — Controller</title>
+<link rel="stylesheet" href="https://freeconsole.vercel.app/console.css" />
+<style>
+  * { -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+  html, body { height: 100%; }
+  body {
+    display: flex; flex-direction: column; touch-action: none; overscroll-behavior: none;
+    --me: var(--glow);
+  }
+
+  .head { padding: max(10px, env(safe-area-inset-top)) 16px 6px; flex-shrink: 0; }
+  .whoami { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
+  .dot { width: 24px; height: 24px; border-radius: 50%; background: var(--me); box-shadow: 0 0 14px var(--me); flex-shrink: 0; }
+  .whoami .name { font-weight: 700; font-size: 15px; }
+  .whoami .tag { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); }
+  .status { color: var(--text-dim); font-size: 12px; text-align: center; min-height: 16px; }
+
+  /* -------- host panel -------- */
+  #hostPanel {
+    display: none; flex-direction: column; align-items: center; gap: 12px; padding: 14px 16px;
+    background: rgba(255,255,255,.03); margin: 0 12px 10px; border-radius: var(--radius); border: 1px solid var(--line);
+  }
+  #hostPanel.show { display: flex; }
+  #hostPanel .lbl { font-size: 12px; color: var(--text-dim); letter-spacing: .1em; }
+  .stepper { display: flex; align-items: center; gap: 16px; }
+  .stepper button {
+    width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--ink-600);
+    color: var(--text); font-size: 22px; font-family: var(--font-display);
+  }
+  .stepper .n { font-family: var(--font-mono); font-size: 28px; color: var(--glow); width: 50px; text-align: center; }
+  #startBtn {
+    width: 100%; padding: 14px; border-radius: 999px; border: none; background: var(--hot); color: #fff;
+    font-family: var(--font-display); font-weight: 700; font-size: 16px; box-shadow: var(--bloom-hot);
+  }
+  #waitPanel { display: none; text-align: center; padding: 10px 16px; color: var(--text-dim); font-size: 13px; }
+  #waitPanel.show { display: block; }
+
+  /* -------- game controls -------- */
+  #controls { flex: 1; display: none; flex-direction: column; padding: 8px 12px max(10px, env(safe-area-inset-bottom)); gap: 10px; }
+  #controls.show { display: flex; }
+  .row { flex: 1; display: flex; gap: 10px; }
+  .padBtn {
+    flex: 1; border-radius: 20px; border: 2px solid var(--line); background: linear-gradient(155deg, #1a2038, #0a0c18);
+    display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 15px;
+    color: var(--text-dim); position: relative; overflow: hidden;
+  }
+  .padBtn.down { transform: scale(.96); border-color: var(--me); box-shadow: inset 0 0 40px color-mix(in srgb, var(--me) 25%, transparent); color: var(--me); }
+  #punchBtn { background: linear-gradient(155deg, #2a1030, #180a18); }
+  #punchBtn.down { border-color: var(--hot); color: var(--hot); box-shadow: inset 0 0 40px color-mix(in srgb, var(--hot) 25%, transparent); }
+  #jumpBtn.down { border-color: var(--amber); color: var(--amber); }
+
+  #deadOverlay {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 6px;
+    background: rgba(5,6,13,.82); z-index: 30; text-align: center;
+  }
+  #deadOverlay.show { display: flex; }
+  #deadOverlay .big { font-family: var(--font-display); font-size: 24px; color: var(--hot); text-shadow: var(--bloom-hot); }
+  #deadOverlay .small { color: var(--text-dim); font-size: 13px; }
+
+  #fightFlash {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 25; pointer-events: none;
+  }
+  #fightFlash.show { display: flex; }
+  #fightFlash span { font-family: var(--font-display); font-weight: 900; font-size: 34px; color: var(--hot); text-shadow: var(--bloom-hot); }
+
+  #finalOverlay {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 10px; z-index: 30;
+    background: var(--ink-900); text-align: center; padding: 20px;
+  }
+  #finalOverlay.show { display: flex; }
+  #finalOverlay .pos { font-family: var(--font-marquee); font-size: 34px; color: var(--amber); text-shadow: 0 0 16px rgba(255,194,71,.5); }
+  #finalOverlay .pts { color: var(--text-dim); font-size: 13px; }
+  #playAgainBtn { margin-top: 10px; padding: 12px 28px; border-radius: 999px; border: none; background: var(--glow); color: #05060d; font-family: var(--font-display); font-weight: 700; display: none; }
+  #playAgainBtn.show { display: block; }
+</style>
+</head>
+<body>
+<div class="atmosphere"></div>
+<div class="head">
+  <div class="whoami"><div class="dot" id="dot"></div><div class="name" id="nm">Jugador</div><div class="tag" id="tag">---</div></div>
+  <div class="status" id="status">Conectando…</div>
+</div>
+
+<div id="hostPanel">
+  <div class="lbl">CANTIDAD DE RONDAS</div>
+  <div class="stepper">
+    <button id="minusBtn">−</button>
+    <div class="n" id="roundsN">3</div>
+    <button id="plusBtn">+</button>
+  </div>
+  <button id="startBtn">Comenzar partida</button>
+</div>
+<div id="waitPanel">Esperando a que el host inicie la partida… (<span id="roundsPreview">3</span> rondas)</div>
+
+<div id="controls">
+  <div class="row" style="flex:0.55">
+    <button class="padBtn" id="leftBtn">◀</button>
+    <button class="padBtn" id="rightBtn">▶</button>
+  </div>
+  <div class="row">
+    <button class="padBtn" id="jumpBtn">SALTAR</button>
+    <button class="padBtn" id="punchBtn">GOLPEAR</button>
+  </div>
+</div>
+
+<div id="fightFlash"><span>¡FIGHT!</span></div>
+<div id="deadOverlay"><div class="big">ELIMINADO</div><div class="small">Mirando el resto de la ronda…</div></div>
+<div id="finalOverlay">
+  <div class="pos" id="finalPos">—</div>
+  <div class="pts" id="finalPts"></div>
+  <button id="playAgainBtn">Jugar de nuevo</button>
+</div>
+
+<script src="https://freeconsole.vercel.app/sdk.js"></script>
+<script>
+(function () {
+  "use strict";
+  var ac = new FreeConsole();
+  var myColor = "#35f0e0";
+  var isMaster = false;
+  var rounds = 3;
+  var lastPhase = "lobby";
+
+  function setMe() {
+    myColor = ac.getPlayerColor();
+    document.body.style.setProperty("--me", myColor);
+    document.getElementById("nm").textContent = ac.getNickname();
+    document.getElementById("tag").textContent = "ID " + ac.getDeviceId();
+  }
+
+  function updateMasterUI() {
+    isMaster = ac.getDeviceId() === ac.getMasterControllerDeviceId();
+    document.getElementById("hostPanel").classList.toggle("show", isMaster && lastPhase === "lobby");
+    document.getElementById("waitPanel").classList.toggle("show", !isMaster && lastPhase === "lobby");
+  }
+
+  document.getElementById("minusBtn").addEventListener("click", function () {
+    rounds = Math.max(1, rounds - 1);
+    document.getElementById("roundsN").textContent = rounds;
+  });
+  document.getElementById("plusBtn").addEventListener("click", function () {
+    rounds = Math.min(20, rounds + 1);
+    document.getElementById("roundsN").textContent = rounds;
+  });
+  document.getElementById("startBtn").addEventListener("click", function () {
+    ac.message(FreeConsole.SCREEN, { t: "start", rounds: rounds });
+  });
+  document.getElementById("playAgainBtn").addEventListener("click", function () {
+    ac.message(FreeConsole.SCREEN, { t: "restart" });
+  });
+
+  /* -------- movement / action buttons -------- */
+  function bindHold(el, key) {
+    var active = false;
+    function down(e) {
+      e.preventDefault();
+      if (active) return;
+      active = true;
+      el.classList.add("down");
+      ac.message(FreeConsole.SCREEN, { t: "in", k: key, d: true });
+      if (navigator.vibrate) navigator.vibrate(8);
+    }
+    function up(e) {
+      if (e) e.preventDefault();
+      if (!active) return;
+      active = false;
+      el.classList.remove("down");
+      ac.message(FreeConsole.SCREEN, { t: "in", k: key, d: false });
+    }
+    el.addEventListener("pointerdown", down);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+    el.addEventListener("pointerleave", up);
+  }
+  bindHold(document.getElementById("leftBtn"), "left");
+  bindHold(document.getElementById("rightBtn"), "right");
+  bindHold(document.getElementById("jumpBtn"), "jump");
+  bindHold(document.getElementById("punchBtn"), "punch");
+
+  /* -------- SDK callbacks -------- */
+  ac.onReady = function () {
+    setMe();
+    document.getElementById("status").textContent = "Conectado";
+    document.getElementById("controls").classList.add("show");
+    updateMasterUI();
+  };
+  ac.onConnect = function () { updateMasterUI(); };
+  ac.onDisconnect = function () { updateMasterUI(); };
+
+  ac.onMessage = function (device_id, data) {
+    if (!data) return;
+    if (data.t === "roundsPreview") {
+      document.getElementById("roundsPreview").textContent = data.n;
+      return;
+    }
+    if (data.t === "phase") {
+      lastPhase = data.phase;
+      document.getElementById("roundsPreview").textContent = data.rounds;
+      if (!isMaster) document.getElementById("roundsN").textContent = data.rounds;
+      updateMasterUI();
+
+      var deadOv = document.getElementById("deadOverlay");
+      var finalOv = document.getElementById("finalOverlay");
+      var flash = document.getElementById("fightFlash");
+
+      if (data.phase === "fightIntro") {
+        flash.classList.add("show");
+        setTimeout(function () { flash.classList.remove("show"); }, 900);
+        deadOv.classList.remove("show");
+        finalOv.classList.remove("show");
+      } else if (data.phase === "fight") {
+        var amAlive = data.alive.indexOf(ac.getDeviceId()) !== -1;
+        deadOv.classList.toggle("show", !amAlive);
+        finalOv.classList.remove("show");
+      } else if (data.phase === "roundEnd") {
+        // keep dead overlay state as-is briefly
+      } else if (data.phase === "lobby") {
+        deadOv.classList.remove("show");
+        finalOv.classList.remove("show");
+      } else if (data.phase === "final") {
+        deadOv.classList.remove("show");
+        document.getElementById("playAgainBtn").classList.toggle("show", isMaster);
+        finalOv.classList.add("show");
+      }
+    }
+  };
+})();
+</script>
+</body>
+</html>

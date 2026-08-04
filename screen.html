@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Last One Standing — Screen</title>
+<link rel="stylesheet" href="https://freeconsole.vercel.app/console.css" />
+<style>
+  html, body { height: 100%; overflow: hidden; background: #05060d; }
+  body { display: flex; align-items: center; justify-content: center; }
+  #wrap { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; background: #05060d; box-shadow: 0 0 80px rgba(53,240,224,.08); }
+
+  #topbar {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px; z-index: 5; pointer-events: none;
+  }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 50%; position: relative;
+    border: 2px solid rgba(255,255,255,.25); box-shadow: 0 0 12px currentColor;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 11px; color: #05060d; font-weight: 700;
+    transition: opacity .3s;
+  }
+  .avatar.out { opacity: .35; }
+  .avatar .x {
+    position: absolute; inset: -4px; display: none; align-items: center; justify-content: center;
+    font-family: var(--font-display); font-weight: 900; font-size: 30px; color: #ff2e88;
+    text-shadow: 0 0 10px #ff2e88, 0 0 2px #000;
+  }
+  .avatar.out .x { display: flex; }
+
+  #room {
+    position: absolute; top: 14px; left: 18px; z-index: 5;
+    font-family: var(--font-mono); color: var(--text-dim); font-size: 13px;
+    letter-spacing: .08em;
+  }
+  #room b { color: var(--glow); }
+
+  #overlay {
+    position: absolute; inset: 0; z-index: 10; pointer-events: none;
+    display: flex; align-items: center; justify-content: center; flex-direction: column;
+  }
+  #fightText {
+    font-family: var(--font-display); font-weight: 900; font-size: 96px;
+    color: var(--hot); text-shadow: var(--bloom-hot); opacity: 0; letter-spacing: .05em;
+    transform: scale(.6);
+  }
+  #fightText.show { animation: fightPop .9s cubic-bezier(.2,1.4,.4,1) forwards; }
+  @keyframes fightPop {
+    0% { opacity: 0; transform: scale(.4) rotate(-4deg); }
+    35% { opacity: 1; transform: scale(1.15) rotate(2deg); }
+    60% { transform: scale(1) rotate(0); }
+    85% { opacity: 1; }
+    100% { opacity: 0; transform: scale(1.3); }
+  }
+
+  #roundBanner {
+    position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
+    font-family: var(--font-mono); color: var(--text); font-size: 15px;
+    background: rgba(10,12,24,.6); padding: 4px 14px; border-radius: 999px;
+    border: 1px solid var(--line); letter-spacing: .1em; z-index: 5;
+    display: none;
+  }
+  #roundBanner.show { display: block; }
+
+  #lobbyPanel {
+    position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+    text-align: center; z-index: 6; font-family: var(--font-display);
+  }
+  #lobbyPanel h2 { margin: 0 0 4px; color: var(--glow); text-shadow: var(--bloom-glow); font-size: 26px; }
+  #lobbyPanel p { margin: 0; color: var(--text-dim); font-size: 14px; }
+  #lobbyPanel.hide { display: none; }
+
+  #finalScreen {
+    position: absolute; inset: 0; z-index: 20; display: none;
+    background: radial-gradient(circle at 50% 30%, rgba(53,240,224,.08), transparent 60%), var(--ink-900);
+    flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  }
+  #finalScreen.show { display: flex; }
+  #finalScreen h1 {
+    font-family: var(--font-marquee); font-size: 42px; color: var(--amber);
+    text-shadow: 0 0 20px rgba(255,194,71,.6); margin: 0;
+  }
+  #ranking { display: flex; flex-direction: column; gap: 8px; width: 420px; }
+  .rankRow {
+    display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+    background: rgba(255,255,255,.03); border: 1px solid var(--line); border-radius: var(--radius-sm);
+    font-family: var(--font-display); color: var(--text);
+  }
+  .rankRow .pos { font-family: var(--font-mono); color: var(--text-faint); width: 24px; }
+  .rankRow .dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
+  .rankRow .nm { flex: 1; }
+  .rankRow .sc { font-family: var(--font-mono); color: var(--glow); }
+  .rankRow.win { border-color: var(--amber); box-shadow: 0 0 18px rgba(255,194,71,.25); }
+  #dancer { width: 140px; height: 160px; }
+</style>
+</head>
+<body>
+<div class="atmosphere"></div>
+<div id="wrap">
+  <canvas id="c" width="960" height="540"></canvas>
+  <div id="room">SALA <b id="roomCode">----</b></div>
+  <div id="topbar"></div>
+  <div id="roundBanner"></div>
+  <div id="overlay"><div id="fightText">FIGHT!</div></div>
+  <div id="lobbyPanel">
+    <h2>Esperando jugadores…</h2>
+    <p>Conéctense en el celular. El host puede moverse y elegir las rondas.</p>
+  </div>
+  <div id="finalScreen">
+    <h1 id="winnerTitle">GANADOR</h1>
+    <svg id="dancer" viewBox="0 0 100 120"></svg>
+    <div id="ranking"></div>
+  </div>
+</div>
+
+<script src="https://freeconsole.vercel.app/sdk.js"></script>
+<script src="stickman.js"></script>
+<script>
+(function () {
+  "use strict";
+  var ac = new FreeConsole();
+  var canvas = document.getElementById("c");
+  var ctx = canvas.getContext("2d");
+  var W = 960, H = 540;
+  var GRAVITY_UP = 0.46, GRAVITY_DOWN = 0.34, SPEED = 4.3, JUMP_V = -14.2;
+  var PW = 13, PH = 52; // half-width, height
+  var PUNCH_MS = 230, KICK_MS = 280, ATTACK_COOLDOWN = 380;
+
+  /* ---------------------------------------------------------------- rng / maps */
+  function mulberry32(seed) {
+    return function () {
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  var MAP0 = {
+    name: "Plataforma Inicial",
+    bg: ["#0a0c18", "#141a30"],
+    platforms: [
+      { x: 60, y: 460, w: 840, h: 26 },
+      { x: 120, y: 340, w: 160, h: 18 },
+      { x: 680, y: 340, w: 160, h: 18 },
+      { x: 400, y: 250, w: 160, h: 18 },
+    ],
+  };
+
+  function genMap(seed) {
+    var rnd = mulberry32(seed);
+    var palettes = [
+      ["#0a0c18", "#1a1030"], ["#0a1418", "#0e2a2a"], ["#140a18", "#2a0e2a"],
+      ["#0a0c18", "#1a2038"], ["#0c1408", "#1e2a0e"], ["#180a0a", "#2a120e"],
+    ];
+    var pal = palettes[Math.floor(rnd() * palettes.length)];
+    var n = 4 + Math.floor(rnd() * 4);
+    var plats = [];
+    var hasFloor = rnd() > 0.35;
+    if (hasFloor) {
+      var floorW = 400 + rnd() * 500;
+      plats.push({ x: (W - floorW) / 2 + (rnd() - 0.5) * 100, y: 480, w: floorW, h: 24 });
+      n -= 1;
+    }
+    for (var i = 0; i < n; i++) {
+      var w = 110 + rnd() * 140;
+      var x = 40 + rnd() * (W - 80 - w);
+      var y = 160 + rnd() * 300;
+      plats.push({ x: x, y: y, w: w, h: 16 });
+    }
+    var names = ["Cráter Neón", "Ruinas Flotantes", "Torre Amber", "Zona Fósforo", "Andamios Perdidos",
+      "Filo del Vacío", "Islas Rotas", "Sector Púrpura", "Bloques Errantes", "Vía Rápida"];
+    return { name: names[Math.floor(rnd() * names.length)] + " #" + seed, bg: pal, platforms: plats };
+  }
+
+  /* ---------------------------------------------------------------- state */
+  var phase = "lobby"; // lobby | fightIntro | fight | roundEnd | final
+  var currentMap = MAP0;
+  var currentRound = 0, totalRounds = 3;
+  var roster = []; // device ids fixed for the whole match
+  var scores = {}; // device_id -> total score
+  var players = {}; // device_id -> player object
+  var eliminationOrder = [];
+  var phaseTimer = 0;
+  var roundBannerText = "";
+
+  function newPlayer(id) {
+    return {
+      id: id,
+      x: 100 + Math.random() * (W - 200),
+      y: -40,
+      vx: 0, vy: 0,
+      grounded: false,
+      facing: 1,
+      hp: 100,
+      alive: true,
+      attack: null, // {type, t, hitSet}
+      attackCooldown: 0,
+      input: { left: false, right: false },
+      jumpEdge: false,
+      punchEdge: false,
+      walkCycle: 0,
+      idleT: Math.random() * 10,
+      squash: 0, // landing squash-and-stretch, 0..1 decaying
+    };
+  }
+
+  function ensurePlayer(id) {
+    if (!players[id]) players[id] = newPlayer(id);
+    return players[id];
+  }
+
+  function broadcastPhase() {
+    ac.broadcast({
+      t: "phase", phase: phase, rounds: totalRounds, round: currentRound,
+      alive: Object.keys(players).filter(function (k) { return players[k].alive; }).map(Number),
+      mapName: currentMap.name,
+    });
+  }
+
+  /* ---------------------------------------------------------------- topbar UI */
+  function renderTopbar() {
+    var bar = document.getElementById("topbar");
+    bar.innerHTML = "";
+    roster.forEach(function (id) {
+      var p = players[id];
+      var div = document.createElement("div");
+      div.className = "avatar" + (p && !p.alive && phase !== "lobby" ? " out" : "");
+      var color = ac.getPlayerColor(id);
+      div.style.color = color;
+      div.style.background = color;
+      div.innerHTML = '<div class="x">✕</div>';
+      bar.appendChild(div);
+    });
+  }
+
+  /* ---------------------------------------------------------------- lobby / round flow */
+  function startMatch(rounds) {
+    totalRounds = Math.max(1, Math.min(20, rounds || 3));
+    roster = ac.getControllerDeviceIds().slice();
+    scores = {};
+    roster.forEach(function (id) { scores[id] = 0; });
+    currentRound = 0;
+    document.getElementById("lobbyPanel").classList.add("hide");
+    nextRound();
+  }
+
+  // Every spawn x is chosen from inside an actual platform's span, so a straight vertical
+  // fall always lands on solid ground — never into the void between platforms.
+  function spawnRoundPlayers(map) {
+    var plats = map.platforms;
+    roster.forEach(function (id, i) {
+      var p = ensurePlayer(id);
+      var plat = plats[i % plats.length];
+      var pad = Math.min(22, plat.w / 3);
+      var lo = plat.x + pad, hi = plat.x + plat.w - pad;
+      if (hi <= lo) { lo = plat.x + plat.w / 2; hi = lo; }
+      p.x = lo + Math.random() * (hi - lo);
+      p.y = -20 - i * 50;
+      p.vx = 0; p.vy = 0;
+      p.hp = 100;
+      p.alive = true;
+      p.attack = null;
+      p.attackCooldown = 0;
+    });
+  }
+
+  function nextRound() {
+    currentRound++;
+    if (currentRound > totalRounds) { endMatch(); return; }
+    currentMap = currentRound === 1 ? MAP0 : genMap(1000 + currentRound * 37 + Math.floor(Math.random() * 900));
+    eliminationOrder = [];
+    spawnRoundPlayers(currentMap);
+    roundBannerText = "RONDA " + currentRound + " / " + totalRounds + " — " + currentMap.name;
+    var rb = document.getElementById("roundBanner");
+    rb.textContent = roundBannerText;
+    rb.classList.add("show");
+    phase = "fightIntro";
+    phaseTimer = 1100;
+    var ft = document.getElementById("fightText");
+    ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
+    renderTopbar();
+    broadcastPhase();
+  }
+
+  function eliminate(p) {
+    if (!p.alive) return;
+    p.alive = false;
+    eliminationOrder.push(p.id);
+    renderTopbar();
+    checkRoundEnd();
+  }
+
+  function checkRoundEnd() {
+    if (phase !== "fight") return;
+    var alive = roster.filter(function (id) { return players[id] && players[id].alive; });
+    if (alive.length <= 1) {
+      if (alive.length === 1) eliminationOrder.push(alive[0]);
+      var n = eliminationOrder.length;
+      eliminationOrder.forEach(function (id, idx) {
+        var placement = n - idx; // last pushed (survivor) = placement 1
+        scores[id] = (scores[id] || 0) + placement;
+      });
+      phase = "roundEnd";
+      phaseTimer = 2600;
+      broadcastPhase();
+    }
+  }
+
+  function endMatch() {
+    phase = "final";
+    document.getElementById("roundBanner").classList.remove("show");
+    var ranked = roster.slice().sort(function (a, b) { return (scores[b] || 0) - (scores[a] || 0); });
+    var winner = ranked[0];
+    document.getElementById("winnerTitle").textContent = winner !== undefined ? ac.getNickname(winner).toUpperCase() + " GANA" : "SIN GANADOR";
+    var rk = document.getElementById("ranking");
+    rk.innerHTML = "";
+    ranked.forEach(function (id, i) {
+      var row = document.createElement("div");
+      row.className = "rankRow" + (i === 0 ? " win" : "");
+      row.innerHTML = '<div class="pos">#' + (i + 1) + '</div>' +
+        '<div class="dot" style="color:' + ac.getPlayerColor(id) + ';background:' + ac.getPlayerColor(id) + '"></div>' +
+        '<div class="nm">' + ac.getNickname(id) + '</div>' +
+        '<div class="sc">' + (scores[id] || 0) + ' pts</div>';
+      rk.appendChild(row);
+    });
+    if (winner !== undefined) drawDancer(ac.getPlayerColor(winner));
+    document.getElementById("finalScreen").classList.add("show");
+    broadcastPhase();
+  }
+
+  function resetToLobby() {
+    document.getElementById("finalScreen").classList.remove("show");
+    document.getElementById("lobbyPanel").classList.remove("hide");
+    document.getElementById("roundBanner").classList.remove("show");
+    phase = "lobby";
+    players = {};
+    roster = [];
+    scores = {};
+    currentRound = 0;
+    currentMap = MAP0;
+    broadcastPhase();
+  }
+
+  var dancerT = 0, dancerRaf = null;
+  function drawDancer(color) {
+    var svg = document.getElementById("dancer");
+    if (dancerRaf) cancelAnimationFrame(dancerRaf);
+    function frame() {
+      dancerT += 0.12;
+      var armSwing = Math.sin(dancerT) * 30;
+      var legSwing = Math.sin(dancerT + Math.PI) * 22;
+      var bob = Math.abs(Math.sin(dancerT * 2)) * 8;
+      var hy = 24 - bob;
+      svg.innerHTML =
+        '<circle cx="50" cy="' + hy + '" r="12" fill="none" stroke="' + color + '" stroke-width="4"/>' +
+        '<line x1="50" y1="' + (hy + 12) + '" x2="50" y2="' + (hy + 55) + '" stroke="' + color + '" stroke-width="4"/>' +
+        '<line x1="50" y1="' + (hy + 22) + '" x2="' + (50 + armSwing) + '" y2="' + (hy + 5) + '" stroke="' + color + '" stroke-width="4" stroke-linecap="round"/>' +
+        '<line x1="50" y1="' + (hy + 22) + '" x2="' + (50 - armSwing) + '" y2="' + (hy + 40) + '" stroke="' + color + '" stroke-width="4" stroke-linecap="round"/>' +
+        '<line x1="50" y1="' + (hy + 55) + '" x2="' + (50 + legSwing) + '" y2="' + (hy + 95) + '" stroke="' + color + '" stroke-width="4" stroke-linecap="round"/>' +
+        '<line x1="50" y1="' + (hy + 55) + '" x2="' + (50 - legSwing) + '" y2="' + (hy + 95) + '" stroke="' + color + '" stroke-width="4" stroke-linecap="round"/>';
+      if (document.getElementById("finalScreen").classList.contains("show")) dancerRaf = requestAnimationFrame(frame);
+    }
+    frame();
+  }
+
+  /* ---------------------------------------------------------------- physics */
+  function stepPlayer(p, dt, damageEnabled) {
+    if (!p.alive) return;
+    var inLobby = phase === "lobby";
+    if (p.input.left && !p.input.right) { p.vx = -SPEED; p.facing = -1; }
+    else if (p.input.right && !p.input.left) { p.vx = SPEED; p.facing = 1; }
+    else p.vx = 0;
+
+    if (p.jumpEdge && p.grounded) { p.vy = JUMP_V; p.grounded = false; }
+    p.jumpEdge = false;
+
+    if (p.punchEdge && p.attackCooldown <= 0) {
+      var airborne = !p.grounded;
+      var dur = airborne ? KICK_MS : PUNCH_MS;
+      p.attack = { type: airborne ? "kick" : "punch", t: dur, dur: dur, hitSet: {} };
+      p.attackCooldown = ATTACK_COOLDOWN;
+    }
+    p.punchEdge = false;
+
+    p.vy += p.vy < 0 ? GRAVITY_UP : GRAVITY_DOWN;
+    var prevFeet = p.y;
+    var wasGrounded = p.grounded;
+    p.y += p.vy;
+    p.kbx = (p.kbx || 0) * 0.88;
+    if (Math.abs(p.kbx) < 0.05) p.kbx = 0;
+    p.x += p.vx + p.kbx;
+    p.x = Math.max(14, Math.min(W - 14, p.x));
+
+    if (p.vx !== 0 && wasGrounded) p.walkCycle = ((p.walkCycle || 0) + dt * 0.0034) % 1;
+    p.idleT += dt * 0.001;
+    if (p.squash > 0) p.squash = Math.max(0, p.squash - dt * 0.006);
+
+    p.grounded = false;
+    currentMap.platforms.forEach(function (pl) {
+      if (p.vy >= 0 && prevFeet <= pl.y + 1 && p.y >= pl.y && p.x + PW > pl.x && p.x - PW < pl.x + pl.w) {
+        p.y = pl.y;
+        if (!wasGrounded && p.vy > 5) p.squash = Math.min(1, p.vy / 14);
+        p.vy = 0; p.grounded = true;
+      }
+    });
+
+    if (p.y > H + 60) {
+      if (inLobby) { p.x = 100 + Math.random() * (W - 200); p.y = -40; p.vy = 0; p.vx = 0; }
+      else if (damageEnabled) { eliminate(p); }
+    }
+
+    if (p.attack) {
+      p.attack.t -= dt;
+      if (damageEnabled) {
+        roster.forEach(function (oid) {
+          if (oid === p.id) return;
+          var o = players[oid];
+          if (!o || !o.alive || p.attack.hitSet[oid]) return;
+          var reach = p.attack.type === "kick" ? 44 : 34;
+          var dx = o.x - p.x;
+          var facingOk = p.facing > 0 ? (dx > -6 && dx < reach) : (dx < 6 && dx > -reach);
+          var dy = Math.abs(o.y - p.y - 10);
+          if (facingOk && dy < 60) {
+            p.attack.hitSet[oid] = true;
+            var dmg = p.attack.type === "kick" ? 16 : 10;
+            var kbX = p.attack.type === "kick" ? 3.2 : 2.1;
+            var kbY = p.attack.type === "kick" ? -2 : 0;
+            o.hp -= dmg;
+            o.kbx = (o.kbx || 0) + p.facing * kbX;
+            o.vy += kbY;
+            if (kbY < 0) o.grounded = false;
+            if (o.hp <= 0) eliminate(o);
+          }
+        });
+      }
+      if (p.attack.t <= 0) p.attack = null;
+    }
+    if (p.attackCooldown > 0) p.attackCooldown -= dt;
+  }
+
+  /* ---------------------------------------------------------------- rendering */
+  function drawMap(map) {
+    var grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, map.bg[0]);
+    grad.addColorStop(1, map.bg[1]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = "rgba(255,255,255,.03)";
+    for (var i = 0; i < W; i += 40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, H); ctx.stroke(); }
+    // Flat platforms: one solid fill plus a thin flat accent line, no gradient/glow bevel
+    // that would read as a lit 3D block.
+    map.platforms.forEach(function (pl) {
+      ctx.fillStyle = "#1a2038";
+      ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
+      ctx.fillStyle = "#35f0e0";
+      ctx.fillRect(pl.x, pl.y, pl.w, 2);
+    });
+  }
+
+  function drawPlayer(p) {
+    if (!p.alive && phase !== "lobby") return;
+    var color = ac.getPlayerColor(p.id);
+    var rig = drawStickman(ctx, p, color);
+    var headY = rig.headY;
+
+    // hp bar (only during fight/roundend)
+    if (phase === "fight" || phase === "fightIntro" || phase === "roundEnd") {
+      var bw = 40;
+      ctx.fillStyle = "rgba(0,0,0,.5)";
+      ctx.fillRect(p.x - bw / 2, headY - 24, bw, 5);
+      ctx.fillStyle = color;
+      ctx.fillRect(p.x - bw / 2, headY - 24, bw * Math.max(0, p.hp) / 100, 5);
+    }
+
+    // nickname
+    ctx.fillStyle = "rgba(255,255,255,.7)";
+    ctx.font = "10px Chakra Petch, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(ac.getNickname(p.id), p.x, headY - 30);
+  }
+
+  /* ---------------------------------------------------------------- main loop */
+  var last = performance.now();
+  function loop(now) {
+    var dt = Math.min(40, now - last);
+    last = now;
+
+    var damageEnabled = phase === "fight";
+    var idsToStep = phase === "lobby" ? Object.keys(players) : roster;
+    idsToStep.forEach(function (id) { stepPlayer(players[id], dt, damageEnabled); });
+
+    if (phase === "fightIntro") {
+      phaseTimer -= dt;
+      if (phaseTimer <= 0) { phase = "fight"; broadcastPhase(); }
+    } else if (phase === "roundEnd") {
+      phaseTimer -= dt;
+      if (phaseTimer <= 0) nextRound();
+    }
+
+    drawMap(currentMap);
+    if (phase === "lobby") {
+      Object.keys(players).forEach(function (id) { drawPlayer(players[id]); });
+    } else {
+      roster.forEach(function (id) { drawPlayer(players[id]); });
+    }
+
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  /* ---------------------------------------------------------------- SDK wiring */
+  ac.onReady = function (code) {
+    document.getElementById("roomCode").textContent = code || "----";
+  };
+
+  ac.onConnect = function (device_id) {
+    if (phase === "lobby") { ensurePlayer(device_id); renderTopbar(); }
+  };
+
+  ac.onDisconnect = function (device_id) {
+    if (players[device_id] && phase !== "lobby") {
+      eliminate(players[device_id]);
+    }
+    if (phase === "lobby") { delete players[device_id]; renderTopbar(); }
+  };
+
+  ac.onMessage = function (device_id, data) {
+    if (!data) return;
+    if (data.t === "in") {
+      var p = ensurePlayer(device_id);
+      if (data.k === "left") p.input.left = data.d;
+      if (data.k === "right") p.input.right = data.d;
+      if (data.k === "jump" && data.d) p.jumpEdge = true;
+      if (data.k === "punch" && data.d) p.punchEdge = true;
+      if (phase === "lobby") renderTopbar();
+      return;
+    }
+    if (data.t === "start" && device_id === ac.getMasterControllerDeviceId() && phase === "lobby") {
+      startMatch(data.rounds);
+      return;
+    }
+    if (data.t === "restart" && device_id === ac.getMasterControllerDeviceId() && phase === "final") {
+      resetToLobby();
+      return;
+    }
+    if (data.t === "roundsPreview" && device_id === ac.getMasterControllerDeviceId() && phase === "lobby") {
+      ac.broadcast({ t: "roundsPreview", n: data.n });
+    }
+  };
+
+  ac.onActivePlayersChange = function () {};
+  renderTopbar();
+})();
+</script>
+</body>
+</html>
