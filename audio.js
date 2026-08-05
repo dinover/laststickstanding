@@ -204,38 +204,82 @@ var AudioManager = (function () {
     return { src: src, gain: g };
   }
 
-  /* ================================================================== scales / notes / biome palettes */
+  /* ================================================================== scales / notes / biome themes */
   // All dark/arcade scales — deliberately avoid sounding cheerful. Each biome (from
-  // world.js's Biomes) gets its own root/scale/timbre so the same state machine (lobby/
-  // countdown/fight/clutch/victory) sounds like a different track per map without ever
-  // touching tempo — only which notes and how bright/gritty the instruments are.
+  // world.js's Biomes) gets its own root/scale/timbre AND its own rhythmic patterns +
+  // ambient texture generator, so the same state machine (lobby/countdown/fight/clutch/
+  // victory) genuinely sounds like a different track per map — not just "same song,
+  // different key" — while tempo (128 BPM) never changes.
   var SCALES = {
     phrygian: [0, 1, 3, 5, 7, 8, 10],
     aeolian: [0, 2, 3, 5, 7, 8, 10],      // natural minor
     dorian: [0, 2, 3, 5, 7, 9, 10],
     harmonicMinor: [0, 2, 3, 5, 7, 8, 11],
   };
-  var BIOME_PALETTES = {
-    ruinas: { root: 55, scale: "phrygian", bright: 1.0, bassWave: "sawtooth", leadWave: "square", detune: -6 },
-    volcan: { root: 49, scale: "harmonicMinor", bright: 0.7, bassWave: "square", leadWave: "sawtooth", detune: -10 },
-    bosque: { root: 58, scale: "dorian", bright: 0.85, bassWave: "triangle", leadWave: "triangle", detune: -3 },
-    neon: { root: 55, scale: "aeolian", bright: 1.35, bassWave: "sawtooth", leadWave: "square", detune: -14 },
-    nieve: { root: 62, scale: "aeolian", bright: 1.15, bassWave: "triangle", leadWave: "square", detune: -4 },
+
+  var BIOME_THEMES = {
+    // Dark, sparse, echoing — ancient stone. The "default" feel.
+    ruinas: {
+      root: 55, scale: "phrygian", bright: 1.0, bassWave: "sawtooth", leadWave: "square", detune: -6,
+      kickDiv: 4,
+      bassPattern: [0, null, null, null, null, null, 3, null, 0, null, null, null, 5, null, null, null],
+      leadDegrees: [0, 3, 5, 7], leadDiv: 4,
+      percStyle: "default",
+      ambientEvery: 16, ambient: function (t) { Instruments.ambientEcho(t); },
+    },
+    // Aggressive, tribal, driving — low rumble and double-time kicks.
+    volcan: {
+      root: 49, scale: "harmonicMinor", bright: 0.7, bassWave: "square", leadWave: "sawtooth", detune: -10,
+      kickDiv: 2,
+      bassPattern: [0, null, 3, null, 0, null, 3, null, 0, null, 5, null, 0, null, 3, null],
+      leadDegrees: [0, 1, 3, 5], leadDiv: 4,
+      percStyle: "tribal",
+      ambientEvery: 8, ambient: function (t) { Instruments.ambientRumble(t); },
+      stateOverrides: { fight: { kick: 1 }, clutch: { kick: 1 } },
+    },
+    // Organic, airy, sparse — soft pad, gentle shaker, occasional bird-like pluck.
+    bosque: {
+      root: 58, scale: "dorian", bright: 0.85, bassWave: "triangle", leadWave: "triangle", detune: -3,
+      kickDiv: 8,
+      bassPattern: [0, null, null, null, null, null, null, null, null, 4, null, null, null, null, null, null],
+      leadDegrees: [0, 2, 4, 6], leadDiv: 4,
+      percStyle: "soft",
+      ambientEvery: 24, ambient: function (t) { Instruments.ambientAir(t); },
+    },
+    // Bright synthwave pulse — dense claps/hats, always-on arpeggio, octave-jump bass.
+    neon: {
+      root: 55, scale: "aeolian", bright: 1.35, bassWave: "sawtooth", leadWave: "square", detune: -14,
+      kickDiv: 4,
+      bassPattern: [0, null, 0, null, 7, null, 0, null, 0, null, 0, null, 7, null, 0, null],
+      leadDegrees: [0, 4, 7, 4], leadDiv: 2,
+      percStyle: "pulse",
+      ambientEvery: 16, ambient: function (t) { Instruments.ambientShimmer(t); },
+      stateOverrides: { fight: { arp: 0.55 }, clutch: { arp: 0.8 } },
+    },
+    // Cold, glassy, hushed — near-silent bass, sparse bell tones, wind texture.
+    nieve: {
+      root: 62, scale: "aeolian", bright: 1.15, bassWave: "triangle", leadWave: "square", detune: -4,
+      kickDiv: 8,
+      bassPattern: [0, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+      leadDegrees: [0, 4], leadDiv: 8,
+      percStyle: "sparse",
+      ambientEvery: 16, ambient: function (t) { Instruments.ambientBell(t); },
+    },
   };
-  var DEFAULT_PALETTE = BIOME_PALETTES.ruinas;
-  var palette = DEFAULT_PALETTE;
+  var DEFAULT_THEME = BIOME_THEMES.ruinas;
+  var theme = DEFAULT_THEME;
 
   function setBiome(biomeId) {
-    palette = BIOME_PALETTES[biomeId] || DEFAULT_PALETTE;
+    theme = BIOME_THEMES[biomeId] || DEFAULT_THEME;
   }
 
   function noteFreq(degree, octave) {
     octave = octave || 0;
-    var scale = SCALES[palette.scale] || SCALES.phrygian;
+    var scale = SCALES[theme.scale] || SCALES.phrygian;
     var idx = ((degree % scale.length) + scale.length) % scale.length;
     var octShift = Math.floor(degree / scale.length) + octave;
     var semis = scale[idx] + octShift * 12;
-    return palette.root * Math.pow(2, semis / 12);
+    return theme.root * Math.pow(2, semis / 12);
   }
 
   /* ================================================================== BPM / layers */
@@ -243,7 +287,7 @@ var AudioManager = (function () {
   var STEP_DUR = 60 / BPM / 4; // one 16th note, seconds
   var LOOKAHEAD = 0.12;
 
-  var LAYER_NAMES = ["kick", "bass", "pad", "lead", "arp", "perc", "fx"];
+  var LAYER_NAMES = ["kick", "bass", "pad", "lead", "arp", "perc", "fx", "amb"];
   var layerGains = {};   // persistent GainNode per layer, created once
   var layerTargets = {}; // current state's target level per layer, 0..1
 
@@ -280,24 +324,78 @@ var AudioManager = (function () {
     },
     bassNote: function (freq, dur, t) {
       tone(freq, {
-        type: palette.bassWave, dur: dur, attack: 0.008, release: 0.05, peak: 0.55,
-        filterFreq: 420 * palette.bright, filterType: "lowpass", filterQ: 1.2,
+        type: theme.bassWave, dur: dur, attack: 0.008, release: 0.05, peak: 0.55,
+        filterFreq: 420 * theme.bright, filterType: "lowpass", filterQ: 1.2,
       }, layerGains.bass, t);
     },
     leadNote: function (freq, dur, t) {
-      tone(freq, { type: palette.leadWave, dur: dur, attack: 0.004, release: 0.06, peak: 0.28, filterFreq: 3200 * palette.bright, filterType: "lowpass" }, layerGains.lead, t);
-      tone(freq * 1.005, { type: "sawtooth", dur: dur, attack: 0.004, release: 0.06, peak: 0.16, detune: palette.detune }, layerGains.lead, t);
+      tone(freq, { type: theme.leadWave, dur: dur, attack: 0.004, release: 0.06, peak: 0.28, filterFreq: 3200 * theme.bright, filterType: "lowpass" }, layerGains.lead, t);
+      tone(freq * 1.005, { type: "sawtooth", dur: dur, attack: 0.004, release: 0.06, peak: 0.16, detune: theme.detune }, layerGains.lead, t);
     },
     padChord: function (freqs, dur, t) {
       freqs.forEach(function (f) {
-        tone(f, { type: "triangle", dur: dur, attack: 0.6, release: 0.9, peak: 0.22, filterFreq: 1200 * palette.bright, filterType: "lowpass" }, layerGains.pad, t);
+        tone(f, { type: "triangle", dur: dur, attack: 0.6, release: 0.9, peak: 0.22, filterFreq: 1200 * theme.bright, filterType: "lowpass" }, layerGains.pad, t);
       });
     },
     arpNote: function (freq, dur, t) {
-      tone(freq, { type: palette.leadWave, dur: dur, attack: 0.002, release: 0.03, peak: 0.18, filterFreq: 4500 * palette.bright, filterType: "lowpass" }, layerGains.arp, t);
+      tone(freq, { type: theme.leadWave, dur: dur, attack: 0.002, release: 0.03, peak: 0.18, filterFreq: 4500 * theme.bright, filterType: "lowpass" }, layerGains.arp, t);
     },
     noiseFX: function (t) {
       noiseBurst({ dur: 1.4, peak: 0.14, filterFreq: 300, filterSweepTo: 6000, filterType: "bandpass", filterQ: 2 }, layerGains.fx, t);
+    },
+
+    /* ---- extra percussion voices, picked per biome by percStyle ---- */
+    tom: function (t) {
+      var osc = ctx.createOscillator(); osc.type = "sine";
+      var g = ctx.createGain();
+      osc.connect(g); g.connect(layerGains.perc);
+      osc.frequency.setValueAtTime(220, t);
+      osc.frequency.exponentialRampToValueAtTime(90, t + 0.15);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.4, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+      osc.start(t); osc.stop(t + 0.22);
+      osc.onended = function () { osc.disconnect(); g.disconnect(); };
+    },
+    softHat: function (t) {
+      noiseBurst({ dur: 0.035, peak: 0.09, filterFreq: 5500, filterType: "highpass" }, layerGains.perc, t);
+    },
+    clap: function (t) {
+      noiseBurst({ dur: 0.08, peak: 0.3, filterFreq: 1600, filterType: "bandpass", filterQ: 1.4 }, layerGains.perc, t);
+      noiseBurst({ dur: 0.06, peak: 0.18, filterFreq: 1800, filterType: "bandpass", filterQ: 1.4 }, layerGains.perc, t + 0.015);
+    },
+
+    /* ---- ambient textures, one per biome, called sparsely by the sequencer ---- */
+    ambientEcho: function (t) {
+      // Ruinas: a sparse pluck with a quiet delayed repeat, like a note echoing off stone.
+      Instruments.arpNoteTo(layerGains.amb, noteFreq(theme.leadDegrees[0], 0), 0.4, t, 0.16);
+      Instruments.arpNoteTo(layerGains.amb, noteFreq(theme.leadDegrees[2], 0), 0.35, t + 0.16, 0.08);
+    },
+    ambientRumble: function (t) {
+      // Volcán: a long low rumble plus an occasional distant sub boom.
+      noiseBurst({ dur: 3.2, peak: 0.16, filterFreq: 90, filterType: "lowpass" }, layerGains.amb, t);
+      tone(38, { type: "sine", dur: 0.5, attack: 0.2, release: 0.6, peak: 0.3 }, layerGains.amb, t);
+    },
+    ambientAir: function (t) {
+      // Bosque: a soft wind swell, occasionally with a short high "bird" chirp.
+      noiseBurst({ dur: 2.6, peak: 0.09, filterFreq: 900, filterType: "bandpass", filterQ: 0.6 }, layerGains.amb, t);
+      if (Math.random() < 0.5) {
+        tone(noteFreq(theme.leadDegrees[3], 3), { type: "triangle", dur: 0.12, attack: 0.005, release: 0.15, peak: 0.1 }, layerGains.amb, t + 0.3);
+      }
+    },
+    ambientShimmer: function (t) {
+      // Neón: bright sizzling texture plus a detuned sustained shimmer note.
+      noiseBurst({ dur: 0.9, peak: 0.1, filterFreq: 6000, filterType: "highpass" }, layerGains.amb, t);
+      tone(noteFreq(theme.leadDegrees[0], 2), { type: "sawtooth", dur: 1.2, attack: 0.4, release: 0.6, peak: 0.12, detune: theme.detune * 2, filterFreq: 5000 }, layerGains.amb, t);
+    },
+    ambientBell: function (t) {
+      // Nieve: airy wind plus a soft glassy bell tone with a long tail.
+      noiseBurst({ dur: 2.0, peak: 0.07, filterFreq: 2200, filterType: "bandpass", filterQ: 0.5 }, layerGains.amb, t);
+      tone(noteFreq(theme.leadDegrees[1], 3), { type: "triangle", dur: 1.0, attack: 0.01, release: 1.4, peak: 0.14, filterFreq: 6000 }, layerGains.amb, t);
+    },
+    // small helper so ambientEcho can send its plucks to an arbitrary bus/time
+    arpNoteTo: function (bus, freq, peak, t, dur) {
+      tone(freq, { type: theme.leadWave, dur: dur || 0.2, attack: 0.002, release: 0.15, peak: peak, filterFreq: 4000 * theme.bright }, bus, t);
     },
   };
 
@@ -307,20 +405,36 @@ var AudioManager = (function () {
   // wall-clock delays — so there is no drift no matter how the render loop jitters.
   var stepIndex = 0, nextStepTime = 0, schedulerRunning = false, schedulerRaf = null;
 
-  var BASS_PATTERN = [0, null, null, null, null, null, 3, null, 0, null, null, null, 5, null, null, null];
-  var LEAD_DEGREES = [0, 3, 5, 7];
-
-  function scheduleStep(step, t) {
-    if (layerTargets.kick > 0.01 && step % 4 === 0) Instruments.kick(t);
-    if (layerTargets.bass > 0.01 && BASS_PATTERN[step] != null) Instruments.bassNote(noteFreq(BASS_PATTERN[step], -1), STEP_DUR * 3.2, t);
-    if (layerTargets.pad > 0.01 && step === 0) Instruments.padChord([noteFreq(0, 0), noteFreq(2, 0), noteFreq(4, 0)], STEP_DUR * 16, t);
-    if (layerTargets.lead > 0.01 && step % 4 === 2) Instruments.leadNote(noteFreq(LEAD_DEGREES[(step >> 2) % 4], 1), STEP_DUR * 1.3, t);
-    if (layerTargets.perc > 0.01) {
+  function playPerc(style, step, t) {
+    if (style === "tribal") {
+      if (step % 2 === 0) Instruments.hat(t);
+      if (step === 3 || step === 7 || step === 11 || step === 15) Instruments.tom(t);
+    } else if (style === "soft") {
+      if (step % 2 === 1) Instruments.softHat(t);
+    } else if (style === "pulse") {
+      Instruments.hat(t); // dense 16th hats — synthwave pulse
+      if (step % 4 === 0) Instruments.clap(t);
+    } else if (style === "sparse") {
+      if (step % 4 === 0) Instruments.softHat(t);
+    } else {
       if (step % 2 === 1) Instruments.hat(t);
       if (step === 4 || step === 12) Instruments.snare(t);
     }
-    if (layerTargets.arp > 0.01) Instruments.arpNote(noteFreq(LEAD_DEGREES[step % 4], 2), STEP_DUR * 0.85, t);
+  }
+
+  function scheduleStep(step, t) {
+    var th = theme;
+    if (layerTargets.kick > 0.01 && step % th.kickDiv === 0) Instruments.kick(t);
+    if (layerTargets.bass > 0.01 && th.bassPattern[step] != null) Instruments.bassNote(noteFreq(th.bassPattern[step], -1), STEP_DUR * 3.2, t);
+    if (layerTargets.pad > 0.01 && step === 0) Instruments.padChord([noteFreq(0, 0), noteFreq(2, 0), noteFreq(4, 0)], STEP_DUR * 16, t);
+    if (layerTargets.lead > 0.01 && step % th.leadDiv === 2) {
+      var ld = th.leadDegrees[(step >> 2) % th.leadDegrees.length];
+      Instruments.leadNote(noteFreq(ld, 1), STEP_DUR * (th.leadDiv * 0.65), t);
+    }
+    if (layerTargets.perc > 0.01) playPerc(th.percStyle, step, t);
+    if (layerTargets.arp > 0.01) Instruments.arpNote(noteFreq(th.leadDegrees[step % th.leadDegrees.length], 2), STEP_DUR * 0.85, t);
     if (layerTargets.fx > 0.01 && step === 0) Instruments.noiseFX(t);
+    if (layerTargets.amb > 0.01 && step % th.ambientEvery === 0) th.ambient(t);
   }
 
   function schedulerTick() {
@@ -347,18 +461,22 @@ var AudioManager = (function () {
   // <audio> element, whatever) could implement the same four methods and swap in here
   // without a single line changing outside this file.
   var STATES = {
-    lobby: { kick: 0, bass: 0.5, pad: 0.7, lead: 0, arp: 0, perc: 0, fx: 0, filter: 16000 },
-    countdown: { kick: 0, bass: 0.5, pad: 0.7, lead: 0, arp: 0, perc: 0, fx: 0, filter: 500 },
-    fight: { kick: 0.9, bass: 0.85, pad: 0.28, lead: 0.7, arp: 0, perc: 0.65, fx: 0, filter: 18000 },
-    clutch: { kick: 1, bass: 1, pad: 0.3, lead: 0.9, arp: 0.55, perc: 0.85, fx: 0.4, filter: 18000 },
-    gameOver: { kick: 0, bass: 0.3, pad: 0.5, lead: 0, arp: 0, perc: 0, fx: 0, filter: 400 },
-    silent: { kick: 0, bass: 0, pad: 0, lead: 0, arp: 0, perc: 0, fx: 0, filter: 18000 },
+    lobby: { kick: 0, bass: 0.5, pad: 0.7, lead: 0, arp: 0, perc: 0, fx: 0, amb: 0.5, filter: 16000 },
+    countdown: { kick: 0, bass: 0.5, pad: 0.7, lead: 0, arp: 0, perc: 0, fx: 0, amb: 0.4, filter: 500 },
+    fight: { kick: 0.9, bass: 0.85, pad: 0.28, lead: 0.7, arp: 0, perc: 0.65, fx: 0, amb: 0.22, filter: 18000 },
+    clutch: { kick: 1, bass: 1, pad: 0.3, lead: 0.9, arp: 0.55, perc: 0.85, fx: 0.4, amb: 0.3, filter: 18000 },
+    gameOver: { kick: 0, bass: 0.3, pad: 0.5, lead: 0, arp: 0, perc: 0, fx: 0, amb: 0.35, filter: 400 },
+    silent: { kick: 0, bass: 0, pad: 0, lead: 0, arp: 0, perc: 0, fx: 0, amb: 0, filter: 18000 },
   };
   var currentStateName = "lobby";
   var intensity = 1;
 
   function applyState(name, rampMs) {
-    var cfg = STATES[name] || STATES.lobby;
+    var base = STATES[name] || STATES.lobby;
+    var cfg = {};
+    for (var k in base) cfg[k] = base[k];
+    var overrides = theme.stateOverrides && theme.stateOverrides[name];
+    if (overrides) for (var k2 in overrides) cfg[k2] = overrides[k2];
     var t = now();
     var ramp = (rampMs != null ? rampMs : 550) / 1000;
     LAYER_NAMES.forEach(function (layer) {
