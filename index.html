@@ -3,40 +3,707 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Last Stick Standing</title>
-<link rel="stylesheet" href="https://freeconsole.vercel.app/console.css" />
+<title>Last Stick Standing — Online</title>
 <style>
-  html, body { height: 100%; margin: 0; background: #05060d; }
-  body {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 18px; text-align: center; padding: 24px;
+  html, body { height: 100%; margin: 0; overflow: hidden; background: #05060d; font-family: 'Chakra Petch', sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; }
+  #wrap { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; background: #05060d; box-shadow: 0 0 80px rgba(53,240,224,.08); }
+  #wrap.playing canvas { display: block; }
+  canvas#c { display: none; }
+  #wrap.playing #lobby { display: none; }
+
+  #room, #topbar { display: none; }
+  #wrap.playing #room { display: block; }
+  #wrap.playing #topbar { display: flex; }
+  #room { position: absolute; top: 14px; left: 18px; z-index: 5; color: #9aa3bd; font-size: 13px; letter-spacing: .08em; }
+  #room b { color: #35f0e0; }
+  #topbar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); gap: 10px; z-index: 5; }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 50%; position: relative;
+    border: 2px solid rgba(255,255,255,.25); box-shadow: 0 0 12px currentColor;
+    display: flex; align-items: center; justify-content: center; font-size: 11px; color: #05060d; font-weight: 700;
+    transition: opacity .3s;
   }
-  img { max-width: min(420px, 80vw); border-radius: 12px; box-shadow: 0 0 60px rgba(53,240,224,.15); }
-  h1 {
-    font-family: var(--font-display, sans-serif); color: var(--glow, #35f0e0);
-    text-shadow: 0 0 16px rgba(53,240,224,.5); margin: 0; font-size: 26px; letter-spacing: .04em;
+  .avatar.out { opacity: .35; }
+  .avatar .x { position: absolute; inset: -4px; display: none; align-items: center; justify-content: center; font-weight: 900; font-size: 30px; color: #ff2e88; text-shadow: 0 0 10px #ff2e88, 0 0 2px #000; }
+  .avatar.out .x { display: flex; }
+
+  #roundBanner {
+    position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
+    color: #eaf0ff; font-size: 15px; background: rgba(10,12,24,.6); padding: 4px 14px;
+    border-radius: 999px; border: 1px solid #2a3050; letter-spacing: .1em; z-index: 5; display: none;
   }
-  p { font-family: var(--font-mono, monospace); color: var(--text-dim, #9aa3bd); margin: 0; font-size: 14px; }
-  .links { display: flex; gap: 12px; }
-  a.btn {
-    font-family: var(--font-mono, monospace); color: #05060d; background: #35f0e0;
-    padding: 10px 18px; border-radius: 999px; text-decoration: none; font-size: 13px;
-    letter-spacing: .06em; box-shadow: 0 0 20px rgba(53,240,224,.35);
+  #roundBanner.show { display: block; }
+
+  #overlay { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+  #fightText {
+    font-weight: 900; font-size: 96px; color: #ff3d63; text-shadow: 0 0 24px rgba(255,61,99,.7);
+    opacity: 0; letter-spacing: .05em; transform: scale(.6);
   }
-  a.btn.ghost {
-    background: transparent; color: var(--text, #eaf0ff); border: 1px solid var(--line, #2a3050);
-    box-shadow: none;
+  #fightText.show { animation: fightPop .9s cubic-bezier(.2,1.4,.4,1) forwards; }
+  @keyframes fightPop {
+    0% { opacity: 0; transform: scale(.4) rotate(-4deg); }
+    35% { opacity: 1; transform: scale(1.15) rotate(2deg); }
+    60% { transform: scale(1) rotate(0); }
+    85% { opacity: 1; }
+    100% { opacity: 0; transform: scale(1.3); }
   }
+
+  #finalScreen {
+    position: absolute; inset: 0; z-index: 20; display: none;
+    background: radial-gradient(circle at 50% 30%, rgba(53,240,224,.08), transparent 60%), #05060d;
+    flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  }
+  #finalScreen.show { display: flex; }
+  #finalScreen h1 { font-size: 42px; color: #ffc247; text-shadow: 0 0 20px rgba(255,194,71,.6); margin: 0; }
+  #ranking { display: flex; flex-direction: column; gap: 8px; width: 420px; }
+  .rankRow { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: rgba(255,255,255,.03); border: 1px solid #2a3050; border-radius: 8px; color: #eaf0ff; }
+  .rankRow .pos { color: #6b7394; width: 24px; }
+  .rankRow .dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
+  .rankRow .nm { flex: 1; }
+  .rankRow .sc { color: #35f0e0; }
+  .rankRow.win { border-color: #ffc247; box-shadow: 0 0 18px rgba(255,194,71,.25); }
+  #playAgainBtn { margin-top: 6px; }
+
+  /* ---------------------------------------------------------------- lobby */
+  #lobby {
+    position: relative; z-index: 3; width: min(480px, 92vw); text-align: center;
+    color: #eaf0ff; display: flex; flex-direction: column; align-items: center; gap: 16px;
+  }
+  #lobby h1 { font-size: 26px; color: #35f0e0; text-shadow: 0 0 16px rgba(53,240,224,.5); margin: 0; letter-spacing: .04em; }
+  #lobby p.sub { color: #9aa3bd; font-size: 13px; margin: 0; }
+  .card { background: rgba(255,255,255,.03); border: 1px solid #2a3050; border-radius: 12px; padding: 20px; width: 100%; box-sizing: border-box; }
+  .rolePick { display: flex; gap: 12px; width: 100%; }
+  .rolePick button { flex: 1; }
+  button, input {
+    font-family: inherit; font-size: 14px; border-radius: 8px; border: 1px solid #2a3050;
+    background: #12162a; color: #eaf0ff; padding: 12px 14px;
+  }
+  button { cursor: pointer; background: #35f0e0; color: #05060d; font-weight: 700; border: none; box-shadow: 0 0 16px rgba(53,240,224,.3); }
+  button.ghost { background: transparent; color: #eaf0ff; border: 1px solid #2a3050; box-shadow: none; }
+  button:disabled { opacity: .5; cursor: default; box-shadow: none; }
+  input { width: 100%; box-sizing: border-box; margin-bottom: 10px; text-align: center; letter-spacing: .08em; }
+  input#codeInput { text-transform: uppercase; }
+  .codeShow { font-size: 40px; letter-spacing: .18em; color: #35f0e0; text-shadow: 0 0 20px rgba(53,240,224,.5); margin: 6px 0; }
+  .rosterList { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; text-align: left; }
+  .rosterRow { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .rosterRow .dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
+  .roundsRow { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 12px; }
+  .roundsRow button { padding: 6px 12px; }
+  .hint { font-size: 11px; color: #6b7394; letter-spacing: .04em; }
+  .err { color: #ff5e7a; font-size: 12px; min-height: 16px; }
+  a.back { color: #6b7394; font-size: 12px; text-decoration: none; }
 </style>
 </head>
 <body>
-  <img src="Last Stick Standing.png" alt="Last Stick Standing" />
-  <h1>LAST STICK STANDING</h1>
-  <p>Elegí qué querés abrir.</p>
-  <div class="links">
-    <a class="btn" href="screen.html">Pantalla (host)</a>
-    <a class="btn ghost" href="controller.html">Control (celular)</a>
-    <a class="btn ghost" href="Last Stick Standing.png">Ver imagen</a>
+<div class="atmosphere"></div>
+<div id="wrap">
+  <canvas id="c" width="960" height="540"></canvas>
+  <div id="room">SALA <b id="roomCode">----</b></div>
+  <div id="topbar"></div>
+  <div id="roundBanner"></div>
+  <div id="overlay"><div id="fightText">FIGHT!</div></div>
+
+  <div id="lobby">
+    <h1>LAST STICK STANDING</h1>
+    <p class="sub">Modo online — jugá con amigos, cada uno desde su PC.</p>
+
+    <div class="card" id="choiceCard">
+      <div class="rolePick">
+        <button id="createBtn">Crear sala</button>
+        <button class="ghost" id="joinShowBtn">Unirme a una sala</button>
+      </div>
+    </div>
+
+    <div class="card" id="joinCard" style="display:none">
+      <input id="nickInput" maxlength="14" placeholder="Tu nombre" />
+      <input id="codeInput" maxlength="4" placeholder="CÓDIGO DE SALA" />
+      <button id="joinBtn" style="width:100%">Conectar</button>
+      <div class="err" id="joinErr"></div>
+    </div>
+
+    <div class="card" id="hostCard" style="display:none">
+      <p class="sub">Compartí este código con tus amigos:</p>
+      <div class="codeShow" id="hostCode">----</div>
+      <div class="rosterList" id="hostRoster"></div>
+      <div class="roundsRow">
+        <button class="ghost" id="minusBtn">−</button>
+        <span id="roundsN">3</span> rondas
+        <button class="ghost" id="plusBtn">+</button>
+      </div>
+      <button id="startBtn" style="width:100%">Empezar partida</button>
+      <div class="hint">A/D mover · ESPACIO saltar · P golpear</div>
+    </div>
+
+    <div class="card" id="waitCard" style="display:none">
+      <p class="sub">Conectado. Esperando a que el host empiece…</p>
+      <div class="hint">A/D mover · ESPACIO saltar · P golpear</div>
+    </div>
+
+    <a class="back" id="backLink" href="#" style="display:none">‹ volver</a>
   </div>
+
+  <div id="finalScreen">
+    <h1 id="winnerTitle">GANADOR</h1>
+    <div id="ranking"></div>
+    <button id="playAgainBtn">Jugar de nuevo</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="stickman.js"></script>
+<script src="fx.js"></script>
+<script src="world.js"></script>
+<script src="net.js"></script>
+<script>
+(function () {
+  "use strict";
+  var canvas = document.getElementById("c");
+  var ctx = canvas.getContext("2d");
+  var W = 960, H = 540;
+  var GRAVITY_UP = 0.46, GRAVITY_DOWN = 0.34, SPEED = 4.3, JUMP_V = -14.2;
+  var PW = 13, PH = 52;
+  var PUNCH_MS = 230, KICK_MS = 280, ATTACK_COOLDOWN = 380;
+  var PLAYER_COLORS = ["#35f0e0", "#ff2e88", "#9dff4f", "#ffc247", "#7b6cff", "#4fd2ff", "#ff7a3d", "#ff5ec4"];
+  var HOST_ID = 0;
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  var MAP0 = {
+    name: "Plataforma Inicial", biome: "ruinas", seed: 1, hazards: [],
+    platforms: [
+      { x: 60, y: 460, w: 840, h: 26 },
+      { x: 120, y: 340, w: 160, h: 18 },
+      { x: 680, y: 340, w: 160, h: 18 },
+      { x: 400, y: 250, w: 160, h: 18 },
+    ],
+  };
+
+  /* ---------------------------------------------------------------- role / connection state */
+  var role = null; // "host" | "guest"
+  var myNickname = "";
+  var names = {}, colors = {}; // id -> nickname / color, both roles keep a local copy
+
+  var myId = null; // this client's own id, so it can label its own fighter "Vos" locally
+  function colorFor(id) { return colors[id] || PLAYER_COLORS[id % PLAYER_COLORS.length]; }
+  function nameFor(id) { return id === myId ? "Vos" : (names[id] || ("Jugador " + id)); }
+
+  /* ================================================================== HOST: simulation authority */
+  var phase = "lobby"; // lobby | fightIntro | fight | roundEnd | final
+  var currentMap = MAP0;
+  var currentRound = 0, totalRounds = 3;
+  var roster = [];
+  var scores = {};
+  var players = {};
+  var eliminationOrder = [];
+  var phaseTimer = 0;
+
+  function newPlayer(id) {
+    return {
+      id: id, x: 100 + Math.random() * (W - 200), y: -40, vx: 0, vy: 0,
+      grounded: false, facing: 1, hp: 100, alive: true, attack: null, attackCooldown: 0,
+      input: { left: false, right: false }, jumpEdge: false, punchEdge: false,
+      walkCycle: 0, idleT: Math.random() * 10, squash: 0,
+      hitStunT: 0, hitDir: 1, jumpAnticT: 0, deathFadeT: 0,
+    };
+  }
+  function ensurePlayer(id) { if (!players[id]) players[id] = newPlayer(id); return players[id]; }
+
+  function hostAddGuest(guestId, nickname) {
+    names[guestId] = nickname;
+    colors[guestId] = PLAYER_COLORS[guestId % PLAYER_COLORS.length];
+    ensurePlayer(guestId);
+    renderHostRoster();
+  }
+  function hostRemoveGuest(guestId) {
+    delete players[guestId];
+    roster = roster.filter(function (id) { return id !== guestId; });
+    renderHostRoster();
+  }
+
+  function renderHostRoster() {
+    var el = document.getElementById("hostRoster");
+    if (!el) return;
+    var ids = [HOST_ID].concat(Object.keys(players).map(Number).filter(function (id) { return id !== HOST_ID; }));
+    el.innerHTML = ids.map(function (id) {
+      return '<div class="rosterRow"><div class="dot" style="color:' + colorFor(id) + ';background:' + colorFor(id) + '"></div>' + nameFor(id) + '</div>';
+    }).join("");
+  }
+
+  function spawnRoundPlayers(map) {
+    var plats = map.platforms;
+    roster.forEach(function (id, i) {
+      var p = ensurePlayer(id);
+      var plat = plats[i % plats.length];
+      var pad = Math.min(22, plat.w / 3);
+      var lo = plat.x + pad, hi = plat.x + plat.w - pad;
+      if (hi <= lo) { lo = plat.x + plat.w / 2; hi = lo; }
+      p.x = lo + Math.random() * (hi - lo);
+      p.y = -20 - i * 50; p.vx = 0; p.vy = 0; p.hp = 100; p.alive = true; p.attack = null; p.attackCooldown = 0;
+    });
+  }
+
+  function nextRound() {
+    currentRound++;
+    if (currentRound > totalRounds) { endMatch(); return; }
+    currentMap = currentRound === 1 ? MAP0 : World.generateMap(1000 + currentRound * 37 + Math.floor(Math.random() * 900), { SPEED: SPEED, JUMP_V: JUMP_V, GRAVITY_UP: GRAVITY_UP, GRAVITY_DOWN: GRAVITY_DOWN, W: W, H: H });
+    eliminationOrder = [];
+    spawnRoundPlayers(currentMap);
+    var rb = document.getElementById("roundBanner");
+    rb.textContent = "RONDA " + currentRound + " / " + totalRounds + " — " + currentMap.name;
+    rb.classList.add("show");
+    phase = "fightIntro";
+    phaseTimer = 1100;
+    var ft = document.getElementById("fightText");
+    ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
+    renderTopbar();
+  }
+
+  function eliminate(p) {
+    if (!p.alive) return;
+    p.alive = false; p.deathFadeT = 420;
+    eliminationOrder.push(p.id);
+    HitStop.trigger(55);
+    Camera.addTrauma(0.85); Camera.zoomImpulse(0.05);
+    ScreenFX.flash(0.5);
+    Particles.eliminationBurst(p.x, p.y - 24, colorFor(p.id));
+    renderTopbar();
+    checkRoundEnd();
+  }
+
+  function checkRoundEnd() {
+    if (phase !== "fight") return;
+    var alive = roster.filter(function (id) { return players[id] && players[id].alive; });
+    if (alive.length <= 1) {
+      if (alive.length === 1) eliminationOrder.push(alive[0]);
+      var n = eliminationOrder.length;
+      eliminationOrder.forEach(function (id, idx) {
+        var placement = idx + 1; // first eliminated = 1 point, survivor = n points
+        scores[id] = (scores[id] || 0) + placement;
+      });
+      phase = "roundEnd";
+      phaseTimer = 2600;
+    }
+  }
+
+  function endMatch() {
+    phase = "final";
+    document.getElementById("roundBanner").classList.remove("show");
+    var ranked = roster.slice().sort(function (a, b) { return (scores[b] || 0) - (scores[a] || 0); });
+    showFinal(ranked);
+  }
+
+  function showFinal(ranked) {
+    var winner = ranked[0];
+    document.getElementById("winnerTitle").textContent = winner !== undefined ? (nameFor(winner).toUpperCase() + " GANA") : "SIN GANADOR";
+    var rk = document.getElementById("ranking");
+    rk.innerHTML = "";
+    ranked.forEach(function (id, i) {
+      var row = document.createElement("div");
+      row.className = "rankRow" + (i === 0 ? " win" : "");
+      row.innerHTML = '<div class="pos">#' + (i + 1) + '</div>' +
+        '<div class="dot" style="color:' + colorFor(id) + ';background:' + colorFor(id) + '"></div>' +
+        '<div class="nm">' + nameFor(id) + '</div>' +
+        '<div class="sc">' + (scores[id] || 0) + ' pts</div>';
+      rk.appendChild(row);
+    });
+    document.getElementById("finalScreen").classList.add("show");
+  }
+
+  function resetToLobby() {
+    document.getElementById("finalScreen").classList.remove("show");
+    document.getElementById("roundBanner").classList.remove("show");
+    phase = "lobby"; players = {}; roster = []; scores = {}; currentRound = 0; currentMap = MAP0;
+    if (role === "host") { ensurePlayer(HOST_ID); Object.keys(names).forEach(function (id) { ensurePlayer(Number(id)); }); renderHostRoster(); }
+  }
+
+  function startMatch(rounds) {
+    totalRounds = Math.max(1, Math.min(20, rounds || 3));
+    roster = [HOST_ID].concat(Object.keys(players).map(Number).filter(function (id) { return id !== HOST_ID; }));
+    scores = {};
+    roster.forEach(function (id) { scores[id] = 0; });
+    currentRound = 0;
+    document.getElementById("wrap").classList.add("playing");
+    nextRound();
+  }
+
+  /* ---------------------------------------------------------------- topbar */
+  function renderTopbar() {
+    var bar = document.getElementById("topbar");
+    bar.innerHTML = "";
+    roster.forEach(function (id) {
+      var p = players[id];
+      var div = document.createElement("div");
+      div.className = "avatar" + (p && !p.alive && phase !== "lobby" ? " out" : "");
+      var color = colorFor(id);
+      div.style.color = color; div.style.background = color;
+      div.innerHTML = '<div class="x">✕</div>';
+      bar.appendChild(div);
+    });
+  }
+
+  /* ---------------------------------------------------------------- physics (host only) */
+  function stepPlayer(p, dt, damageEnabled) {
+    if (!p.alive) { if (p.deathFadeT > 0) p.deathFadeT = Math.max(0, p.deathFadeT - dt); return; }
+    if (p.input.left && !p.input.right) { p.vx = -SPEED; p.facing = -1; }
+    else if (p.input.right && !p.input.left) { p.vx = SPEED; p.facing = 1; }
+    else p.vx = 0;
+
+    if (p.jumpEdge && p.grounded) { p.vy = JUMP_V; p.grounded = false; p.jumpAnticT = 90; }
+    p.jumpEdge = false;
+
+    if (p.punchEdge && p.attackCooldown <= 0) {
+      var airborne = !p.grounded;
+      var dur = airborne ? KICK_MS : PUNCH_MS;
+      p.attack = { type: airborne ? "kick" : "punch", t: dur, dur: dur, hitSet: {} };
+      p.attackCooldown = ATTACK_COOLDOWN;
+    }
+    p.punchEdge = false;
+
+    p.vy += p.vy < 0 ? GRAVITY_UP : GRAVITY_DOWN;
+    var prevFeet = p.y;
+    var wasGrounded = p.grounded;
+    p.y += p.vy;
+    p.kbx = (p.kbx || 0) * 0.88;
+    if (Math.abs(p.kbx) < 0.05) p.kbx = 0;
+    p.x += p.vx + p.kbx;
+    p.x = Math.max(14, Math.min(W - 14, p.x));
+
+    if (p.vx !== 0 && wasGrounded) p.walkCycle = ((p.walkCycle || 0) + dt * 0.0034) % 1;
+    p.idleT += dt * 0.001;
+    if (p.squash > 0) p.squash = Math.max(0, p.squash - dt * 0.006);
+    if (p.jumpAnticT > 0) p.jumpAnticT = Math.max(0, p.jumpAnticT - dt);
+    if (p.hitStunT > 0) p.hitStunT = Math.max(0, p.hitStunT - dt);
+    if (p.deathFadeT > 0) p.deathFadeT = Math.max(0, p.deathFadeT - dt);
+
+    p.grounded = false;
+    currentMap.platforms.forEach(function (pl) {
+      if (p.vy >= 0 && prevFeet <= pl.y + 1 && p.y >= pl.y && p.x + PW > pl.x && p.x - PW < pl.x + pl.w) {
+        p.y = pl.y;
+        if (!wasGrounded && p.vy > 5) {
+          p.squash = Math.min(1, p.vy / 14);
+          var landStrength = clamp(p.vy / 14, 0, 1);
+          Camera.addTrauma(landStrength * 0.22);
+          Particles.landingDust(p.x, p.y, p.facing, landStrength, "rgba(255,255,255,.55)");
+        }
+        p.vy = 0; p.grounded = true;
+      }
+    });
+
+    if (p.y > H + 60) { if (damageEnabled) eliminate(p); }
+    if (damageEnabled && p.alive && World.checkHazards(p, currentMap, PW)) eliminate(p);
+
+    if (p.attack) {
+      p.attack.t -= dt;
+      if (damageEnabled) {
+        roster.forEach(function (oid) {
+          if (oid === p.id) return;
+          var o = players[oid];
+          if (!o || !o.alive || p.attack.hitSet[oid]) return;
+          var reach = p.attack.type === "kick" ? 44 : 34;
+          var dx = o.x - p.x;
+          var facingOk = p.facing > 0 ? (dx > -6 && dx < reach) : (dx < 6 && dx > -reach);
+          var dy = Math.abs(o.y - p.y - 10);
+          if (facingOk && dy < 60) {
+            p.attack.hitSet[oid] = true;
+            var dmg = p.attack.type === "kick" ? 16 : 10;
+            var kbX = p.attack.type === "kick" ? 3.2 : 2.1;
+            var kbY = p.attack.type === "kick" ? -2 : 0;
+            o.hp -= dmg;
+            o.kbx = (o.kbx || 0) + p.facing * kbX;
+            o.vy += kbY;
+            if (kbY < 0) o.grounded = false;
+            var hitX = o.x, hitY = o.y - 14;
+            var isKick = p.attack.type === "kick";
+            HitStop.trigger(isKick ? 55 : 35);
+            Camera.addTrauma(isKick ? 0.5 : 0.32);
+            Camera.zoomImpulse(0.03);
+            Particles.punchSparks(hitX, hitY, p.facing, colorFor(p.id));
+            ScreenFX.impactStreak(hitX, hitY, p.facing);
+            o.hitStunT = 180; o.hitDir = p.facing;
+            if (o.hp <= 0) eliminate(o);
+          }
+        });
+      }
+      if (p.attack.t <= 0) p.attack = null;
+    }
+    if (p.attackCooldown > 0) p.attackCooldown -= dt;
+  }
+
+  /* ---------------------------------------------------------------- rendering (shared) */
+  function drawPlayer(p) {
+    if (!p.alive && phase !== "lobby" && p.deathFadeT <= 0) return;
+    var color = colorFor(p.id);
+    if (p.attack) {
+      Trails.push(p, performance.now());
+      Trails.draw(ctx, p, function (gctx, ghost) { drawStickman(gctx, ghost, color); });
+    } else if (p._trail) { Trails.clear(p); }
+
+    var fading = !p.alive && p.deathFadeT > 0;
+    if (fading) ctx.globalAlpha = clamp(p.deathFadeT / 420, 0, 1);
+    var rig = drawStickman(ctx, p, color);
+    var headY = rig.headY;
+    if (fading) { ctx.globalAlpha = 1; return; }
+
+    if (phase === "fight" || phase === "fightIntro" || phase === "roundEnd") {
+      var bw = 40;
+      ctx.fillStyle = "rgba(0,0,0,.5)"; ctx.fillRect(p.x - bw / 2, headY - 24, bw, 5);
+      ctx.fillStyle = color; ctx.fillRect(p.x - bw / 2, headY - 24, bw * Math.max(0, p.hp) / 100, 5);
+    }
+    ctx.fillStyle = "rgba(255,255,255,.7)";
+    ctx.font = "10px Chakra Petch, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(nameFor(p.id), p.x, headY - 30);
+  }
+
+  /* ================================================================== HOST loop */
+  var last = performance.now();
+  var broadcastAccum = 0;
+
+  function hostSnapshot() {
+    var pl = {};
+    roster.forEach(function (id) {
+      var p = players[id];
+      if (!p) return;
+      pl[id] = {
+        x: p.x, y: p.y, facing: p.facing, alive: p.alive, hp: p.hp, grounded: p.grounded,
+        walkCycle: p.walkCycle, idleT: p.idleT, squash: p.squash, hitStunT: p.hitStunT, hitDir: p.hitDir,
+        jumpAnticT: p.jumpAnticT, deathFadeT: p.deathFadeT,
+        attack: p.attack ? { type: p.attack.type, t: p.attack.t, dur: p.attack.dur } : null,
+        vy: p.vy,
+      };
+    });
+    return {
+      phase: phase, round: currentRound, totalRounds: totalRounds,
+      map: currentMap, roster: roster, scores: scores, players: pl,
+      names: names, colors: colors,
+    };
+  }
+
+  function hostLoop(now) {
+    var realDt = Math.min(40, now - last);
+    last = now;
+    HitStop.update(realDt);
+    var frozen = HitStop.active();
+    var dt = frozen ? 0 : realDt;
+
+    if (!frozen) {
+      var damageEnabled = phase === "fight";
+      var idsToStep = phase === "lobby" ? Object.keys(players) : roster;
+      idsToStep.forEach(function (id) { stepPlayer(players[id], dt, damageEnabled); });
+
+      if (phase === "fightIntro") { phaseTimer -= dt; if (phaseTimer <= 0) { phase = "fight"; Camera.zoomImpulse(0.04); } }
+      else if (phase === "roundEnd") { phaseTimer -= dt; if (phaseTimer <= 0) nextRound(); }
+
+      Camera.update(dt); Particles.update(dt); ScreenFX.update(dt);
+    }
+
+    Camera.begin(ctx, W, H);
+    drawMap(currentMap, now, dt);
+    roster.forEach(function (id) { if (players[id]) drawPlayer(players[id]); });
+    Particles.draw(ctx);
+    Camera.end(ctx);
+    ScreenFX.drawVignette(ctx, W, H);
+    ScreenFX.draw(ctx, W, H);
+
+    if (phase !== "lobby") {
+      broadcastAccum += realDt;
+      if (broadcastAccum >= 50) { broadcastAccum = 0; NetHost.broadcast(hostSnapshot()); }
+    }
+
+    requestAnimationFrame(hostLoop);
+  }
+
+  function drawMap(map, tMs, dt) { World.draw(ctx, W, H, map, Camera, tMs, dt); }
+
+  /* ---------------------------------------------------------------- host: keyboard + net wiring */
+  function isTyping() {
+    var a = document.activeElement;
+    return a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA");
+  }
+  var HOST_KEYS = { a: "left", d: "right", " ": "jump", p: "punch" };
+
+  function startAsHost() {
+    role = "host";
+    myId = HOST_ID;
+    names[HOST_ID] = "Host"; colors[HOST_ID] = PLAYER_COLORS[HOST_ID];
+    ensurePlayer(HOST_ID);
+    renderHostRoster();
+
+    NetHost.onGuestJoin(function (guestId, nickname) { hostAddGuest(guestId, nickname); });
+    NetHost.onGuestLeave(function (guestId) {
+      if (players[guestId] && players[guestId].alive && phase !== "lobby") eliminate(players[guestId]);
+      hostRemoveGuest(guestId);
+    });
+    NetHost.onGuestInput(function (guestId, data) {
+      var p = ensurePlayer(guestId);
+      if (data.k === "left") p.input.left = data.d;
+      if (data.k === "right") p.input.right = data.d;
+      if (data.k === "jump" && data.d) p.jumpEdge = true;
+      if (data.k === "punch" && data.d) p.punchEdge = true;
+    });
+
+    window.addEventListener("keydown", function (e) {
+      if (isTyping() || role !== "host") return;
+      var action = HOST_KEYS[e.key.toLowerCase()];
+      if (!action) return;
+      e.preventDefault();
+      if (e.repeat && (action === "jump" || action === "punch")) return;
+      var p = ensurePlayer(HOST_ID);
+      if (action === "left") p.input.left = true;
+      else if (action === "right") p.input.right = true;
+      else if (action === "jump") p.jumpEdge = true;
+      else if (action === "punch") p.punchEdge = true;
+    });
+    window.addEventListener("keyup", function (e) {
+      if (isTyping() || role !== "host") return;
+      var action = HOST_KEYS[e.key.toLowerCase()];
+      if (action !== "left" && action !== "right") return;
+      var p = ensurePlayer(HOST_ID);
+      if (action === "left") p.input.left = false;
+      else p.input.right = false;
+    });
+
+    requestAnimationFrame(hostLoop);
+  }
+
+  /* ================================================================== GUEST: pure renderer */
+  var guestState = null;
+  var guestRoomCode = null;
+
+  function guestLoop() {
+    if (guestState) {
+      var s = guestState;
+      if (s.yourId != null) myId = s.yourId;
+      names = s.names; colors = s.colors;
+      phase = s.phase; currentRound = s.round; totalRounds = s.totalRounds;
+      currentMap = s.map; roster = s.roster; scores = s.scores;
+      players = {};
+      s.roster.forEach(function (id) {
+        var pd = s.players[id];
+        if (pd) players[id] = Object.assign({ id: id, x: 0, y: 0 }, pd);
+      });
+      document.getElementById("wrap").classList.toggle("playing", phase !== "lobby");
+      document.getElementById("roomCode").textContent = guestRoomCode || "----";
+      var rb = document.getElementById("roundBanner");
+      if (phase === "lobby") { rb.classList.remove("show"); }
+      else { rb.textContent = "RONDA " + currentRound + " / " + totalRounds + " — " + (currentMap ? currentMap.name : ""); rb.classList.add("show"); }
+      renderTopbar();
+      if (phase === "final" && !document.getElementById("finalScreen").classList.contains("show")) {
+        var ranked = roster.slice().sort(function (a, b) { return (scores[b] || 0) - (scores[a] || 0); });
+        showFinal(ranked);
+      } else if (phase !== "final") {
+        document.getElementById("finalScreen").classList.remove("show");
+      }
+
+      Camera.update(16); Particles.update(16); ScreenFX.update(16);
+      Camera.begin(ctx, W, H);
+      if (currentMap) drawMap(currentMap, performance.now(), 16);
+      roster.forEach(function (id) { if (players[id]) drawPlayer(players[id]); });
+      Particles.draw(ctx);
+      Camera.end(ctx);
+      ScreenFX.drawVignette(ctx, W, H);
+      ScreenFX.draw(ctx, W, H);
+    }
+    requestAnimationFrame(guestLoop);
+  }
+
+  var GUEST_KEYS = { a: "left", d: "right", " ": "jump", p: "punch" };
+
+  function startAsGuest(code, nickname) {
+    role = "guest";
+    myNickname = nickname;
+    guestRoomCode = code.toUpperCase().trim();
+    NetGuest.onState(function (data) { guestState = data; });
+    NetGuest.onOpen(function () {
+      document.getElementById("choiceCard").style.display = "none";
+      document.getElementById("joinCard").style.display = "none";
+      document.getElementById("waitCard").style.display = "block";
+    });
+    NetGuest.onError(function (type) {
+      document.getElementById("joinErr").textContent = "No se pudo conectar (" + type + "). Revisá el código.";
+    });
+    NetGuest.onClose(function () {
+      document.getElementById("joinErr").textContent = "Se cerró la sala.";
+    });
+
+    window.addEventListener("keydown", function (e) {
+      if (isTyping() || role !== "guest") return;
+      var action = GUEST_KEYS[e.key.toLowerCase()];
+      if (!action) return;
+      e.preventDefault();
+      if (e.repeat && (action === "jump" || action === "punch")) return;
+      NetGuest.sendInput({ k: action, d: true });
+    });
+    window.addEventListener("keyup", function (e) {
+      if (isTyping() || role !== "guest") return;
+      var action = GUEST_KEYS[e.key.toLowerCase()];
+      if (action !== "left" && action !== "right") return;
+      NetGuest.sendInput({ k: action, d: false });
+    });
+
+    NetGuest.join(code, nickname);
+    requestAnimationFrame(guestLoop);
+  }
+
+  /* ---------------------------------------------------------------- lobby UI wiring */
+  document.getElementById("createBtn").addEventListener("click", function () {
+    document.getElementById("choiceCard").style.display = "none";
+    document.getElementById("hostCard").style.display = "block";
+    document.getElementById("backLink").style.display = "inline";
+    document.getElementById("hostCode").textContent = "…";
+    NetHost.create(function (code) {
+      document.getElementById("hostCode").textContent = code;
+      document.getElementById("roomCode").textContent = code;
+      startAsHost();
+    }, function (err) {
+      document.getElementById("hostCode").textContent = "ERROR";
+    });
+  });
+
+  document.getElementById("joinShowBtn").addEventListener("click", function () {
+    document.getElementById("choiceCard").style.display = "none";
+    document.getElementById("joinCard").style.display = "block";
+    document.getElementById("backLink").style.display = "inline";
+  });
+
+  document.getElementById("backLink").addEventListener("click", function (e) {
+    e.preventDefault();
+    document.getElementById("hostCard").style.display = "none";
+    document.getElementById("joinCard").style.display = "none";
+    document.getElementById("choiceCard").style.display = "block";
+    document.getElementById("backLink").style.display = "none";
+  });
+
+  document.getElementById("joinBtn").addEventListener("click", function () {
+    var code = document.getElementById("codeInput").value;
+    var nick = document.getElementById("nickInput").value || "Jugador";
+    if (!code || code.trim().length < 4) {
+      document.getElementById("joinErr").textContent = "Ingresá el código de 4 letras.";
+      return;
+    }
+    document.getElementById("joinErr").textContent = "Conectando…";
+    startAsGuest(code, nick);
+  });
+
+  document.getElementById("minusBtn").addEventListener("click", function () {
+    totalRounds = Math.max(1, totalRounds - 1);
+    document.getElementById("roundsN").textContent = totalRounds;
+  });
+  document.getElementById("plusBtn").addEventListener("click", function () {
+    totalRounds = Math.min(20, totalRounds + 1);
+    document.getElementById("roundsN").textContent = totalRounds;
+  });
+  document.getElementById("startBtn").addEventListener("click", function () { startMatch(totalRounds); });
+  document.getElementById("playAgainBtn").addEventListener("click", function () {
+    if (role === "host") {
+      resetToLobby();
+      document.getElementById("wrap").classList.remove("playing");
+      document.getElementById("hostCard").style.display = "block";
+    }
+  });
+})();
+</script>
 </body>
 </html>
