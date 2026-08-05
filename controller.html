@@ -23,11 +23,17 @@
   .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--me); box-shadow: 0 0 10px var(--me); flex-shrink: 0; }
   #badge .name { font-weight: 700; font-size: 12px; }
   #badge .status { color: var(--text-faint); font-size: 10px; }
-  #muteToggle {
+  #muteToggle, #snailToggle {
     pointer-events: auto; width: 26px; height: 26px; border-radius: 50%; margin-left: 4px;
     border: 1px solid var(--line); background: rgba(10,12,24,.6); color: var(--text-dim); font-size: 12px;
   }
   #muteToggle.active { color: var(--hot); border-color: var(--hot); }
+  /* Host-only, so it stays out of everyone else's way — same top-row badge as the mute
+     button rather than buried in the lobby panel, since the host may want to flip it on
+     mid-match the moment the TV starts struggling, not just before the round begins. */
+  #snailToggle { display: none; font-size: 14px; }
+  #snailToggle.show { display: inline-flex; align-items: center; justify-content: center; }
+  #snailToggle.on { color: var(--glow); border-color: var(--glow); box-shadow: 0 0 8px color-mix(in srgb, var(--glow) 50%, transparent); }
 
   /* -------- game controls: full-screen, split left (move) / right (actions) -------- */
   #controls {
@@ -70,17 +76,6 @@
     color: var(--text); font-size: 20px; font-family: var(--font-display);
   }
   .stepper .n { font-family: var(--font-mono); font-size: 24px; color: var(--glow); width: 44px; text-align: center; }
-  #snailRow { display: flex; align-items: center; gap: 10px; }
-  #snailToggle {
-    width: 46px; height: 26px; border-radius: 999px; border: 1px solid var(--line); background: var(--ink-600);
-    position: relative; flex: none;
-  }
-  #snailToggle::after {
-    content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%;
-    background: var(--text-dim); transition: transform .15s ease, background .15s ease;
-  }
-  #snailToggle.on { border-color: var(--glow); }
-  #snailToggle.on::after { transform: translateX(20px); background: var(--glow); }
   #startBtn {
     width: 100%; padding: 11px; border-radius: 999px; border: none; background: var(--hot); color: #fff;
     font-family: var(--font-display); font-weight: 700; font-size: 14px; box-shadow: var(--bloom-hot);
@@ -137,6 +132,7 @@
     <div class="status" id="status">Conectando…</div>
   </div>
   <button id="muteToggle" title="Silenciar">♪</button>
+  <button id="snailToggle" title="Modo caracol (para TVs lentas)" role="switch" aria-checked="false">🐌</button>
 </div>
 
 <div id="controls">
@@ -156,10 +152,6 @@
     <button id="minusBtn">−</button>
     <div class="n" id="roundsN">3</div>
     <button id="plusBtn">+</button>
-  </div>
-  <div id="snailRow">
-    <button id="snailToggle" role="switch" aria-checked="false"></button>
-    <div class="lbl" style="letter-spacing:normal; text-align:left;">Modo caracol<br><span style="opacity:.7">para TVs lentas</span></div>
   </div>
   <button id="startBtn">Comenzar partida</button>
 </div>
@@ -201,6 +193,9 @@
     isMaster = ac.getDeviceId() === ac.getMasterControllerDeviceId();
     document.getElementById("hostPanel").classList.toggle("show", isMaster && lastPhase === "lobby");
     document.getElementById("waitPanel").classList.toggle("show", !isMaster && lastPhase === "lobby");
+    // lives in the top badge rather than the lobby panel, so it stays reachable — and stays
+    // a host-only control — through the whole match, not just before it starts.
+    document.getElementById("snailToggle").classList.toggle("show", isMaster);
   }
 
   document.getElementById("minusBtn").addEventListener("click", function () {
@@ -218,6 +213,9 @@
     snailMode = !snailMode;
     this.classList.toggle("on", snailMode);
     this.setAttribute("aria-checked", String(snailMode));
+    // applied on the TV immediately, not just at match start, so the host can turn it on
+    // mid-game the moment they notice the TV struggling.
+    ac.message(FreeConsole.SCREEN, { t: "snail", on: snailMode });
   });
   document.getElementById("startBtn").addEventListener("click", function () {
     AudioManager.on.uiClick();
@@ -255,6 +253,14 @@
   bindHold(document.getElementById("rightBtn"), "right");
   bindHold(document.getElementById("jumpBtn"), "jump");
   bindHold(document.getElementById("punchBtn"), "punch");
+
+  /* -------- resync on wake: a locked/backgrounded phone misses whatever "phase" broadcast
+     fired while it was asleep (e.g. the host starting the match), and nothing re-sends it on
+     its own — so it can come back showing "esperando..." forever even though the fight is
+     already on. Ask the screen for the current state the moment the tab is visible again. -------- */
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") ac.message(FreeConsole.SCREEN, { t: "syncRequest" });
+  });
 
   /* -------- mute toggle -------- */
   (function () {

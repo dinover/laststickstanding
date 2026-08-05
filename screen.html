@@ -177,7 +177,9 @@ window.SNAIL_MODE = false;
   var canvas = document.getElementById("c");
   var ctx = canvas.getContext("2d");
   var W = 960, H = 540;
-  var GRAVITY_UP = 0.46, GRAVITY_DOWN = 0.34, SPEED = 4.3, JUMP_V = -14.2;
+  // Gravity scaled up ~1.3x (and JUMP_V by sqrt(1.3)) so jumps reach the same apex height
+  // but rise/fall noticeably faster — less floaty hang time at the top, snappier landings.
+  var GRAVITY_UP = 0.6, GRAVITY_DOWN = 0.44, SPEED = 4.3, JUMP_V = -16.2;
   var PW = 13, PH = 52; // half-width, height
   var PUNCH_MS = 230, KICK_MS = 280, ATTACK_COOLDOWN = 380;
 
@@ -249,12 +251,16 @@ window.SNAIL_MODE = false;
     return players[id];
   }
 
-  function broadcastPhase() {
-    ac.broadcast({
+  function phaseSnapshot() {
+    return {
       t: "phase", phase: phase, rounds: totalRounds, round: currentRound,
       alive: Object.keys(players).filter(function (k) { return players[k].alive; }).map(Number),
       mapName: currentMap.name,
-    });
+    };
+  }
+
+  function broadcastPhase() {
+    ac.broadcast(phaseSnapshot());
   }
 
   /* ---------------------------------------------------------------- topbar UI */
@@ -276,7 +282,17 @@ window.SNAIL_MODE = false;
   /* ---------------------------------------------------------------- lobby / round flow */
   function startMatch(rounds) {
     totalRounds = Math.max(1, Math.min(20, rounds || 3));
-    roster = ac.getControllerDeviceIds().slice();
+    // Union getControllerDeviceIds() with whoever's already tracked in players{}, rather than
+    // trusting the SDK's device-table snapshot alone: that table is refreshed by a "devices"
+    // broadcast from the shell, and on a real network a guest who joined and moved around in
+    // the lobby a moment ago can still be missing from it if the host hits start before that
+    // broadcast lands — dropping them from the roster right as the match begins, which reads
+    // as "everyone but the host disappeared". Anyone already in players{} got there through
+    // onConnect or an actual "in" input message, so they're real regardless of this snapshot.
+    var rosterSet = {};
+    ac.getControllerDeviceIds().forEach(function (id) { rosterSet[id] = true; });
+    Object.keys(players).forEach(function (id) { rosterSet[id] = true; });
+    roster = Object.keys(rosterSet).map(Number);
     scores = {};
     roster.forEach(function (id) { scores[id] = 0; });
     currentRound = 0;
@@ -633,6 +649,10 @@ window.SNAIL_MODE = false;
       if (phase === "lobby") renderTopbar();
       return;
     }
+    if (data.t === "snail" && device_id === ac.getMasterControllerDeviceId()) {
+      window.SNAIL_MODE = !!data.on;
+      return;
+    }
     if (data.t === "start" && device_id === ac.getMasterControllerDeviceId() && phase === "lobby") {
       window.SNAIL_MODE = !!data.snail;
       startMatch(data.rounds);
@@ -644,6 +664,15 @@ window.SNAIL_MODE = false;
     }
     if (data.t === "roundsPreview" && device_id === ac.getMasterControllerDeviceId() && phase === "lobby") {
       ac.broadcast({ t: "roundsPreview", n: data.n });
+    }
+    if (data.t === "syncRequest") {
+      // A phone that was locked/backgrounded missed whatever "phase" broadcast fired while it
+      // was asleep (e.g. the host started the match) — it reconnects to the same room but
+      // never gets that push replayed, so it's stuck showing "esperando...". The controller
+      // asks for a resync the moment its screen wakes up; answer with the current snapshot
+      // targeted at just that device instead of waiting for the next natural broadcast.
+      ac.message(device_id, phaseSnapshot());
+      return;
     }
   };
 
