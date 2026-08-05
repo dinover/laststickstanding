@@ -292,7 +292,7 @@
       if (alive.length === 1) eliminationOrder.push(alive[0]);
       var n = eliminationOrder.length;
       eliminationOrder.forEach(function (id, idx) {
-        var placement = n - idx; // last pushed (survivor) = placement 1
+        var placement = idx + 1; // first eliminated = 1 point, survivor = n points
         scores[id] = (scores[id] || 0) + placement;
       });
       phase = "roundEnd";
