@@ -94,6 +94,30 @@
   .rankRow .sc { font-family: var(--font-mono); color: var(--glow); }
   .rankRow.win { border-color: var(--amber); box-shadow: 0 0 18px rgba(255,194,71,.25); }
   #dancer { width: 140px; height: 160px; }
+
+  #audioPanel {
+    position: absolute; top: 14px; right: 18px; z-index: 6;
+    font-family: var(--font-mono); color: var(--text-dim); font-size: 11px;
+  }
+  #audioToggle {
+    width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
+    background: rgba(10,12,24,.6); color: var(--text-dim); cursor: pointer; font-size: 15px;
+  }
+  #audioMenu {
+    display: none; position: absolute; top: 42px; right: 0; width: 190px;
+    background: rgba(10,12,24,.92); border: 1px solid var(--line); border-radius: var(--radius-sm, 10px);
+    padding: 12px 14px; backdrop-filter: blur(8px);
+  }
+  #audioMenu.show { display: block; }
+  #audioMenu label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; letter-spacing: .04em; }
+  #audioMenu label span { width: 46px; flex-shrink: 0; }
+  #audioMenu input[type="range"] { flex: 1; accent-color: var(--glow); }
+  #audioMenu .muteRow { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
+  #audioMenu button#muteBtn {
+    background: transparent; border: 1px solid var(--line); color: var(--text-dim);
+    border-radius: 999px; padding: 4px 10px; font-family: var(--font-mono); font-size: 11px; cursor: pointer;
+  }
+  #audioMenu button#muteBtn.active { color: var(--hot); border-color: var(--hot); }
 </style>
 </head>
 <body>
@@ -101,6 +125,24 @@
 <div id="wrap">
   <canvas id="c" width="960" height="540"></canvas>
   <div id="room">SALA <b id="roomCode">----</b></div>
+  <div id="audioPanel">
+    <button id="audioToggle" title="Audio">♪</button>
+    <div id="audioMenu">
+      <label>SFX
+        <input type="range" id="sfxRange" min="0" max="1" step="0.01" />
+      </label>
+      <label>Música
+        <input type="range" id="musicRange" min="0" max="1" step="0.01" />
+      </label>
+      <label>Master
+        <input type="range" id="masterRange" min="0" max="1" step="0.01" />
+      </label>
+      <div class="muteRow">
+        <span>Silenciar</span>
+        <button id="muteBtn">OFF</button>
+      </div>
+    </div>
+  </div>
   <div id="topbar"></div>
   <div id="roundBanner"></div>
   <div id="overlay"><div id="fightText">FIGHT!</div></div>
@@ -119,9 +161,11 @@
 <script src="stickman.js"></script>
 <script src="fx.js"></script>
 <script src="world.js"></script>
+<script src="audio.js"></script>
 <script>
 (function () {
   "use strict";
+  AudioManager.armUnlock();
   var ac = new FreeConsole();
   var canvas = document.getElementById("c");
   var ctx = canvas.getContext("2d");
@@ -269,6 +313,7 @@
     ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
     renderTopbar();
     broadcastPhase();
+    AudioManager.on.roundStart();
   }
 
   function eliminate(p) {
@@ -282,6 +327,9 @@
     ScreenFX.flash(0.5);
     Particles.eliminationBurst(p.x, p.y - 24, ac.getPlayerColor(p.id));
     renderTopbar();
+    AudioManager.on.ko();
+    var aliveN = roster.filter(function (id) { return players[id] && players[id].alive; }).length;
+    if (aliveN === 2) AudioManager.on.clutch();
     checkRoundEnd();
   }
 
@@ -321,6 +369,7 @@
     if (winner !== undefined) drawDancer(ac.getPlayerColor(winner));
     document.getElementById("finalScreen").classList.add("show");
     broadcastPhase();
+    if (winner !== undefined) AudioManager.on.victory(); else AudioManager.on.gameOver();
   }
 
   function resetToLobby() {
@@ -334,6 +383,7 @@
     currentRound = 0;
     currentMap = MAP0;
     broadcastPhase();
+    AudioManager.on.toLobby();
   }
 
   var dancerT = 0, dancerRaf = null;
@@ -369,7 +419,7 @@
     else if (p.input.right && !p.input.left) { p.vx = SPEED; p.facing = 1; }
     else p.vx = 0;
 
-    if (p.jumpEdge && p.grounded) { p.vy = JUMP_V; p.grounded = false; p.jumpAnticT = 90; }
+    if (p.jumpEdge && p.grounded) { p.vy = JUMP_V; p.grounded = false; p.jumpAnticT = 90; AudioManager.on.jump(); }
     p.jumpEdge = false;
 
     if (p.punchEdge && p.attackCooldown <= 0) {
@@ -377,6 +427,7 @@
       var dur = airborne ? KICK_MS : PUNCH_MS;
       p.attack = { type: airborne ? "kick" : "punch", t: dur, dur: dur, hitSet: {} };
       p.attackCooldown = ATTACK_COOLDOWN;
+      AudioManager.on.swing(p.attack.type);
     }
     p.punchEdge = false;
 
@@ -405,6 +456,7 @@
           var landStrength = clamp(p.vy / 14, 0, 1);
           Camera.addTrauma(landStrength * 0.22);
           Particles.landingDust(p.x, p.y, p.facing, landStrength, "rgba(255,255,255,.55)");
+          AudioManager.on.land(landStrength);
         }
         p.vy = 0; p.grounded = true;
       }
@@ -445,6 +497,7 @@
             Camera.zoomImpulse(0.03);
             Particles.punchSparks(hitX, hitY, p.facing, ac.getPlayerColor(p.id));
             ScreenFX.impactStreak(hitX, hitY, p.facing);
+            AudioManager.on.hit(p.attack.type);
             o.hitStunT = 180;
             o.hitDir = p.facing;
 
@@ -513,7 +566,7 @@
 
       if (phase === "fightIntro") {
         phaseTimer -= dt;
-        if (phaseTimer <= 0) { phase = "fight"; Camera.zoomImpulse(0.04); broadcastPhase(); }
+        if (phaseTimer <= 0) { phase = "fight"; Camera.zoomImpulse(0.04); broadcastPhase(); AudioManager.on.fightBegin(); }
       } else if (phase === "roundEnd") {
         phaseTimer -= dt;
         if (phaseTimer <= 0) nextRound();
@@ -583,6 +636,33 @@
 
   ac.onActivePlayersChange = function () {};
   renderTopbar();
+
+  /* ---------------------------------------------------------------- audio panel */
+  (function () {
+    var s = AudioManager.getSettings();
+    var sfxRange = document.getElementById("sfxRange");
+    var musicRange = document.getElementById("musicRange");
+    var masterRange = document.getElementById("masterRange");
+    var muteBtn = document.getElementById("muteBtn");
+    sfxRange.value = s.sfx;
+    musicRange.value = s.music;
+    masterRange.value = s.master;
+    muteBtn.textContent = s.muted ? "ON" : "OFF";
+    muteBtn.classList.toggle("active", s.muted);
+
+    document.getElementById("audioToggle").addEventListener("click", function () {
+      document.getElementById("audioMenu").classList.toggle("show");
+    });
+    sfxRange.addEventListener("input", function () { AudioManager.setSfxVolume(parseFloat(sfxRange.value)); });
+    musicRange.addEventListener("input", function () { AudioManager.setMusicVolume(parseFloat(musicRange.value)); });
+    masterRange.addEventListener("input", function () { AudioManager.setMasterVolume(parseFloat(masterRange.value)); });
+    muteBtn.addEventListener("click", function () {
+      var muted = !AudioManager.getSettings().muted;
+      AudioManager.setMuted(muted);
+      muteBtn.textContent = muted ? "ON" : "OFF";
+      muteBtn.classList.toggle("active", muted);
+    });
+  })();
 })();
 </script>
 </body>

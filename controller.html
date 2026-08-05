@@ -23,6 +23,11 @@
   .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--me); box-shadow: 0 0 10px var(--me); flex-shrink: 0; }
   #badge .name { font-weight: 700; font-size: 12px; }
   #badge .status { color: var(--text-faint); font-size: 10px; }
+  #muteToggle {
+    pointer-events: auto; width: 26px; height: 26px; border-radius: 50%; margin-left: 4px;
+    border: 1px solid var(--line); background: rgba(10,12,24,.6); color: var(--text-dim); font-size: 12px;
+  }
+  #muteToggle.active { color: var(--hot); border-color: var(--hot); }
 
   /* -------- game controls: full-screen, split left (move) / right (actions) -------- */
   #controls {
@@ -120,6 +125,7 @@
     <div class="name" id="nm">Jugador</div>
     <div class="status" id="status">Conectando…</div>
   </div>
+  <button id="muteToggle" title="Silenciar">♪</button>
 </div>
 
 <div id="controls">
@@ -158,9 +164,11 @@
 </div>
 
 <script src="https://freeconsole.vercel.app/sdk.js"></script>
+<script src="audio.js"></script>
 <script>
 (function () {
   "use strict";
+  AudioManager.armUnlock();
   var ac = new FreeConsole({ orientation: FreeConsole.ORIENTATION_LANDSCAPE });
   var myColor = "#35f0e0";
   var isMaster = false;
@@ -180,17 +188,21 @@
   }
 
   document.getElementById("minusBtn").addEventListener("click", function () {
+    AudioManager.on.uiClick();
     rounds = Math.max(1, rounds - 1);
     document.getElementById("roundsN").textContent = rounds;
   });
   document.getElementById("plusBtn").addEventListener("click", function () {
+    AudioManager.on.uiClick();
     rounds = Math.min(20, rounds + 1);
     document.getElementById("roundsN").textContent = rounds;
   });
   document.getElementById("startBtn").addEventListener("click", function () {
+    AudioManager.on.uiClick();
     ac.message(FreeConsole.SCREEN, { t: "start", rounds: rounds });
   });
   document.getElementById("playAgainBtn").addEventListener("click", function () {
+    AudioManager.on.uiClick();
     ac.message(FreeConsole.SCREEN, { t: "restart" });
   });
 
@@ -221,6 +233,18 @@
   bindHold(document.getElementById("rightBtn"), "right");
   bindHold(document.getElementById("jumpBtn"), "jump");
   bindHold(document.getElementById("punchBtn"), "punch");
+
+  /* -------- mute toggle -------- */
+  (function () {
+    var btn = document.getElementById("muteToggle");
+    var muted = AudioManager.getSettings().muted;
+    btn.classList.toggle("active", muted);
+    btn.addEventListener("click", function () {
+      muted = !muted;
+      AudioManager.setMuted(muted);
+      btn.classList.toggle("active", muted);
+    });
+  })();
 
   /* -------- SDK callbacks -------- */
   ac.onReady = function () {
