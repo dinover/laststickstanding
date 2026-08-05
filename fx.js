@@ -196,7 +196,7 @@ var Particles = (function () {
       var a = Math.max(0, p.life / p.maxLife);
       ctx.globalAlpha = a;
       ctx.fillStyle = p.color;
-      if (typeof SNAIL_MODE === "undefined" || !SNAIL_MODE) {
+      if (!window.SNAIL_MODE) {
         ctx.shadowColor = p.color;
         ctx.shadowBlur = p.glow;
       }
@@ -235,7 +235,7 @@ var Trails = {
   draw: function (ctx, p, drawFn) {
     // ghost trails redraw the full stickman 1-3x per attacking player, per frame — skip
     // them entirely in snail mode, they're pure juice with no gameplay meaning.
-    if (typeof SNAIL_MODE !== "undefined" && SNAIL_MODE) return;
+    if (window.SNAIL_MODE) return;
     if (!p._trail || !p._trail.length) return;
     var n = p._trail.length;
     for (var i = 0; i < n; i++) {

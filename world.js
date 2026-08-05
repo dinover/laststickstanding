@@ -4,10 +4,10 @@
    produces the platform rectangles it consumes and draws things around them. Plain globals,
    same style as fx.js / stickman.js (no bundler, no modules). */
 
-/* ---- Modo caracol: perf toggle for low-end TV browsers. When on, every hot-path shadowBlur
-   is skipped and per-frame gradients are cached/reused instead of recreated. A single global
-   flag so any file can check it without wiring a config object through every draw call. */
-var SNAIL_MODE = (typeof window !== "undefined" && window.SNAIL_MODE) || false;
+/* ---- Modo caracol: perf toggle for low-end TV browsers, flipped on by screen.html's own
+   frame-time monitor. Every hot-path shadowBlur is skipped and per-frame gradients are
+   cached/reused instead of recreated. Read window.SNAIL_MODE directly (not a cached copy) so
+   this file reacts the instant the monitor engages it mid-round, not just on next page load. */
 
 /* ==================================================================== reachability */
 /* Given the game's own movement constants, decide whether a straight jump can carry a
@@ -452,7 +452,7 @@ var PlatformRenderer = (function () {
     var style = biome.platform;
     // soft drop shadow beneath the platform (snail mode: flat fill, no software blur)
     ctx.save();
-    if (!SNAIL_MODE) {
+    if (!window.SNAIL_MODE) {
       ctx.shadowColor = "rgba(0,0,0,.4)";
       ctx.shadowBlur = 10;
       ctx.shadowOffsetY = 6;
@@ -476,7 +476,7 @@ var PlatformRenderer = (function () {
 
     // glowing accent edge
     ctx.save();
-    if (!SNAIL_MODE) {
+    if (!window.SNAIL_MODE) {
       ctx.shadowColor = style.glow;
       ctx.shadowBlur = 8;
     }
@@ -532,7 +532,7 @@ var Decorations = (function () {
       // tiny pulsing sign light near an edge
       var blink = 0.5 + Math.sin(t * 0.004 + seed) * 0.5;
       ctx.save();
-      if (!SNAIL_MODE) {
+      if (!window.SNAIL_MODE) {
         ctx.shadowColor = "rgba(255,46,214,.8)";
         ctx.shadowBlur = 8 * blink;
       }
@@ -594,7 +594,7 @@ var EnvironmentFX = (function () {
   }
 
   function update(dt, biome, W, H) {
-    if (SNAIL_MODE) return; // ambient dust/leaves/snow are pure atmosphere, skip on low-end TVs
+    if (window.SNAIL_MODE) return; // ambient dust/leaves/snow are pure atmosphere, skip on low-end TVs
     emit(biome, W, H, dt);
     for (var i = 0; i < POOL_SIZE; i++) {
       var p = pool[i];
@@ -643,7 +643,7 @@ var Hazards = (function () {
         var n = Math.max(2, Math.floor(hz.w / 12));
         var step = hz.w / n;
         ctx.save();
-        if (!SNAIL_MODE) {
+        if (!window.SNAIL_MODE) {
           ctx.shadowColor = "rgba(255,60,60,.6)";
           ctx.shadowBlur = 6;
         }
