@@ -8,8 +8,8 @@ var DEG = Math.PI / 180;
 function smoothstep(u) { return u * u * (3 - 2 * u); }
 function lerp(a, b, t) { return a + (b - a) * t; }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-function stage(t, from, to) { return smoothstep(clamp((t - from) / (to - from), 0, 1)); }
 
+// Loops: t=1 wraps back to t=0, for cyclic animations like running.
 function sampleTable(table, phase) {
   var t = ((phase % 1) + 1) % 1;
   for (var i = 0; i < table.length - 1; i++) {
@@ -22,6 +22,20 @@ function sampleTable(table, phase) {
   return { a: table[0].a, b: table[0].b };
 }
 
+// Doesn't loop: t clamps to [0,1], for one-shot animations like a punch or kick, where
+// t=1 (the end of the strike) must stay the end pose rather than wrapping to the start.
+function sampleTableOnce(table, phase) {
+  var t = clamp(phase, 0, 1);
+  for (var i = 0; i < table.length - 1; i++) {
+    var k0 = table[i], k1 = table[i + 1];
+    if (t >= k0.t && t <= k1.t) {
+      var u = k1.t === k0.t ? 0 : smoothstep((t - k0.t) / (k1.t - k0.t));
+      return { a: lerp(k0.a, k1.a, u), b: lerp(k0.b, k1.b, u) };
+    }
+  }
+  return { a: table[table.length - 1].a, b: table[table.length - 1].b };
+}
+
 /* Eight breakpoints per stride, tuned for a RUN (fighters closing distance), not a stroll:
    bigger reach front-to-back, a sharper heel-to-butt knee snap, and a real airborne-looking
    tuck at the top of the swing. A single sine gives a metronome; this gives a sprint. */
@@ -30,17 +44,73 @@ var LEG_KEYS = [
   { t: 0.14, a: 16, b: 6 },
   { t: 0.32, a: -18, b: 8 },
   { t: 0.48, a: -34, b: 12 },
-  { t: 0.60, a: -14, b: 74 },
-  { t: 0.76, a: 16, b: 40 },
+  { t: 0.60, a: -14, b: 51 },
+  { t: 0.76, a: 16, b: 33 },
   { t: 0.90, a: 32, b: 12 },
   { t: 1.00, a: 36, b: 4 },
 ];
 var ARM_KEYS = [
-  { t: 0.00, a: -36, b: 30 },
-  { t: 0.25, a: -6, b: 16 },
-  { t: 0.50, a: 32, b: 34 },
-  { t: 0.75, a: 4, b: 18 },
-  { t: 1.00, a: -36, b: 30 },
+  { t: 0.00, a: -22, b: 9 },
+  { t: 0.25, a: 65, b: -55 },
+  { t: 0.50, a: 36, b: -14 },
+  { t: 0.75, a: -95, b: 45 },
+  { t: 1.00, a: -12, b: 1 },
+];
+
+/* One-shot strikes, keyframed the same way as the run cycle but sampled with
+   sampleTableOnce() over the attack's 0..1 progress (t=0 is the moment the attack button
+   was pressed, t=1 is fully recovered) instead of looping. */
+var PUNCH_ARM_KEYS = [
+  { t: 0.00, a: -43, b: 100 },
+  { t: 0.20, a: -58, b: 76 },
+  { t: 0.40, a: 74, b: -75 },
+  { t: 0.55, a: 59, b: -29 },
+  { t: 0.62, a: 40, b: -40 },
+  { t: 0.80, a: 15, b: -11 },
+  { t: 1.00, a: -14, b: -4 },
+];
+var KICK_LEG_KEYS = [
+  { t: 0.00, a: 10, b: 14 },
+  { t: 0.20, a: 59, b: 73 },
+  { t: 0.40, a: 83, b: 66 },
+  { t: 0.50, a: 88, b: 17 },
+  { t: 0.60, a: 113, b: 0 },
+  { t: 0.68, a: 113, b: -1 },
+  { t: 0.85, a: 69, b: 5 },
+  { t: 1.00, a: 25, b: 41 },
+];
+
+/* Standing still: just two fixed poses (no time axis), gently modulated by the breathing
+   cycle at draw time. Kept as {a,b} pairs rather than a bare number so the editor can treat
+   them exactly like every other limb pose. */
+var IDLE_LEGS = [
+  { a: -23, b: -7 },
+  { a: 26, b: 27 },
+];
+var IDLE_ARMS = [
+  { a: 70, b: -74 },
+  { a: 50, b: -79 },
+];
+
+/* Jump: only two keyframes each — t=0 is the instant of launch (rising fast), t=1 is about
+   to land (falling fast). sampleTableOnce over the vy-derived 0..1 "how much of the way
+   through the air" value in between. Legs and arms are independent per side since they don't
+   mirror each other the way a stride does. */
+var JUMP_LEGA_KEYS = [
+  { t: 0.00, a: 18, b: 88 },
+  { t: 1.00, a: 10, b: 12 },
+];
+var JUMP_LEGB_KEYS = [
+  { t: 0.00, a: -4, b: 66 },
+  { t: 1.00, a: -14, b: 16 },
+];
+var JUMP_ARMA_KEYS = [
+  { t: 0.00, a: 168, b: 20 },
+  { t: 1.00, a: 46, b: 34 },
+];
+var JUMP_ARMB_KEYS = [
+  { t: 0.00, a: -146, b: 24 },
+  { t: 1.00, a: -22, b: 28 },
 ];
 
 /* angleDeg is UNSIGNED: positive always means "rotated toward the facing direction".
@@ -153,23 +223,18 @@ function drawStickman(ctx, p, color) {
   if (kicking) {
     // planted support leg takes a slight backward give, bracing the kick
     limbLeg(ctx, hipX, hipY, -14, 10, THIGH, SHIN, p.facing, 4.6, 3.4);
-    // three clean stages: raise the knee high and tucked, snap the shin out at body height,
-    // then pull it back in — instead of jumping straight to an extended leg.
-    var raise = stage(attackLin, 0, 0.4);
-    var throwT = stage(attackLin, 0.35, 0.68);
-    var retract = stage(attackLin, 0.75, 1);
-    var kHip = lerp(14, 48, raise) + lerp(0, 24, throwT) - lerp(0, 16, retract);
-    var kBend = lerp(14, 82, raise) - lerp(0, 96, throwT) + lerp(0, 55, retract);
-    limbLeg(ctx, hipX, hipY, kHip, kBend, THIGH, SHIN + 1, p.facing, 4.6, 3.4);
+    // kicking leg: keyframed across the strike (raise the knee, snap the shin out, retract)
+    var kk = sampleTableOnce(KICK_LEG_KEYS, attackLin);
+    limbLeg(ctx, hipX, hipY, kk.a, kk.b, THIGH, SHIN + 1, p.facing, 4.6, 3.4);
   } else if (!p.grounded) {
     var t = (clamp(p.vy / 9, -1, 1) + 1) / 2; // 0 = launching upward, 1 = falling fast
     // Rising: both knees pull up, shins tucking back behind the thighs (heel toward the
     // seat) for a tight, readable jump silhouette. Falling: legs stretch back out, reaching
     // down for the ground.
-    var hipA = lerp(18, 10, t), kneeA = lerp(88, 12, t);
-    var hipB = lerp(-4, -14, t), kneeB = lerp(66, 16, t);
-    limbLeg(ctx, hipX, hipY, hipA, kneeA, THIGH, SHIN, p.facing, 4.6, 3.4);
-    limbLeg(ctx, hipX, hipY, hipB, kneeB, THIGH, SHIN, p.facing, 4.6, 3.4);
+    var jla = sampleTableOnce(JUMP_LEGA_KEYS, t);
+    var jlb = sampleTableOnce(JUMP_LEGB_KEYS, t);
+    limbLeg(ctx, hipX, hipY, jla.a, jla.b, THIGH, SHIN, p.facing, 4.6, 3.4);
+    limbLeg(ctx, hipX, hipY, jlb.a, jlb.b, THIGH, SHIN, p.facing, 4.6, 3.4);
   } else if (running) {
     var legBack = sampleTable(LEG_KEYS, phaseNow);
     var legFront = sampleTable(LEG_KEYS, phaseNow + 0.5);
@@ -181,8 +246,8 @@ function drawStickman(ctx, p, color) {
     limbLeg(ctx, hipX, hipY, 14, 10, THIGH, SHIN, p.facing, 4.6, 3.4);
   } else {
     // fighting stance: staggered, knees bent and ready, not a flat-footed idle stand.
-    limbLeg(ctx, hipX, hipY, -11, 9, THIGH, SHIN, p.facing, 4.6, 3.4);
-    limbLeg(ctx, hipX, hipY, 10, 8, THIGH, SHIN, p.facing, 4.6, 3.4);
+    limbLeg(ctx, hipX, hipY, IDLE_LEGS[0].a, IDLE_LEGS[0].b, THIGH, SHIN, p.facing, 4.6, 3.4);
+    limbLeg(ctx, hipX, hipY, IDLE_LEGS[1].a, IDLE_LEGS[1].b, THIGH, SHIN, p.facing, 4.6, 3.4);
   }
 
   // ---- torso ----
@@ -197,21 +262,9 @@ function drawStickman(ctx, p, color) {
   if (punching) {
     // off arm stays cocked by the chin, guard-style
     limbArm(ctx, shoulderX, shoulderY, -20, 46, UARM, FARM, p.facing, 4.2, 3.2, false);
-    // punching arm: draws the elbow back first, then drives the fist out and snaps it
-    // through — a real hook/cross, not just a hand sliding forward.
-    var windup = stage(attackLin, 0, 0.3);
-    var throwA = stage(attackLin, 0.25, 0.62);
-    var recover = stage(attackLin, 0.7, 1);
-    var elbowAngle = lerp(-2, -34, windup) + lerp(0, 76, throwA) - lerp(0, 40, recover);
-    var reach = lerp(0.15, 0.05, windup) + lerp(0, 0.95, throwA) - lerp(0, 0.35, recover);
-    var pElbow = limbEnd(shoulderX, shoulderY, elbowAngle, FARM, p.facing);
-    var pHand = limbEnd(pElbow.x, pElbow.y, 88 * clamp(reach, 0, 1), FARM + 1, p.facing);
-    ctx.lineWidth = 4.2;
-    ctx.beginPath(); ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(pElbow.x, pElbow.y); ctx.stroke();
-    ctx.lineWidth = 3.4;
-    ctx.beginPath(); ctx.moveTo(pElbow.x, pElbow.y); ctx.lineTo(pHand.x, pHand.y); ctx.stroke();
-    ctx.beginPath(); ctx.arc(pElbow.x, pElbow.y, 2.1, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(pHand.x, pHand.y, 3, 0, Math.PI * 2); ctx.fill();
+    // punching arm: keyframed across the strike (wind-up -> throw -> recovery)
+    var pa = sampleTableOnce(PUNCH_ARM_KEYS, attackLin);
+    limbArm(ctx, shoulderX, shoulderY, pa.a, pa.b, UARM, FARM, p.facing, 4.2, 3.4, true);
   } else if (kicking) {
     limbArm(ctx, shoulderX, shoulderY, -30, 40, UARM, FARM, p.facing, 4.2, 3.2, true); // thrown back for balance
     limbArm(ctx, shoulderX, shoulderY, 26, 34, UARM, FARM, p.facing, 4.2, 3.2, true);
@@ -219,10 +272,10 @@ function drawStickman(ctx, p, color) {
     var ta = (clamp(p.vy / 9, -1, 1) + 1) / 2;
     // angle convention: 0 = hanging down, 180 = reaching straight up. Rising throws both
     // arms up for lift; falling brings them down and forward to brace for the landing.
-    var shA = lerp(168, 46, ta), elA = lerp(20, 34, ta);
-    var shB = lerp(-146, -22, ta), elB = lerp(24, 28, ta);
-    limbArm(ctx, shoulderX, shoulderY, shA, elA, UARM, FARM, p.facing, 4.2, 3.2);
-    limbArm(ctx, shoulderX, shoulderY, shB, elB, UARM, FARM, p.facing, 4.2, 3.2);
+    var jaa = sampleTableOnce(JUMP_ARMA_KEYS, ta);
+    var jab = sampleTableOnce(JUMP_ARMB_KEYS, ta);
+    limbArm(ctx, shoulderX, shoulderY, jaa.a, jaa.b, UARM, FARM, p.facing, 4.2, 3.2);
+    limbArm(ctx, shoulderX, shoulderY, jab.a, jab.b, UARM, FARM, p.facing, 4.2, 3.2);
   } else if (running) {
     var armBack = sampleTable(ARM_KEYS, phaseNow + 0.5);
     var armFront = sampleTable(ARM_KEYS, phaseNow);
@@ -232,8 +285,8 @@ function drawStickman(ctx, p, color) {
     // simple resting pose: elbows stay put, relaxed by the sides; only the forearms turn in
     // to bring the fists together in front of the body. Rises and falls gently with the breath.
     var armSway = breathe * 4;
-    limbArm(ctx, shoulderX, shoulderY, -8 - armSway, 40, UARM, FARM, p.facing, 4.2, 3.2);
-    limbArm(ctx, shoulderX, shoulderY, 8 + armSway, -24, UARM, FARM, p.facing, 4.2, 3.2);
+    limbArm(ctx, shoulderX, shoulderY, IDLE_ARMS[0].a - armSway, IDLE_ARMS[0].b, UARM, FARM, p.facing, 4.2, 3.2);
+    limbArm(ctx, shoulderX, shoulderY, IDLE_ARMS[1].a + armSway, IDLE_ARMS[1].b, UARM, FARM, p.facing, 4.2, 3.2);
   }
 
   // ---- head ----
