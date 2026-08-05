@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Last Stick Standing</title>
+<link rel="stylesheet" href="https://freeconsole.vercel.app/console.css" />
+<style>
+  html, body { height: 100%; margin: 0; background: #05060d; }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; text-align: center; padding: 24px;
+  }
+  img { max-width: min(420px, 80vw); border-radius: 12px; box-shadow: 0 0 60px rgba(53,240,224,.15); }
+  h1 {
+    font-family: var(--font-display, sans-serif); color: var(--glow, #35f0e0);
+    text-shadow: 0 0 16px rgba(53,240,224,.5); margin: 0; font-size: 26px; letter-spacing: .04em;
+  }
+  p { font-family: var(--font-mono, monospace); color: var(--text-dim, #9aa3bd); margin: 0; font-size: 14px; }
+  .links { display: flex; gap: 12px; }
+  a.btn {
+    font-family: var(--font-mono, monospace); color: #05060d; background: #35f0e0;
+    padding: 10px 18px; border-radius: 999px; text-decoration: none; font-size: 13px;
+    letter-spacing: .06em; box-shadow: 0 0 20px rgba(53,240,224,.35);
+  }
+  a.btn.ghost {
+    background: transparent; color: var(--text, #eaf0ff); border: 1px solid var(--line, #2a3050);
+    box-shadow: none;
+  }
+</style>
+</head>
+<body>
+  <img src="Last Stick Standing.png" alt="Last Stick Standing" />
+  <h1>LAST STICK STANDING</h1>
+  <p>Elegí qué querés abrir.</p>
+  <div class="links">
+    <a class="btn" href="screen.html">Pantalla (host)</a>
+    <a class="btn ghost" href="controller.html">Control (celular)</a>
+    <a class="btn ghost" href="Last Stick Standing.png">Ver imagen</a>
+  </div>
+</body>
+</html>
