@@ -204,16 +204,38 @@ var AudioManager = (function () {
     return { src: src, gain: g };
   }
 
-  /* ================================================================== scales / notes */
-  // A Phrygian — dark, arcade-ish, deliberately avoids sounding cheerful.
-  var PHRYGIAN = [0, 1, 3, 5, 7, 8, 10];
-  var ROOT = 55; // A1
+  /* ================================================================== scales / notes / biome palettes */
+  // All dark/arcade scales — deliberately avoid sounding cheerful. Each biome (from
+  // world.js's Biomes) gets its own root/scale/timbre so the same state machine (lobby/
+  // countdown/fight/clutch/victory) sounds like a different track per map without ever
+  // touching tempo — only which notes and how bright/gritty the instruments are.
+  var SCALES = {
+    phrygian: [0, 1, 3, 5, 7, 8, 10],
+    aeolian: [0, 2, 3, 5, 7, 8, 10],      // natural minor
+    dorian: [0, 2, 3, 5, 7, 9, 10],
+    harmonicMinor: [0, 2, 3, 5, 7, 8, 11],
+  };
+  var BIOME_PALETTES = {
+    ruinas: { root: 55, scale: "phrygian", bright: 1.0, bassWave: "sawtooth", leadWave: "square", detune: -6 },
+    volcan: { root: 49, scale: "harmonicMinor", bright: 0.7, bassWave: "square", leadWave: "sawtooth", detune: -10 },
+    bosque: { root: 58, scale: "dorian", bright: 0.85, bassWave: "triangle", leadWave: "triangle", detune: -3 },
+    neon: { root: 55, scale: "aeolian", bright: 1.35, bassWave: "sawtooth", leadWave: "square", detune: -14 },
+    nieve: { root: 62, scale: "aeolian", bright: 1.15, bassWave: "triangle", leadWave: "square", detune: -4 },
+  };
+  var DEFAULT_PALETTE = BIOME_PALETTES.ruinas;
+  var palette = DEFAULT_PALETTE;
+
+  function setBiome(biomeId) {
+    palette = BIOME_PALETTES[biomeId] || DEFAULT_PALETTE;
+  }
+
   function noteFreq(degree, octave) {
     octave = octave || 0;
-    var idx = ((degree % PHRYGIAN.length) + PHRYGIAN.length) % PHRYGIAN.length;
-    var octShift = Math.floor(degree / PHRYGIAN.length) + octave;
-    var semis = PHRYGIAN[idx] + octShift * 12;
-    return ROOT * Math.pow(2, semis / 12);
+    var scale = SCALES[palette.scale] || SCALES.phrygian;
+    var idx = ((degree % scale.length) + scale.length) % scale.length;
+    var octShift = Math.floor(degree / scale.length) + octave;
+    var semis = scale[idx] + octShift * 12;
+    return palette.root * Math.pow(2, semis / 12);
   }
 
   /* ================================================================== BPM / layers */
@@ -258,21 +280,21 @@ var AudioManager = (function () {
     },
     bassNote: function (freq, dur, t) {
       tone(freq, {
-        type: "sawtooth", dur: dur, attack: 0.008, release: 0.05, peak: 0.55,
-        filterFreq: 420, filterType: "lowpass", filterQ: 1.2,
+        type: palette.bassWave, dur: dur, attack: 0.008, release: 0.05, peak: 0.55,
+        filterFreq: 420 * palette.bright, filterType: "lowpass", filterQ: 1.2,
       }, layerGains.bass, t);
     },
     leadNote: function (freq, dur, t) {
-      tone(freq, { type: "square", dur: dur, attack: 0.004, release: 0.06, peak: 0.28, filterFreq: 3200, filterType: "lowpass" }, layerGains.lead, t);
-      tone(freq * 1.005, { type: "sawtooth", dur: dur, attack: 0.004, release: 0.06, peak: 0.16, detune: -6 }, layerGains.lead, t);
+      tone(freq, { type: palette.leadWave, dur: dur, attack: 0.004, release: 0.06, peak: 0.28, filterFreq: 3200 * palette.bright, filterType: "lowpass" }, layerGains.lead, t);
+      tone(freq * 1.005, { type: "sawtooth", dur: dur, attack: 0.004, release: 0.06, peak: 0.16, detune: palette.detune }, layerGains.lead, t);
     },
     padChord: function (freqs, dur, t) {
       freqs.forEach(function (f) {
-        tone(f, { type: "triangle", dur: dur, attack: 0.6, release: 0.9, peak: 0.22, filterFreq: 1200, filterType: "lowpass" }, layerGains.pad, t);
+        tone(f, { type: "triangle", dur: dur, attack: 0.6, release: 0.9, peak: 0.22, filterFreq: 1200 * palette.bright, filterType: "lowpass" }, layerGains.pad, t);
       });
     },
     arpNote: function (freq, dur, t) {
-      tone(freq, { type: "square", dur: dur, attack: 0.002, release: 0.03, peak: 0.18, filterFreq: 4500, filterType: "lowpass" }, layerGains.arp, t);
+      tone(freq, { type: palette.leadWave, dur: dur, attack: 0.002, release: 0.03, peak: 0.18, filterFreq: 4500 * palette.bright, filterType: "lowpass" }, layerGains.arp, t);
     },
     noiseFX: function (t) {
       noiseBurst({ dur: 1.4, peak: 0.14, filterFreq: 300, filterSweepTo: 6000, filterType: "bandpass", filterQ: 2 }, layerGains.fx, t);
@@ -436,9 +458,10 @@ var AudioManager = (function () {
   var clutchFiredThisRound = false;
 
   var on = {
-    roundStart: function () {
+    roundStart: function (biomeId) {
       if (!ready) return;
       clutchFiredThisRound = false;
+      setBiome(biomeId);
       Music.setState("countdown");
       Sfx.countdownBeep(0);
       setTimeout(function () { if (ready) Sfx.countdownBeep(1); }, 350);

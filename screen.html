@@ -313,7 +313,7 @@
     ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
     renderTopbar();
     broadcastPhase();
-    AudioManager.on.roundStart();
+    AudioManager.on.roundStart(currentMap.biome);
   }
 
   function eliminate(p) {
