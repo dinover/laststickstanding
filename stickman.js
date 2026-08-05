@@ -113,6 +113,14 @@ var JUMP_ARMB_KEYS = [
   { t: 1.00, a: -22, b: 28 },
 ];
 
+/* Overshoot tails appended after the strike settles: the limb doesn't stop dead on the resting
+   angle, it drifts a touch past it and eases back — classic follow-through. Only added at the
+   very end of the existing tables (t stays within 0..1, sampleTableOnce is untouched). */
+PUNCH_ARM_KEYS[PUNCH_ARM_KEYS.length - 1] = { t: 0.92, a: -14, b: -4 };
+PUNCH_ARM_KEYS.push({ t: 1.00, a: -20, b: 2 });
+KICK_LEG_KEYS[KICK_LEG_KEYS.length - 1] = { t: 0.94, a: 25, b: 41 };
+KICK_LEG_KEYS.push({ t: 1.00, a: 20, b: 46 });
+
 /* angleDeg is UNSIGNED: positive always means "rotated toward the facing direction".
    facing (+1/-1) is applied exactly once, here — callers must never pre-multiply by it,
    or the mirroring cancels itself out (sin(a*facing) === facing*sin(a) for facing=+-1). */
@@ -165,21 +173,35 @@ function drawStickman(ctx, p, color) {
   var running = p.grounded && p.vx !== 0;
   var squash = p.squash || 0;
   var stretch = !p.grounded ? clamp(Math.abs(p.vy) / 14, 0, 1) : 0;
-  var scaleY = 1 - squash * 0.16 + stretch * 0.08;
-  var scaleX = 1 + squash * 0.18 - stretch * 0.05;
+  // jump takeoff pop: a brief stretch right after launch, independent of fall-stretch above.
+  var jumpAntic = clamp((p.jumpAnticT || 0) / 90, 0, 1);
+  var takeoffStretch = jumpAntic * Math.sin(jumpAntic * Math.PI);
+  // landing bounce refinement: on top of the linear squash decay, add a tiny damped-sine
+  // (over-compress -> micro rebound -> settle), so the landing reads like a ball, not a clamp.
+  var squashWave = squash > 0 ? Math.sin(squash * Math.PI * 2.4) * squash * squash * 0.35 : 0;
+  var scaleY = 1 - squash * 0.16 + squashWave * 0.06 + stretch * 0.08 + takeoffStretch * 0.14;
+  var scaleX = 1 + squash * 0.18 - squashWave * 0.05 - stretch * 0.05 - takeoffStretch * 0.08;
 
   var phaseNow = p.walkCycle || 0;
   // two soft bounces per stride (weight passing over each foot) — bigger than a walk's,
   // since a sprinting stride has real vertical drive.
-  var runBob = running ? -Math.abs(Math.sin(phaseNow * Math.PI * 2)) * 3.4 : 0;
+  var runBob = running ? -Math.abs(Math.sin(phaseNow * Math.PI * 2)) * 3.9 : 0;
   // idle: a slow chest-rise breathing cycle, plus a slower weight-shift sway.
   var breathe = p.grounded && !running ? Math.sin(p.idleT * 1.1) * 1.6 : 0;
   var idleBob = p.grounded && !running ? Math.sin(p.idleT * 1.6) * 0.6 + breathe * 0.6 : 0;
+  // weight-shift: a slow, low-frequency sway that favors one leg at a time (not symmetric
+  // breathing) — biases the two idle leg angles oppositely.
+  var idleWeight = p.grounded && !running ? Math.sin(p.idleT * 0.35) : 0;
+  // shoulder rotation + head micro-turn, each at their own slow frequency so idle never
+  // reads as one robotic bob repeating in lockstep.
+  var idleShoulderRot = p.grounded && !running ? Math.sin(p.idleT * 0.5 + 1.1) * 2.2 : 0;
+  var idleHeadTurn = p.grounded && !running ? Math.sin(p.idleT * 0.8 + 2.4) * 1.4 : 0;
+  var idleHandDrift = p.grounded && !running ? Math.sin(p.idleT * 1.3 + 0.6) * 2 : 0;
 
   // Shorter, stockier proportions than before.
   var bodyH = 37 * scaleY;
   var hipY = feet - bodyH * 0.52 - runBob - idleBob;
-  var hipX = cx + (p.grounded && !running ? Math.sin(p.idleT * 0.7) * 1 : 0);
+  var hipX = cx + (p.grounded && !running ? Math.sin(p.idleT * 0.7) * 1 + idleWeight * 1.4 : 0);
 
   var punching = p.attack && p.attack.type === "punch";
   var kicking = p.attack && p.attack.type === "kick";
@@ -196,14 +218,29 @@ function drawStickman(ctx, p, color) {
   else if (punching) lean = p.facing * (4 + snap * 5);
   else if (kicking) lean = -p.facing * snap * 5; // counter-lean away from the kicking leg
   else if (!p.grounded) lean = p.facing * clamp(p.vy / 9, -1, 1) * 6;
+  else lean = idleShoulderRot * 0.3;
+
+  // knockback: torso tilts away from the hit and springs back over ~180ms (secondary motion,
+  // not an instant snap). hitStunT/hitDir are additive fields set by screen.html on a landed hit.
+  var hitStun = clamp((p.hitStunT || 0) / 180, 0, 1);
+  var hitKick = hitStun * Math.sin(hitStun * Math.PI); // rises then eases back to 0
+  lean += -(p.hitDir || 1) * hitKick * 16;
+
+  // pelvis vs shoulder rotation split: while running the shoulders twist a touch more than the
+  // hips and slightly out of phase, so the torso doesn't rotate as one rigid block.
+  var twist = running ? Math.sin(phaseNow * Math.PI * 2 + 0.6) * 4 : 0;
+  var shoulderLean = lean + twist;
 
   var shoulderY = hipY - bodyH * 0.5 + breathe * 0.5;
   var leanRad = lean * DEG;
-  var shoulderX = hipX + Math.sin(leanRad) * (hipY - shoulderY);
+  var shoulderRad = shoulderLean * DEG;
+  var shoulderX = hipX + Math.sin(shoulderRad) * (hipY - shoulderY);
   // slight secondary lag on the head, like it's loosely hinged rather than welded on.
-  var headLagPhase = running ? phaseNow - 0.05 : phaseNow;
+  var headLagPhase = running ? phaseNow - 0.09 : phaseNow;
   var headBob = running ? -Math.abs(Math.sin(headLagPhase * Math.PI * 2)) * 3.4 : 0;
-  var headX = shoulderX + Math.sin(leanRad) * 10;
+  var headLean = shoulderLean + (running ? twist * 0.4 : idleHeadTurn);
+  var headRad = headLean * DEG;
+  var headX = shoulderX + Math.sin(headRad) * 10 - (p.hitDir || 1) * hitKick * 3;
   var headY = shoulderY - 13 - headBob + idleBob * 0.3;
 
   ctx.save();
@@ -246,8 +283,9 @@ function drawStickman(ctx, p, color) {
     limbLeg(ctx, hipX, hipY, 14, 10, THIGH, SHIN, p.facing, 4.6, 3.4);
   } else {
     // fighting stance: staggered, knees bent and ready, not a flat-footed idle stand.
-    limbLeg(ctx, hipX, hipY, IDLE_LEGS[0].a, IDLE_LEGS[0].b, THIGH, SHIN, p.facing, 4.6, 3.4);
-    limbLeg(ctx, hipX, hipY, IDLE_LEGS[1].a, IDLE_LEGS[1].b, THIGH, SHIN, p.facing, 4.6, 3.4);
+    // weight-shift biases the two legs oppositely, so the stance visibly favors one side.
+    limbLeg(ctx, hipX, hipY, IDLE_LEGS[0].a + idleWeight * 5, IDLE_LEGS[0].b, THIGH, SHIN, p.facing, 4.6, 3.4);
+    limbLeg(ctx, hipX, hipY, IDLE_LEGS[1].a - idleWeight * 5, IDLE_LEGS[1].b, THIGH, SHIN, p.facing, 4.6, 3.4);
   }
 
   // ---- torso ----
@@ -285,8 +323,8 @@ function drawStickman(ctx, p, color) {
     // simple resting pose: elbows stay put, relaxed by the sides; only the forearms turn in
     // to bring the fists together in front of the body. Rises and falls gently with the breath.
     var armSway = breathe * 4;
-    limbArm(ctx, shoulderX, shoulderY, IDLE_ARMS[0].a - armSway, IDLE_ARMS[0].b, UARM, FARM, p.facing, 4.2, 3.2);
-    limbArm(ctx, shoulderX, shoulderY, IDLE_ARMS[1].a + armSway, IDLE_ARMS[1].b, UARM, FARM, p.facing, 4.2, 3.2);
+    limbArm(ctx, shoulderX, shoulderY, IDLE_ARMS[0].a - armSway + idleHandDrift, IDLE_ARMS[0].b, UARM, FARM, p.facing, 4.2, 3.2);
+    limbArm(ctx, shoulderX, shoulderY, IDLE_ARMS[1].a + armSway - idleHandDrift, IDLE_ARMS[1].b, UARM, FARM, p.facing, 4.2, 3.2);
   }
 
   // ---- head ----

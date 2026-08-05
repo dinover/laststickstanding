@@ -117,6 +117,7 @@
 
 <script src="https://freeconsole.vercel.app/sdk.js"></script>
 <script src="stickman.js"></script>
+<script src="fx.js"></script>
 <script>
 (function () {
   "use strict";
@@ -204,6 +205,9 @@
       walkCycle: 0,
       idleT: Math.random() * 10,
       squash: 0, // landing squash-and-stretch, 0..1 decaying
+      hitStunT: 0, hitDir: 1, // knockback lean, decays after being hit
+      jumpAnticT: 0, // brief crouch-anticipation before launch, decays
+      deathFadeT: 0, // >0 while a recently-eliminated player fades out of the render
     };
   }
 
@@ -288,7 +292,13 @@
   function eliminate(p) {
     if (!p.alive) return;
     p.alive = false;
+    p.deathFadeT = 420;
     eliminationOrder.push(p.id);
+    HitStop.trigger(55);
+    Camera.addTrauma(0.85);
+    Camera.zoomImpulse(0.05);
+    ScreenFX.flash(0.5);
+    Particles.eliminationBurst(p.x, p.y - 24, ac.getPlayerColor(p.id));
     renderTopbar();
     checkRoundEnd();
   }
@@ -368,13 +378,16 @@
 
   /* ---------------------------------------------------------------- physics */
   function stepPlayer(p, dt, damageEnabled) {
-    if (!p.alive) return;
+    if (!p.alive) {
+      if (p.deathFadeT > 0) p.deathFadeT = Math.max(0, p.deathFadeT - dt);
+      return;
+    }
     var inLobby = phase === "lobby";
     if (p.input.left && !p.input.right) { p.vx = -SPEED; p.facing = -1; }
     else if (p.input.right && !p.input.left) { p.vx = SPEED; p.facing = 1; }
     else p.vx = 0;
 
-    if (p.jumpEdge && p.grounded) { p.vy = JUMP_V; p.grounded = false; }
+    if (p.jumpEdge && p.grounded) { p.vy = JUMP_V; p.grounded = false; p.jumpAnticT = 90; }
     p.jumpEdge = false;
 
     if (p.punchEdge && p.attackCooldown <= 0) {
@@ -397,12 +410,20 @@
     if (p.vx !== 0 && wasGrounded) p.walkCycle = ((p.walkCycle || 0) + dt * 0.0034) % 1;
     p.idleT += dt * 0.001;
     if (p.squash > 0) p.squash = Math.max(0, p.squash - dt * 0.006);
+    if (p.jumpAnticT > 0) p.jumpAnticT = Math.max(0, p.jumpAnticT - dt);
+    if (p.hitStunT > 0) p.hitStunT = Math.max(0, p.hitStunT - dt);
+    if (p.deathFadeT > 0) p.deathFadeT = Math.max(0, p.deathFadeT - dt);
 
     p.grounded = false;
     currentMap.platforms.forEach(function (pl) {
       if (p.vy >= 0 && prevFeet <= pl.y + 1 && p.y >= pl.y && p.x + PW > pl.x && p.x - PW < pl.x + pl.w) {
         p.y = pl.y;
-        if (!wasGrounded && p.vy > 5) p.squash = Math.min(1, p.vy / 14);
+        if (!wasGrounded && p.vy > 5) {
+          p.squash = Math.min(1, p.vy / 14);
+          var landStrength = clamp(p.vy / 14, 0, 1);
+          Camera.addTrauma(landStrength * 0.22);
+          Particles.landingDust(p.x, p.y, p.facing, landStrength, "rgba(255,255,255,.55)");
+        }
         p.vy = 0; p.grounded = true;
       }
     });
@@ -432,6 +453,17 @@
             o.kbx = (o.kbx || 0) + p.facing * kbX;
             o.vy += kbY;
             if (kbY < 0) o.grounded = false;
+
+            var hitX = o.x, hitY = o.y - 14;
+            var isKick = p.attack.type === "kick";
+            HitStop.trigger(isKick ? 55 : 35);
+            Camera.addTrauma(isKick ? 0.5 : 0.32);
+            Camera.zoomImpulse(0.03);
+            Particles.punchSparks(hitX, hitY, p.facing, ac.getPlayerColor(p.id));
+            ScreenFX.impactStreak(hitX, hitY, p.facing);
+            o.hitStunT = 180;
+            o.hitDir = p.facing;
+
             if (o.hp <= 0) eliminate(o);
           }
         });
@@ -461,10 +493,22 @@
   }
 
   function drawPlayer(p) {
-    if (!p.alive && phase !== "lobby") return;
+    if (!p.alive && phase !== "lobby" && p.deathFadeT <= 0) return;
     var color = ac.getPlayerColor(p.id);
+
+    // motion trail ghosts while an attack is in flight
+    if (p.attack) {
+      Trails.push(p, performance.now());
+      Trails.draw(ctx, p, function (gctx, ghost) { drawStickman(gctx, ghost, color); });
+    } else if (p._trail) {
+      Trails.clear(p);
+    }
+
+    var fading = !p.alive && p.deathFadeT > 0;
+    if (fading) ctx.globalAlpha = clamp(p.deathFadeT / 420, 0, 1);
     var rig = drawStickman(ctx, p, color);
     var headY = rig.headY;
+    if (fading) { ctx.globalAlpha = 1; return; }
 
     // hp bar (only during fight/roundend)
     if (phase === "fight" || phase === "fightIntro" || phase === "roundEnd") {
@@ -485,27 +529,43 @@
   /* ---------------------------------------------------------------- main loop */
   var last = performance.now();
   function loop(now) {
-    var dt = Math.min(40, now - last);
+    var realDt = Math.min(40, now - last);
     last = now;
 
-    var damageEnabled = phase === "fight";
-    var idsToStep = phase === "lobby" ? Object.keys(players) : roster;
-    idsToStep.forEach(function (id) { stepPlayer(players[id], dt, damageEnabled); });
+    HitStop.update(realDt);
+    var frozen = HitStop.active();
+    var dt = frozen ? 0 : realDt;
 
-    if (phase === "fightIntro") {
-      phaseTimer -= dt;
-      if (phaseTimer <= 0) { phase = "fight"; broadcastPhase(); }
-    } else if (phase === "roundEnd") {
-      phaseTimer -= dt;
-      if (phaseTimer <= 0) nextRound();
+    if (!frozen) {
+      var damageEnabled = phase === "fight";
+      var idsToStep = phase === "lobby" ? Object.keys(players) : roster;
+      idsToStep.forEach(function (id) { stepPlayer(players[id], dt, damageEnabled); });
+
+      if (phase === "fightIntro") {
+        phaseTimer -= dt;
+        if (phaseTimer <= 0) { phase = "fight"; Camera.zoomImpulse(0.04); broadcastPhase(); }
+      } else if (phase === "roundEnd") {
+        phaseTimer -= dt;
+        if (phaseTimer <= 0) nextRound();
+      }
+
+      Camera.update(dt);
+      Particles.update(dt);
+      ScreenFX.update(dt);
     }
 
+    Camera.begin(ctx, W, H);
     drawMap(currentMap);
     if (phase === "lobby") {
       Object.keys(players).forEach(function (id) { drawPlayer(players[id]); });
     } else {
       roster.forEach(function (id) { drawPlayer(players[id]); });
     }
+    Particles.draw(ctx);
+    Camera.end(ctx);
+
+    ScreenFX.drawVignette(ctx, W, H);
+    ScreenFX.draw(ctx, W, H);
 
     requestAnimationFrame(loop);
   }
