@@ -157,6 +157,23 @@
   </div>
 </div>
 
+<script>
+(function () {
+  // Modo caracol: perf mode for low-end TV browsers. On via ?snail=1 or a saved preference
+  // (?snail=0 clears it). Must run before stickman.js/fx.js/world.js so their SNAIL_MODE
+  // globals pick up the right value on first read.
+  var qs = new URLSearchParams(location.search);
+  if (qs.has("snail")) {
+    var on = qs.get("snail") !== "0";
+    try { localStorage.setItem("lss_snail", on ? "1" : "0"); } catch (e) {}
+    window.SNAIL_MODE = on;
+  } else {
+    var saved;
+    try { saved = localStorage.getItem("lss_snail"); } catch (e) {}
+    window.SNAIL_MODE = saved === "1";
+  }
+})();
+</script>
 <script src="https://freeconsole.vercel.app/sdk.js"></script>
 <script src="stickman.js"></script>
 <script src="fx.js"></script>
@@ -551,7 +568,12 @@
 
   /* ---------------------------------------------------------------- main loop */
   var last = performance.now();
+  var SNAIL_FRAME_MS = 1000 / 30; // caps render+step rate on low-end TVs; rAF still fires at panel rate
   function loop(now) {
+    if (window.SNAIL_MODE && now - last < SNAIL_FRAME_MS) {
+      requestAnimationFrame(loop);
+      return;
+    }
     var realDt = Math.min(40, now - last);
     last = now;
 

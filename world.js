@@ -4,6 +4,11 @@
    produces the platform rectangles it consumes and draws things around them. Plain globals,
    same style as fx.js / stickman.js (no bundler, no modules). */
 
+/* ---- Modo caracol: perf toggle for low-end TV browsers. When on, every hot-path shadowBlur
+   is skipped and per-frame gradients are cached/reused instead of recreated. A single global
+   flag so any file can check it without wiring a config object through every draw call. */
+var SNAIL_MODE = (typeof window !== "undefined" && window.SNAIL_MODE) || false;
+
 /* ==================================================================== reachability */
 /* Given the game's own movement constants, decide whether a straight jump can carry a
    player from one platform's top edge to another's. Used by the generator to guarantee
@@ -445,28 +450,36 @@ var PlatformRenderer = (function () {
 
   function draw(ctx, pl, biome) {
     var style = biome.platform;
-    // soft drop shadow beneath the platform
+    // soft drop shadow beneath the platform (snail mode: flat fill, no software blur)
     ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,.4)";
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetY = 6;
+    if (!SNAIL_MODE) {
+      ctx.shadowColor = "rgba(0,0,0,.4)";
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 6;
+    }
     ctx.fillStyle = style.base;
     roundedRect(ctx, pl.x, pl.y, pl.w, pl.h, 6);
     ctx.fill();
     ctx.restore();
 
-    // subtle top highlight (2-stop gradient, not a 3D bevel)
-    var grad = ctx.createLinearGradient(0, pl.y, 0, pl.y + pl.h);
-    grad.addColorStop(0, "rgba(255,255,255,.10)");
-    grad.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = grad;
+    // subtle top highlight (2-stop gradient) — cached on the platform object itself since a
+    // given pl.y/pl.h never changes after map build, so the gradient is identical every frame.
+    if (!pl._grad || pl._gradH !== pl.h) {
+      pl._grad = ctx.createLinearGradient(0, pl.y, 0, pl.y + pl.h);
+      pl._grad.addColorStop(0, "rgba(255,255,255,.10)");
+      pl._grad.addColorStop(1, "rgba(255,255,255,0)");
+      pl._gradH = pl.h;
+    }
+    ctx.fillStyle = pl._grad;
     roundedRect(ctx, pl.x, pl.y, pl.w, pl.h, 6);
     ctx.fill();
 
     // glowing accent edge
     ctx.save();
-    ctx.shadowColor = style.glow;
-    ctx.shadowBlur = 8;
+    if (!SNAIL_MODE) {
+      ctx.shadowColor = style.glow;
+      ctx.shadowBlur = 8;
+    }
     ctx.fillStyle = style.edge;
     roundedRect(ctx, pl.x + 2, pl.y, pl.w - 4, 3, 2);
     ctx.fill();
@@ -519,8 +532,10 @@ var Decorations = (function () {
       // tiny pulsing sign light near an edge
       var blink = 0.5 + Math.sin(t * 0.004 + seed) * 0.5;
       ctx.save();
-      ctx.shadowColor = "rgba(255,46,214,.8)";
-      ctx.shadowBlur = 8 * blink;
+      if (!SNAIL_MODE) {
+        ctx.shadowColor = "rgba(255,46,214,.8)";
+        ctx.shadowBlur = 8 * blink;
+      }
       ctx.fillStyle = "rgba(255,46,214," + (0.5 + blink * 0.5) + ")";
       ctx.beginPath();
       ctx.arc(pl.x + pl.w - 10, pl.y - 4, 2.4, 0, Math.PI * 2);
@@ -579,6 +594,7 @@ var EnvironmentFX = (function () {
   }
 
   function update(dt, biome, W, H) {
+    if (SNAIL_MODE) return; // ambient dust/leaves/snow are pure atmosphere, skip on low-end TVs
     emit(biome, W, H, dt);
     for (var i = 0; i < POOL_SIZE; i++) {
       var p = pool[i];
@@ -627,8 +643,10 @@ var Hazards = (function () {
         var n = Math.max(2, Math.floor(hz.w / 12));
         var step = hz.w / n;
         ctx.save();
-        ctx.shadowColor = "rgba(255,60,60,.6)";
-        ctx.shadowBlur = 6;
+        if (!SNAIL_MODE) {
+          ctx.shadowColor = "rgba(255,60,60,.6)";
+          ctx.shadowBlur = 6;
+        }
         ctx.fillStyle = "#ff3c3c";
         for (var i = 0; i < n; i++) {
           var x = hz.x + i * step;

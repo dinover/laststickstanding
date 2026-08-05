@@ -196,8 +196,10 @@ var Particles = (function () {
       var a = Math.max(0, p.life / p.maxLife);
       ctx.globalAlpha = a;
       ctx.fillStyle = p.color;
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = p.glow;
+      if (typeof SNAIL_MODE === "undefined" || !SNAIL_MODE) {
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = p.glow;
+      }
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size * (0.5 + a * 0.5), 0, Math.PI * 2);
       ctx.fill();
@@ -231,6 +233,9 @@ var Trails = {
   },
 
   draw: function (ctx, p, drawFn) {
+    // ghost trails redraw the full stickman 1-3x per attacking player, per frame — skip
+    // them entirely in snail mode, they're pure juice with no gameplay meaning.
+    if (typeof SNAIL_MODE !== "undefined" && SNAIL_MODE) return;
     if (!p._trail || !p._trail.length) return;
     var n = p._trail.length;
     for (var i = 0; i < n; i++) {
@@ -270,11 +275,18 @@ var ScreenFX = {
     }
   },
 
+  _vignetteCache: null, _vignetteW: 0, _vignetteH: 0,
   drawVignette: function (ctx, W, H) {
-    var grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.78);
-    grad.addColorStop(0, "rgba(0,0,0,0)");
-    grad.addColorStop(1, "rgba(0,0,0,.28)");
-    ctx.fillStyle = grad;
+    // W/H are fixed per session (canvas doesn't resize mid-round), so the gradient is
+    // identical every frame — build it once and reuse instead of allocating 60x/sec.
+    if (!this._vignetteCache || this._vignetteW !== W || this._vignetteH !== H) {
+      var grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.78);
+      grad.addColorStop(0, "rgba(0,0,0,0)");
+      grad.addColorStop(1, "rgba(0,0,0,.28)");
+      this._vignetteCache = grad;
+      this._vignetteW = W; this._vignetteH = H;
+    }
+    ctx.fillStyle = this._vignetteCache;
     ctx.fillRect(0, 0, W, H);
   },
 

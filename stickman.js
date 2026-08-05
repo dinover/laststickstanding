@@ -251,8 +251,10 @@ function drawStickman(ctx, p, color) {
   ctx.lineJoin = "round";
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 6;
+  if (typeof SNAIL_MODE === "undefined" || !SNAIL_MODE) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+  }
 
   var THIGH = 12.5, SHIN = 13.5, UARM = 10, FARM = 11;
 
