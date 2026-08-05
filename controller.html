@@ -70,6 +70,17 @@
     color: var(--text); font-size: 20px; font-family: var(--font-display);
   }
   .stepper .n { font-family: var(--font-mono); font-size: 24px; color: var(--glow); width: 44px; text-align: center; }
+  #snailRow { display: flex; align-items: center; gap: 10px; }
+  #snailToggle {
+    width: 46px; height: 26px; border-radius: 999px; border: 1px solid var(--line); background: var(--ink-600);
+    position: relative; flex: none;
+  }
+  #snailToggle::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--text-dim); transition: transform .15s ease, background .15s ease;
+  }
+  #snailToggle.on { border-color: var(--glow); }
+  #snailToggle.on::after { transform: translateX(20px); background: var(--glow); }
   #startBtn {
     width: 100%; padding: 11px; border-radius: 999px; border: none; background: var(--hot); color: #fff;
     font-family: var(--font-display); font-weight: 700; font-size: 14px; box-shadow: var(--bloom-hot);
@@ -146,6 +157,10 @@
     <div class="n" id="roundsN">3</div>
     <button id="plusBtn">+</button>
   </div>
+  <div id="snailRow">
+    <button id="snailToggle" role="switch" aria-checked="false"></button>
+    <div class="lbl" style="letter-spacing:normal; text-align:left;">Modo caracol<br><span style="opacity:.7">para TVs lentas</span></div>
+  </div>
   <button id="startBtn">Comenzar partida</button>
 </div>
 <div id="waitPanel">Esperando a que el host inicie la partida… (<span id="roundsPreview">3</span> rondas)</div>
@@ -173,6 +188,7 @@
   var myColor = "#35f0e0";
   var isMaster = false;
   var rounds = 3;
+  var snailMode = false;
   var lastPhase = "lobby";
 
   function setMe() {
@@ -197,9 +213,15 @@
     rounds = Math.min(20, rounds + 1);
     document.getElementById("roundsN").textContent = rounds;
   });
+  document.getElementById("snailToggle").addEventListener("click", function () {
+    AudioManager.on.uiClick();
+    snailMode = !snailMode;
+    this.classList.toggle("on", snailMode);
+    this.setAttribute("aria-checked", String(snailMode));
+  });
   document.getElementById("startBtn").addEventListener("click", function () {
     AudioManager.on.uiClick();
-    ac.message(FreeConsole.SCREEN, { t: "start", rounds: rounds });
+    ac.message(FreeConsole.SCREEN, { t: "start", rounds: rounds, snail: snailMode });
   });
   document.getElementById("playAgainBtn").addEventListener("click", function () {
     AudioManager.on.uiClick();

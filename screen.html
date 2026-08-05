@@ -158,12 +158,10 @@
 </div>
 
 <script>
-// Modo caracol: perf mode for low-end TV browsers, engaged automatically — the game runs
-// sandboxed inside the FreeConsole shell's iframe (no address bar, and localStorage there
-// may be partitioned or blocked), so there is no reliable way for a user or launcher to pass
-// a flag in. Instead the render loop below measures its own real frame time and flips
-// window.SNAIL_MODE on if the device can't keep up. Starts false; stickman.js/fx.js/world.js
-// read it live (not just at load), so it can engage mid-round the moment it's needed.
+// Modo caracol: perf mode for low-end TV browsers. The host picks it from a switch in
+// controller.html's lobby panel; the choice arrives on the "start" message (see the
+// ac.onMessage handler below) and is applied before the match begins. Starts false here;
+// stickman.js/fx.js/world.js all read window.SNAIL_MODE live, not a cached copy.
 window.SNAIL_MODE = false;
 </script>
 <script src="https://freeconsole.vercel.app/sdk.js"></script>
@@ -558,28 +556,6 @@ window.SNAIL_MODE = false;
     ctx.fillText(ac.getNickname(p.id), p.x, headY - 30);
   }
 
-  /* ---------------------------------------------------------------- perf monitor */
-  /* No settings screen and no address bar to opt into modo caracol from (the game runs
-     sandboxed inside the FreeConsole shell's iframe) — so the loop watches its own real frame
-     time and engages the low-end path itself. An EMA rather than raw dt so one GC pause or
-     one frame of tab-switch jank can't trip it; it needs sustained slowness. Once engaged it
-     stays on for the rest of the session — flapping back and forth would be more jarring than
-     a session that's simplified throughout. */
-  var PerfMonitor = {
-    ema: 16.7,               // starts assuming a healthy 60fps frame
-    alpha: 0.05,              // slow-moving average, ~a couple seconds to react
-    slowMs: 1000 / 33,        // sustained sub-33fps is "struggling" on a TV
-    armed: true,
-    sample: function (realDt) {
-      if (!this.armed) return;
-      this.ema += (Math.min(realDt, 100) - this.ema) * this.alpha;
-      if (this.ema > this.slowMs) {
-        window.SNAIL_MODE = true;
-        this.armed = false; // stop sampling once engaged, nothing left to decide
-      }
-    },
-  };
-
   /* ---------------------------------------------------------------- main loop */
   var last = performance.now();
   var SNAIL_FRAME_MS = 1000 / 30; // caps render+step rate once engaged; rAF still fires at panel rate
@@ -590,7 +566,6 @@ window.SNAIL_MODE = false;
     }
     var realDt = Math.min(40, now - last);
     last = now;
-    PerfMonitor.sample(realDt);
 
     HitStop.update(realDt);
     var frozen = HitStop.active();
@@ -659,6 +634,7 @@ window.SNAIL_MODE = false;
       return;
     }
     if (data.t === "start" && device_id === ac.getMasterControllerDeviceId() && phase === "lobby") {
+      window.SNAIL_MODE = !!data.snail;
       startMatch(data.rounds);
       return;
     }
