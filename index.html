@@ -66,34 +66,42 @@
   .rankRow.win { border-color: #ffc247; box-shadow: 0 0 18px rgba(255,194,71,.25); }
   #playAgainBtn { margin-top: 6px; }
 
+  /* ---------------------------------------------------------------- lobby background */
+  #lobbyBg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; object-fit: cover; }
+  #lobbyVignette {
+    position: absolute; inset: 0; z-index: 2;
+    background: radial-gradient(circle at 50% 45%, rgba(5,6,13,.32), rgba(5,6,13,.88) 78%);
+  }
+  #wrap.playing #lobbyBg, #wrap.playing #lobbyVignette { display: none; }
+
   /* ---------------------------------------------------------------- lobby */
   #lobby {
     position: relative; z-index: 3; width: min(480px, 92vw); text-align: center;
-    color: #eaf0ff; display: flex; flex-direction: column; align-items: center; gap: 16px;
+    color: #eaf0ff; display: flex; flex-direction: column; align-items: center; gap: 22px;
   }
-  #lobby h1 { font-size: 26px; color: #35f0e0; text-shadow: 0 0 16px rgba(53,240,224,.5); margin: 0; letter-spacing: .04em; }
-  #lobby p.sub { color: #9aa3bd; font-size: 13px; margin: 0; }
-  .card { background: rgba(255,255,255,.03); border: 1px solid #2a3050; border-radius: 12px; padding: 20px; width: 100%; box-sizing: border-box; }
-  .rolePick { display: flex; gap: 12px; width: 100%; }
+  #lobby h1 { font-size: 28px; color: #35f0e0; text-shadow: 0 0 16px rgba(53,240,224,.5); margin: 0; letter-spacing: .04em; }
+  #lobby p.sub { color: #9aa3bd; font-size: 13px; margin: 0 0 16px; line-height: 1.5; }
+  .card { background: rgba(10,12,24,.55); backdrop-filter: blur(6px); border: 1px solid #2a3050; border-radius: 12px; padding: 26px 24px; width: 100%; box-sizing: border-box; }
+  .rolePick { display: flex; gap: 12px; width: 100%; margin-top: 4px; }
   .rolePick button { flex: 1; }
   button, input {
     font-family: inherit; font-size: 14px; border-radius: 8px; border: 1px solid #2a3050;
-    background: #12162a; color: #eaf0ff; padding: 12px 14px;
+    background: #12162a; color: #eaf0ff; padding: 13px 16px;
   }
   button { cursor: pointer; background: #35f0e0; color: #05060d; font-weight: 700; border: none; box-shadow: 0 0 16px rgba(53,240,224,.3); }
   button.ghost { background: transparent; color: #eaf0ff; border: 1px solid #2a3050; box-shadow: none; }
   button:disabled { opacity: .5; cursor: default; box-shadow: none; }
-  input { width: 100%; box-sizing: border-box; margin-bottom: 10px; text-align: center; letter-spacing: .08em; }
+  input { width: 100%; box-sizing: border-box; margin-bottom: 14px; text-align: center; letter-spacing: .08em; }
   input#codeInput { text-transform: uppercase; }
-  .codeShow { font-size: 40px; letter-spacing: .18em; color: #35f0e0; text-shadow: 0 0 20px rgba(53,240,224,.5); margin: 6px 0; }
-  .rosterList { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; text-align: left; }
+  .codeShow { font-size: 40px; letter-spacing: .18em; color: #35f0e0; text-shadow: 0 0 20px rgba(53,240,224,.5); margin: 16px 0; }
+  .rosterList { display: flex; flex-direction: column; gap: 8px; margin: 18px 0; text-align: left; }
   .rosterRow { display: flex; align-items: center; gap: 8px; font-size: 13px; }
   .rosterRow .dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
-  .roundsRow { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 12px; }
-  .roundsRow button { padding: 6px 12px; }
-  .hint { font-size: 11px; color: #6b7394; letter-spacing: .04em; }
-  .err { color: #ff5e7a; font-size: 12px; min-height: 16px; }
-  a.back { color: #6b7394; font-size: 12px; text-decoration: none; }
+  .roundsRow { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 4px 0 20px; }
+  .roundsRow button { padding: 7px 13px; }
+  .hint { font-size: 11px; color: #6b7394; letter-spacing: .04em; margin-top: 16px; }
+  .err { color: #ff5e7a; font-size: 12px; min-height: 16px; margin-top: 8px; }
+  a.back { color: #6b7394; font-size: 12px; text-decoration: none; margin-top: 2px; display: inline-block; }
 </style>
 </head>
 <body>
@@ -105,11 +113,15 @@
   <div id="roundBanner"></div>
   <div id="overlay"><div id="fightText">FIGHT!</div></div>
 
+  <canvas id="lobbyBg" width="1280" height="720"></canvas>
+  <div id="lobbyVignette"></div>
+
   <div id="lobby">
     <h1>LAST STICK STANDING</h1>
     <p class="sub">Modo online — jugá con amigos, cada uno desde su PC.</p>
 
     <div class="card" id="choiceCard">
+      <input id="nickInputMain" maxlength="14" placeholder="Tu nombre" />
       <div class="rolePick">
         <button id="createBtn">Crear sala</button>
         <button class="ghost" id="joinShowBtn">Unirme a una sala</button>
@@ -117,7 +129,6 @@
     </div>
 
     <div class="card" id="joinCard" style="display:none">
-      <input id="nickInput" maxlength="14" placeholder="Tu nombre" />
       <input id="codeInput" maxlength="4" placeholder="CÓDIGO DE SALA" />
       <button id="joinBtn" style="width:100%">Conectar</button>
       <div class="err" id="joinErr"></div>
@@ -318,6 +329,7 @@
     if (role === "host") { ensurePlayer(HOST_ID); Object.keys(names).forEach(function (id) { ensurePlayer(Number(id)); }); renderHostRoster(); }
   }
 
+  var hostLoopStarted = false;
   function startMatch(rounds) {
     totalRounds = Math.max(1, Math.min(20, rounds || 3));
     roster = [HOST_ID].concat(Object.keys(players).map(Number).filter(function (id) { return id !== HOST_ID; }));
@@ -325,6 +337,8 @@
     roster.forEach(function (id) { scores[id] = 0; });
     currentRound = 0;
     document.getElementById("wrap").classList.add("playing");
+    stopLobbyBackground();
+    if (!hostLoopStarted) { hostLoopStarted = true; last = performance.now(); requestAnimationFrame(hostLoop); }
     nextRound();
   }
 
@@ -509,13 +523,38 @@
 
     if (phase !== "lobby") {
       broadcastAccum += realDt;
-      if (broadcastAccum >= 50) { broadcastAccum = 0; NetHost.broadcast(hostSnapshot()); }
+      if (broadcastAccum >= 40) { broadcastAccum = 0; NetHost.broadcast(hostSnapshot()); }
     }
 
     requestAnimationFrame(hostLoop);
   }
 
   function drawMap(map, tMs, dt) { World.draw(ctx, W, H, map, Camera, tMs, dt); }
+
+  /* ---------------------------------------------------------------- lobby background */
+  // Purely decorative: a random biome's procedural background, idling behind the lobby
+  // card until a match actually starts. Reuses WorldBackground/EnvironmentFX exactly like
+  // the real game does, just pointed at its own canvas so it never touches game state.
+  var lobbyBgRaf = null;
+  function startLobbyBackground() {
+    if (lobbyBgRaf) return;
+    var bgCanvas = document.getElementById("lobbyBg");
+    var bgCtx = bgCanvas.getContext("2d");
+    var BW = bgCanvas.width, BH = bgCanvas.height;
+    var biomeId = Biomes.random(Math.random);
+    var bg = WorldBackground.build(biomeId, Math.floor(Math.random() * 1e6), BW, BH);
+    function frame(now) {
+      Camera.update(16);
+      WorldBackground.draw(bgCtx, bg, BW, BH, Camera);
+      EnvironmentFX.update(16, bg.biome, BW, BH);
+      EnvironmentFX.draw(bgCtx);
+      lobbyBgRaf = requestAnimationFrame(frame);
+    }
+    lobbyBgRaf = requestAnimationFrame(frame);
+  }
+  function stopLobbyBackground() {
+    if (lobbyBgRaf) { cancelAnimationFrame(lobbyBgRaf); lobbyBgRaf = null; }
+  }
 
   /* ---------------------------------------------------------------- host: keyboard + net wiring */
   function isTyping() {
@@ -524,10 +563,10 @@
   }
   var HOST_KEYS = { a: "left", d: "right", " ": "jump", p: "punch" };
 
-  function startAsHost() {
+  function startAsHost(nickname) {
     role = "host";
     myId = HOST_ID;
-    names[HOST_ID] = "Host"; colors[HOST_ID] = PLAYER_COLORS[HOST_ID];
+    names[HOST_ID] = nickname || "Host"; colors[HOST_ID] = PLAYER_COLORS[HOST_ID];
     ensurePlayer(HOST_ID);
     renderHostRoster();
 
@@ -564,27 +603,43 @@
       if (action === "left") p.input.left = false;
       else p.input.right = false;
     });
-
-    requestAnimationFrame(hostLoop);
   }
 
   /* ================================================================== GUEST: pure renderer */
-  var guestState = null;
+  // Host broadcasts ~25x/sec, which snaps visibly if drawn as-is. Instead we keep the last
+  // two snapshots and linearly interpolate positions between them based on elapsed time —
+  // same idea as standard client-side entity interpolation — so motion reads smoothly at
+  // whatever the actual frame rate is, independent of the network update rate.
+  var prevSnap = null, curSnap = null;
   var guestRoomCode = null;
 
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
   function guestLoop() {
-    if (guestState) {
-      var s = guestState;
+    if (curSnap) {
+      var s = curSnap.data;
       if (s.yourId != null) myId = s.yourId;
       names = s.names; colors = s.colors;
       phase = s.phase; currentRound = s.round; totalRounds = s.totalRounds;
       currentMap = s.map; roster = s.roster; scores = s.scores;
+
+      var span = prevSnap ? (curSnap.t - prevSnap.t) : 0;
+      var t = span > 0 ? clamp((performance.now() - curSnap.t) / span, 0, 1.4) : 1;
       players = {};
       s.roster.forEach(function (id) {
         var pd = s.players[id];
-        if (pd) players[id] = Object.assign({ id: id, x: 0, y: 0 }, pd);
+        if (!pd) return;
+        var p = Object.assign({ id: id, x: 0, y: 0 }, pd);
+        var prevPd = prevSnap && prevSnap.data.players[id];
+        if (prevPd && prevPd.alive && pd.alive) {
+          p.x = lerp(prevPd.x, pd.x, t);
+          p.y = lerp(prevPd.y, pd.y, t);
+        }
+        players[id] = p;
       });
-      document.getElementById("wrap").classList.toggle("playing", phase !== "lobby");
+      var isPlaying = phase !== "lobby";
+      document.getElementById("wrap").classList.toggle("playing", isPlaying);
+      if (isPlaying) stopLobbyBackground(); else startLobbyBackground();
       document.getElementById("roomCode").textContent = guestRoomCode || "----";
       var rb = document.getElementById("roundBanner");
       if (phase === "lobby") { rb.classList.remove("show"); }
@@ -615,7 +670,10 @@
     role = "guest";
     myNickname = nickname;
     guestRoomCode = code.toUpperCase().trim();
-    NetGuest.onState(function (data) { guestState = data; });
+    NetGuest.onState(function (data) {
+      prevSnap = curSnap;
+      curSnap = { t: performance.now(), data: data };
+    });
     NetGuest.onOpen(function () {
       document.getElementById("choiceCard").style.display = "none";
       document.getElementById("joinCard").style.display = "none";
@@ -649,6 +707,7 @@
 
   /* ---------------------------------------------------------------- lobby UI wiring */
   document.getElementById("createBtn").addEventListener("click", function () {
+    var nickname = document.getElementById("nickInputMain").value.trim() || "Host";
     document.getElementById("choiceCard").style.display = "none";
     document.getElementById("hostCard").style.display = "block";
     document.getElementById("backLink").style.display = "inline";
@@ -656,7 +715,7 @@
     NetHost.create(function (code) {
       document.getElementById("hostCode").textContent = code;
       document.getElementById("roomCode").textContent = code;
-      startAsHost();
+      startAsHost(nickname);
     }, function (err) {
       document.getElementById("hostCode").textContent = "ERROR";
     });
@@ -678,7 +737,7 @@
 
   document.getElementById("joinBtn").addEventListener("click", function () {
     var code = document.getElementById("codeInput").value;
-    var nick = document.getElementById("nickInput").value || "Jugador";
+    var nick = document.getElementById("nickInputMain").value.trim() || "Jugador";
     if (!code || code.trim().length < 4) {
       document.getElementById("joinErr").textContent = "Ingresá el código de 4 letras.";
       return;
@@ -701,8 +760,11 @@
       resetToLobby();
       document.getElementById("wrap").classList.remove("playing");
       document.getElementById("hostCard").style.display = "block";
+      startLobbyBackground();
     }
   });
+
+  startLobbyBackground();
 })();
 </script>
 </body>
