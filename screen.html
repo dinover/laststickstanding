@@ -118,6 +118,7 @@
 <script src="https://freeconsole.vercel.app/sdk.js"></script>
 <script src="stickman.js"></script>
 <script src="fx.js"></script>
+<script src="world.js"></script>
 <script>
 (function () {
   "use strict";
@@ -142,6 +143,9 @@
   var MAP0 = {
     name: "Plataforma Inicial",
     bg: ["#0a0c18", "#141a30"],
+    biome: "ruinas",
+    seed: 1,
+    hazards: [],
     platforms: [
       { x: 60, y: 460, w: 840, h: 26 },
       { x: 120, y: 340, w: 160, h: 18 },
@@ -151,29 +155,7 @@
   };
 
   function genMap(seed) {
-    var rnd = mulberry32(seed);
-    var palettes = [
-      ["#0a0c18", "#1a1030"], ["#0a1418", "#0e2a2a"], ["#140a18", "#2a0e2a"],
-      ["#0a0c18", "#1a2038"], ["#0c1408", "#1e2a0e"], ["#180a0a", "#2a120e"],
-    ];
-    var pal = palettes[Math.floor(rnd() * palettes.length)];
-    var n = 4 + Math.floor(rnd() * 4);
-    var plats = [];
-    var hasFloor = rnd() > 0.35;
-    if (hasFloor) {
-      var floorW = 400 + rnd() * 500;
-      plats.push({ x: (W - floorW) / 2 + (rnd() - 0.5) * 100, y: 480, w: floorW, h: 24 });
-      n -= 1;
-    }
-    for (var i = 0; i < n; i++) {
-      var w = 110 + rnd() * 140;
-      var x = 40 + rnd() * (W - 80 - w);
-      var y = 160 + rnd() * 300;
-      plats.push({ x: x, y: y, w: w, h: 16 });
-    }
-    var names = ["Cráter Neón", "Ruinas Flotantes", "Torre Amber", "Zona Fósforo", "Andamios Perdidos",
-      "Filo del Vacío", "Islas Rotas", "Sector Púrpura", "Bloques Errantes", "Vía Rápida"];
-    return { name: names[Math.floor(rnd() * names.length)] + " #" + seed, bg: pal, platforms: plats };
+    return World.generateMap(seed, { SPEED: SPEED, JUMP_V: JUMP_V, GRAVITY_UP: GRAVITY_UP, GRAVITY_DOWN: GRAVITY_DOWN, W: W, H: H });
   }
 
   /* ---------------------------------------------------------------- state */
@@ -433,6 +415,8 @@
       else if (damageEnabled) { eliminate(p); }
     }
 
+    if (damageEnabled && p.alive && World.checkHazards(p, currentMap, PW)) { eliminate(p); }
+
     if (p.attack) {
       p.attack.t -= dt;
       if (damageEnabled) {
@@ -474,22 +458,8 @@
   }
 
   /* ---------------------------------------------------------------- rendering */
-  function drawMap(map) {
-    var grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, map.bg[0]);
-    grad.addColorStop(1, map.bg[1]);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = "rgba(255,255,255,.03)";
-    for (var i = 0; i < W; i += 40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, H); ctx.stroke(); }
-    // Flat platforms: one solid fill plus a thin flat accent line, no gradient/glow bevel
-    // that would read as a lit 3D block.
-    map.platforms.forEach(function (pl) {
-      ctx.fillStyle = "#1a2038";
-      ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
-      ctx.fillStyle = "#35f0e0";
-      ctx.fillRect(pl.x, pl.y, pl.w, 2);
-    });
+  function drawMap(map, tMs, dt) {
+    World.draw(ctx, W, H, map, Camera, tMs, dt);
   }
 
   function drawPlayer(p) {
@@ -555,7 +525,7 @@
     }
 
     Camera.begin(ctx, W, H);
-    drawMap(currentMap);
+    drawMap(currentMap, now, dt);
     if (phase === "lobby") {
       Object.keys(players).forEach(function (id) { drawPlayer(players[id]); });
     } else {
