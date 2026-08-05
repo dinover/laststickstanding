@@ -485,7 +485,7 @@
         walkCycle: p.walkCycle, idleT: p.idleT, squash: p.squash, hitStunT: p.hitStunT, hitDir: p.hitDir,
         jumpAnticT: p.jumpAnticT, deathFadeT: p.deathFadeT,
         attack: p.attack ? { type: p.attack.type, t: p.attack.t, dur: p.attack.dur } : null,
-        vy: p.vy,
+        vx: p.vx, vy: p.vy,
       };
     });
     return {
@@ -606,16 +606,33 @@
   }
 
   /* ================================================================== GUEST: pure renderer */
-  // Host broadcasts ~25x/sec, which snaps visibly if drawn as-is. Instead we keep the last
-  // two snapshots and linearly interpolate positions between them based on elapsed time —
-  // same idea as standard client-side entity interpolation — so motion reads smoothly at
-  // whatever the actual frame rate is, independent of the network update rate.
+  // Host broadcasts ~25x/sec. Two things would make that read as choppy if drawn naively:
+  // position snapping straight to whatever arrived, and animation timers (walk cycle, idle
+  // sway, squash/hitstun decay, attack progress) freezing between packets. Position is fixed
+  // by interpolating between the last two snapshots (like standard client-side entity
+  // interpolation); the animation timers are fixed by advancing them locally every rendered
+  // frame with the same per-frame formulas stepPlayer() uses, and resyncing them to the
+  // authoritative value each time a new snapshot arrives so they never drift.
   var prevSnap = null, curSnap = null;
+  var localPlayers = {}; // id -> locally-advanced animation clock, resynced on each snapshot
   var guestRoomCode = null;
+  var lastGuestFrame = performance.now();
 
   function lerp(a, b, t) { return a + (b - a) * t; }
 
-  function guestLoop() {
+  function resyncLocalPlayer(id, pd) {
+    var lp = localPlayers[id] || (localPlayers[id] = { id: id });
+    lp.alive = pd.alive; lp.hp = pd.hp; lp.grounded = pd.grounded; lp.facing = pd.facing;
+    lp.vx = pd.vx; lp.vy = pd.vy; lp.hitDir = pd.hitDir;
+    lp.walkCycle = pd.walkCycle; lp.idleT = pd.idleT; lp.squash = pd.squash;
+    lp.hitStunT = pd.hitStunT; lp.jumpAnticT = pd.jumpAnticT; lp.deathFadeT = pd.deathFadeT;
+    lp.attack = pd.attack ? { type: pd.attack.type, t: pd.attack.t, dur: pd.attack.dur } : null;
+    return lp;
+  }
+
+  function guestLoop(now) {
+    var frameDt = clamp(now - lastGuestFrame, 0, 40);
+    lastGuestFrame = now;
     if (curSnap) {
       var s = curSnap.data;
       if (s.yourId != null) myId = s.yourId;
@@ -624,18 +641,31 @@
       currentMap = s.map; roster = s.roster; scores = s.scores;
 
       var span = prevSnap ? (curSnap.t - prevSnap.t) : 0;
-      var t = span > 0 ? clamp((performance.now() - curSnap.t) / span, 0, 1.4) : 1;
+      var t = span > 0 ? clamp((now - curSnap.t) / span, 0, 1.4) : 1;
       players = {};
       s.roster.forEach(function (id) {
         var pd = s.players[id];
-        if (!pd) return;
-        var p = Object.assign({ id: id, x: 0, y: 0 }, pd);
+        var lp = localPlayers[id];
+        if (!pd || !lp) return;
+
+        if (lp.alive) {
+          lp.idleT += frameDt * 0.001;
+          if (lp.grounded && lp.vx !== 0) lp.walkCycle = ((lp.walkCycle || 0) + frameDt * 0.0034) % 1;
+          if (lp.squash > 0) lp.squash = Math.max(0, lp.squash - frameDt * 0.006);
+          if (lp.jumpAnticT > 0) lp.jumpAnticT = Math.max(0, lp.jumpAnticT - frameDt);
+          if (lp.hitStunT > 0) lp.hitStunT = Math.max(0, lp.hitStunT - frameDt);
+          if (lp.attack) { lp.attack.t -= frameDt; if (lp.attack.t <= 0) lp.attack = null; }
+        } else if (lp.deathFadeT > 0) {
+          lp.deathFadeT = Math.max(0, lp.deathFadeT - frameDt);
+        }
+
+        var x = pd.x, y = pd.y;
         var prevPd = prevSnap && prevSnap.data.players[id];
         if (prevPd && prevPd.alive && pd.alive) {
-          p.x = lerp(prevPd.x, pd.x, t);
-          p.y = lerp(prevPd.y, pd.y, t);
+          x = lerp(prevPd.x, pd.x, t);
+          y = lerp(prevPd.y, pd.y, t);
         }
-        players[id] = p;
+        players[id] = Object.assign({}, lp, { x: x, y: y });
       });
       var isPlaying = phase !== "lobby";
       document.getElementById("wrap").classList.toggle("playing", isPlaying);
@@ -652,9 +682,9 @@
         document.getElementById("finalScreen").classList.remove("show");
       }
 
-      Camera.update(16); Particles.update(16); ScreenFX.update(16);
+      Camera.update(frameDt); Particles.update(frameDt); ScreenFX.update(frameDt);
       Camera.begin(ctx, W, H);
-      if (currentMap) drawMap(currentMap, performance.now(), 16);
+      if (currentMap) drawMap(currentMap, now, frameDt);
       roster.forEach(function (id) { if (players[id]) drawPlayer(players[id]); });
       Particles.draw(ctx);
       Camera.end(ctx);
@@ -673,6 +703,10 @@
     NetGuest.onState(function (data) {
       prevSnap = curSnap;
       curSnap = { t: performance.now(), data: data };
+      data.roster.forEach(function (id) {
+        var pd = data.players[id];
+        if (pd) resyncLocalPlayer(id, pd);
+      });
     });
     NetGuest.onOpen(function () {
       document.getElementById("choiceCard").style.display = "none";
