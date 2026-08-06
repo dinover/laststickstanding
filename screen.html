@@ -471,19 +471,21 @@ window.SNAIL_MODE = false;
     if (p.deathFadeT > 0) p.deathFadeT = Math.max(0, p.deathFadeT - dt);
 
     p.grounded = false;
-    currentMap.platforms.forEach(function (pl) {
+    var plats = currentMap.platforms;
+    for (var pi = 0; pi < plats.length; pi++) {
+      var pl = plats[pi];
       if (p.vy >= 0 && prevFeet <= pl.y + 1 && p.y >= pl.y && p.x + PW > pl.x && p.x - PW < pl.x + pl.w) {
         p.y = pl.y;
         if (!wasGrounded && p.vy > 5) {
           p.squash = Math.min(1, p.vy / 14);
           var landStrength = clamp(p.vy / 14, 0, 1);
           Camera.addTrauma(landStrength * 0.22);
-          Particles.landingDust(p.x, p.y, p.facing, landStrength, "rgba(255,255,255,.55)");
+          if (!window.SNAIL_MODE) Particles.landingDust(p.x, p.y, p.facing, landStrength, "rgba(255,255,255,.55)");
           AudioManager.on.land(landStrength);
         }
         p.vy = 0; p.grounded = true;
       }
-    });
+    }
 
     if (p.y > H + 60) {
       if (inLobby) { p.x = 100 + Math.random() * (W - 200); p.y = -40; p.vy = 0; p.vx = 0; }
@@ -495,10 +497,11 @@ window.SNAIL_MODE = false;
     if (p.attack) {
       p.attack.t -= dt;
       if (damageEnabled) {
-        roster.forEach(function (oid) {
-          if (oid === p.id) return;
+        for (var oi = 0; oi < roster.length; oi++) {
+          var oid = roster[oi];
+          if (oid === p.id) continue;
           var o = players[oid];
-          if (!o || !o.alive || p.attack.hitSet[oid]) return;
+          if (!o || !o.alive || p.attack.hitSet[oid]) continue;
           var reach = p.attack.type === "kick" ? 44 : 34;
           var dx = o.x - p.x;
           var facingOk = p.facing > 0 ? (dx > -6 && dx < reach) : (dx < 6 && dx > -reach);
@@ -518,7 +521,7 @@ window.SNAIL_MODE = false;
             HitStop.trigger(isKick ? 55 : 35);
             Camera.addTrauma(isKick ? 0.5 : 0.32);
             Camera.zoomImpulse(0.03);
-            Particles.punchSparks(hitX, hitY, p.facing, ac.getPlayerColor(p.id));
+            if (!window.SNAIL_MODE) Particles.punchSparks(hitX, hitY, p.facing, ac.getPlayerColor(p.id));
             ScreenFX.impactStreak(hitX, hitY, p.facing);
             AudioManager.on.hit(p.attack.type);
             o.hitStunT = 180;
@@ -526,7 +529,7 @@ window.SNAIL_MODE = false;
 
             if (o.hp <= 0) eliminate(o);
           }
-        });
+        }
       }
       if (p.attack.t <= 0) p.attack = null;
     }
@@ -542,8 +545,9 @@ window.SNAIL_MODE = false;
     if (!p.alive && phase !== "lobby" && p.deathFadeT <= 0) return;
     var color = ac.getPlayerColor(p.id);
 
-    // motion trail ghosts while an attack is in flight
-    if (p.attack) {
+    // motion trail ghosts while an attack is in flight (Trails.draw is a no-op in snail mode,
+    // so skip feeding it too — no point pushing snapshots nobody will render)
+    if (p.attack && !window.SNAIL_MODE) {
       Trails.push(p, performance.now());
       Trails.draw(ctx, p, function (gctx, ghost) { drawStickman(gctx, ghost, color); });
     } else if (p._trail) {
@@ -565,16 +569,20 @@ window.SNAIL_MODE = false;
       ctx.fillRect(p.x - bw / 2, headY - 24, bw * Math.max(0, p.hp) / 100, 5);
     }
 
-    // nickname
-    ctx.fillStyle = "rgba(255,255,255,.7)";
-    ctx.font = "10px Chakra Petch, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(ac.getNickname(p.id), p.x, headY - 30);
+    // nickname — text rasterization (font metrics + glyph fill) is surprisingly costly per
+    // player per frame on weak TV engines; skip it in snail mode, the colored topbar avatars
+    // already identify who's who.
+    if (!window.SNAIL_MODE) {
+      ctx.fillStyle = "rgba(255,255,255,.7)";
+      ctx.font = "10px Chakra Petch, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(ac.getNickname(p.id), p.x, headY - 30);
+    }
   }
 
   /* ---------------------------------------------------------------- main loop */
   var last = performance.now();
-  var SNAIL_FRAME_MS = 1000 / 30; // caps render+step rate once engaged; rAF still fires at panel rate
+  var SNAIL_FRAME_MS = 1000 / 24; // caps render+step rate once engaged; rAF still fires at panel rate
   function loop(now) {
     if (window.SNAIL_MODE && now - last < SNAIL_FRAME_MS) {
       requestAnimationFrame(loop);
@@ -590,7 +598,7 @@ window.SNAIL_MODE = false;
     if (!frozen) {
       var damageEnabled = phase === "fight";
       var idsToStep = phase === "lobby" ? Object.keys(players) : roster;
-      idsToStep.forEach(function (id) { stepPlayer(players[id], dt, damageEnabled); });
+      for (var si = 0; si < idsToStep.length; si++) stepPlayer(players[idsToStep[si]], dt, damageEnabled);
 
       if (phase === "fightIntro") {
         phaseTimer -= dt;
@@ -607,10 +615,13 @@ window.SNAIL_MODE = false;
 
     Camera.begin(ctx, W, H);
     drawMap(currentMap, now, dt);
+    // plain for-loops here, not .forEach — a fresh closure allocated every single frame is
+    // pure GC pressure with zero benefit, and this runs for every player every frame.
     if (phase === "lobby") {
-      Object.keys(players).forEach(function (id) { drawPlayer(players[id]); });
+      var lobbyIds = Object.keys(players);
+      for (var li = 0; li < lobbyIds.length; li++) drawPlayer(players[lobbyIds[li]]);
     } else {
-      roster.forEach(function (id) { drawPlayer(players[id]); });
+      for (var ri = 0; ri < roster.length; ri++) drawPlayer(players[roster[ri]]);
     }
     Particles.draw(ctx);
     Camera.end(ctx);

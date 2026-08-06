@@ -60,6 +60,10 @@ var Camera = {
 
   begin: function (ctx, W, H) {
     ctx.save();
+    // scale()/translate() on every draw call forces the software rasterizer to run every
+    // subsequent path through a non-identity matrix — skip it outright in snail mode rather
+    // than just zeroing the shake, since an identity-matrix fast path is what's cheap.
+    if (window.SNAIL_MODE) return;
     var breathe = Math.sin(this._breathT) * 0.6;
     ctx.translate(W / 2, H / 2);
     ctx.scale(this.zoom, this.zoom);
@@ -176,6 +180,7 @@ var Particles = (function () {
   }
 
   function update(dt) {
+    if (window.SNAIL_MODE) return; // spawns still land in the pool but are never simulated/drawn
     for (var i = 0; i < POOL_SIZE; i++) {
       var p = pool[i];
       if (!p.active) continue;
@@ -190,16 +195,15 @@ var Particles = (function () {
   }
 
   function draw(ctx) {
+    if (window.SNAIL_MODE) return; // punch sparks / landing dust / elimination bursts are pure juice
     for (var i = 0; i < POOL_SIZE; i++) {
       var p = pool[i];
       if (!p.active) continue;
       var a = Math.max(0, p.life / p.maxLife);
       ctx.globalAlpha = a;
       ctx.fillStyle = p.color;
-      if (!window.SNAIL_MODE) {
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = p.glow;
-      }
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = p.glow;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size * (0.5 + a * 0.5), 0, Math.PI * 2);
       ctx.fill();
@@ -277,6 +281,10 @@ var ScreenFX = {
 
   _vignetteCache: null, _vignetteW: 0, _vignetteH: 0,
   drawVignette: function (ctx, W, H) {
+    // A full-canvas alpha-blended gradient fill is one of the most fill-rate-heavy things
+    // this game does every frame — even cached, it's still W*H pixels of blending. Skip it
+    // outright in snail mode.
+    if (window.SNAIL_MODE) return;
     // W/H are fixed per session (canvas doesn't resize mid-round), so the gradient is
     // identical every frame — build it once and reuse instead of allocating 60x/sec.
     if (!this._vignetteCache || this._vignetteW !== W || this._vignetteH !== H) {

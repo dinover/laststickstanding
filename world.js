@@ -416,6 +416,7 @@ var WorldBackground = (function () {
   }
 
   function draw(ctx, bg, W, H, camera) {
+    if (window.SNAIL_MODE) { ctx.drawImage(bg.sky, 0, 0); return; } // one blit instead of three
     var sx = camera ? camera.shakeX : 0, sy = camera ? camera.shakeY : 0;
     ctx.drawImage(bg.sky, 0, 0);
     ctx.drawImage(bg.far, sx * 0.15, sy * 0.15);
@@ -450,6 +451,14 @@ var PlatformRenderer = (function () {
 
   function draw(ctx, pl, biome) {
     var style = biome.platform;
+    if (window.SNAIL_MODE) {
+      // one flat fillRect: no rounded corners (arcTo path building), no highlight gradient
+      // fill, no accent-edge pass. Platforms don't move, so the visual simplicity is the
+      // whole tradeoff — a plain rectangle costs a fraction of the normal 3-pass draw.
+      ctx.fillStyle = style.base;
+      ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
+      return;
+    }
     // soft drop shadow beneath the platform (snail mode: flat fill, no software blur)
     ctx.save();
     if (!window.SNAIL_MODE) {
@@ -768,14 +777,20 @@ var World = (function () {
     WorldBackground.draw(ctx, bg, W, H, camera);
 
     var biome = Biomes.get(map.biome);
-    map.platforms.forEach(function (pl, i) {
+    var snail = window.SNAIL_MODE;
+    for (var i = 0; i < map.platforms.length; i++) {
+      var pl = map.platforms[i];
       PlatformRenderer.draw(ctx, pl, biome);
-      Decorations.draw(ctx, pl, map.biome, (map.seed || 1) + i * 101, tMs || 0);
-    });
+      // cosmetic-only per-platform decoration (vines, cracks, blinking signs) — skip the whole
+      // pass in snail mode rather than gating shadowBlur alone inside it.
+      if (!snail) Decorations.draw(ctx, pl, map.biome, (map.seed || 1) + i * 101, tMs || 0);
+    }
 
     Hazards.draw(ctx, map, tMs || 0);
-    EnvironmentFX.update(dt || 0, biome, W, H);
-    EnvironmentFX.draw(ctx);
+    if (!snail) {
+      EnvironmentFX.update(dt || 0, biome, W, H);
+      EnvironmentFX.draw(ctx);
+    }
   }
 
   function checkHazards(p, map, PW) {

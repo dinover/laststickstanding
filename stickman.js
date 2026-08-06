@@ -146,6 +146,13 @@ function limb(ctx, hipX, hipY, upperAngle, jointBend, upperLen, lowerLen, facing
     : upperAngle - (upperAngle < 0 ? -1 : 1) * jointBend;
   var mid = limbEnd(hipX, hipY, upperAngle, upperLen, facing);
   var end = limbEnd(mid.x, mid.y, lowerAngle, lowerLen, facing);
+  if (window.SNAIL_MODE) {
+    // one stroke for the whole limb (avg width) instead of two tapered segments, and no
+    // joint-dot fills — a limb is 1 draw call instead of 4.
+    ctx.lineWidth = (widthA + widthB) / 2;
+    ctx.beginPath(); ctx.moveTo(hipX, hipY); ctx.lineTo(mid.x, mid.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+    return end;
+  }
   ctx.lineWidth = widthA;
   ctx.beginPath(); ctx.moveTo(hipX, hipY); ctx.lineTo(mid.x, mid.y); ctx.stroke();
   ctx.lineWidth = widthB;
@@ -247,8 +254,11 @@ function drawStickman(ctx, p, color) {
   ctx.translate(cx, feet);
   ctx.scale(scaleX, 1);
   ctx.translate(-cx, -feet);
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
+  // round caps/joins make the software rasterizer stroke extra corner geometry on every
+  // segment; butt/miter are the cheap defaults, and at this line width the visual difference
+  // is negligible next to the frame-rate win.
+  ctx.lineCap = window.SNAIL_MODE ? "butt" : "round";
+  ctx.lineJoin = window.SNAIL_MODE ? "miter" : "round";
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
   if (!window.SNAIL_MODE) {
