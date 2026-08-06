@@ -1,0 +1,268 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Music Lab</title>
+<style>
+  body{margin:0;background:#0a0c14;color:#8492b8;font-family:sans-serif;padding:14px}
+  h4{color:#666;margin:14px 0 6px}
+  .row{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start}
+  .panel{background:#0f1220;border:1px solid #232840;border-radius:8px;padding:10px 14px;min-width:220px}
+  label{display:block;font-size:11px;color:#5b6690;margin-top:8px}
+  select,input[type=number]{background:#161a2c;color:#cfe;border:1px solid #2a3050;border-radius:4px;padding:3px 6px;width:100%}
+  input[type=range]{width:100%}
+  button{background:#1c2340;color:#9dff4f;border:1px solid #35f0e0;border-radius:5px;padding:6px 12px;cursor:pointer;font-weight:bold}
+  button:hover{background:#232a4a}
+  button.stop{color:#ff6a6a;border-color:#ff6a6a}
+  .val{color:#35f0e0;font-family:monospace}
+  #steps{display:flex;gap:3px;margin-top:6px}
+  .step{width:26px;height:26px;border:1px solid #2a3050;border-radius:3px;background:#161a2c;color:#8492b8;font:10px monospace;cursor:pointer;text-align:center;line-height:26px}
+  .step.on{background:#20406a;color:#9dff4f;border-color:#35f0e0}
+  .step.beat{border-color:#444d78}
+  textarea{width:100%;height:220px;background:#0b0d18;color:#9dff4f;border:1px solid #2a3050;font-family:monospace;font-size:11px;border-radius:5px}
+  .flex1{flex:1;min-width:280px}
+</style>
+</head>
+<body>
+<h3 style="color:#9dff4f">Music Lab — diseño de música por bioma</h3>
+<div class="row">
+  <button id="btnStart">▶ Iniciar audio</button>
+  <button id="btnStop" class="stop">■ Silenciar</button>
+  <label style="width:140px">Biome
+    <select id="biome"></select>
+  </label>
+  <label style="width:140px">Estado
+    <select id="state"></select>
+  </label>
+  <label style="width:160px">Master <span class="val" id="vMaster"></span>
+    <input type="range" id="master" min="0" max="1" step="0.01">
+  </label>
+  <label style="width:160px">Música <span class="val" id="vMusic"></span>
+    <input type="range" id="music" min="0" max="1" step="0.01">
+  </label>
+</div>
+
+<div class="row">
+  <div class="panel">
+    <b style="color:#eee">Tema del bioma</b>
+    <label>root (Hz) <span class="val" id="vRoot"></span>
+      <input type="range" id="root" min="30" max="110" step="1"></label>
+    <label>scale
+      <select id="scale"></select></label>
+    <label>bright <span class="val" id="vBright"></span>
+      <input type="range" id="bright" min="0.3" max="2" step="0.05"></label>
+    <label>detune <span class="val" id="vDetune"></span>
+      <input type="range" id="detune" min="-24" max="24" step="1"></label>
+    <label>bassWave
+      <select id="bassWave"></select></label>
+    <label>leadWave
+      <select id="leadWave"></select></label>
+    <label>kickDiv
+      <select id="kickDiv"><option>2</option><option>4</option><option>8</option><option>16</option></select></label>
+    <label>percStyle
+      <select id="percStyle"><option>default</option><option>tribal</option><option>soft</option><option>pulse</option><option>sparse</option></select></label>
+    <label>ambientEvery (steps) <span class="val" id="vAmbEvery"></span>
+      <input type="range" id="ambientEvery" min="4" max="32" step="4"></label>
+    <label>leadDegrees (coma-separadas)
+      <input type="text" id="leadDegrees"></label>
+  </div>
+
+  <div class="panel flex1">
+    <b style="color:#eee">bassPattern (16 pasos, doble-click limpia)</b>
+    <div id="steps"></div>
+    <div style="font-size:10px;color:#5b6690;margin-top:4px">Click: activa/incrementa grado (0..6). Shift+click: decrementa.</div>
+
+    <b style="color:#eee;display:block;margin-top:14px">Mezcla del estado actual</b>
+    <div id="mix"></div>
+  </div>
+
+  <div class="panel flex1">
+    <b style="color:#eee">Exportar</b>
+    <div style="margin:6px 0"><button id="btnExport">Generar código</button></div>
+    <textarea id="out" readonly></textarea>
+  </div>
+</div>
+
+<script src="audio.js"></script>
+<script>
+var AM = AudioManager;
+var D = null; // AM._debug, filled after init
+
+var biomeSel = document.getElementById("biome");
+var stateSel = document.getElementById("state");
+var scaleSel = document.getElementById("scale");
+var bassWaveSel = document.getElementById("bassWave");
+var leadWaveSel = document.getElementById("leadWave");
+
+function fillSelect(sel, items) {
+  sel.innerHTML = "";
+  items.forEach(function (v) { var o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o); });
+}
+
+document.getElementById("btnStart").onclick = function () {
+  AM.init();
+  D = AM._debug;
+  biomeSel.value in D.BIOME_THEMES; // noop
+  fillSelect(biomeSel, Object.keys(D.BIOME_THEMES));
+  fillSelect(stateSel, Object.keys(D.STATES));
+  fillSelect(scaleSel, Object.keys(D.SCALES));
+  fillSelect(bassWaveSel, ["sine", "square", "sawtooth", "triangle"]);
+  fillSelect(leadWaveSel, ["sine", "square", "sawtooth", "triangle"]);
+  biomeSel.value = D.getBiomeId() || "ruinas";
+  stateSel.value = D.getStateName() || "lobby";
+  D.setBiome(biomeSel.value);
+  D.setState(stateSel.value, 50);
+  loadThemeToUI();
+  buildSteps();
+  buildMix();
+};
+document.getElementById("btnStop").onclick = function () { if (D) D.setState("silent", 300); };
+
+biomeSel.addEventListener("change", function () {
+  D.setBiome(biomeSel.value);
+  loadThemeToUI();
+  buildSteps();
+});
+stateSel.addEventListener("change", function () {
+  D.setState(stateSel.value, 300);
+  buildMix();
+});
+
+var masterEl = document.getElementById("master"), musicEl = document.getElementById("music");
+var settings = AM.getSettings();
+masterEl.value = settings.master; musicEl.value = settings.music;
+document.getElementById("vMaster").textContent = settings.master.toFixed(2);
+document.getElementById("vMusic").textContent = settings.music.toFixed(2);
+masterEl.addEventListener("input", function () { AM.setMasterVolume(+masterEl.value); document.getElementById("vMaster").textContent = (+masterEl.value).toFixed(2); });
+musicEl.addEventListener("input", function () { AM.setMusicVolume(+musicEl.value); document.getElementById("vMusic").textContent = (+musicEl.value).toFixed(2); });
+
+function theme() { return D.BIOME_THEMES[biomeSel.value]; }
+
+function loadThemeToUI() {
+  var th = theme();
+  setSlider("root", th.root, "vRoot", function (v) { return v + " Hz"; });
+  scaleSel.value = th.scale;
+  setSlider("bright", th.bright, "vBright", function (v) { return v.toFixed(2); });
+  setSlider("detune", th.detune, "vDetune", function (v) { return v; });
+  bassWaveSel.value = th.bassWave;
+  leadWaveSel.value = th.leadWave;
+  document.getElementById("kickDiv").value = th.kickDiv;
+  document.getElementById("percStyle").value = th.percStyle;
+  setSlider("ambientEvery", th.ambientEvery, "vAmbEvery", function (v) { return v; });
+  document.getElementById("leadDegrees").value = th.leadDegrees.join(",");
+}
+
+function setSlider(id, val, valId, fmt) {
+  var el = document.getElementById(id);
+  el.value = val;
+  document.getElementById(valId).textContent = fmt(val);
+}
+
+function wireField(id, valId, fmt, apply) {
+  var el = document.getElementById(id);
+  el.addEventListener("input", function () {
+    var v = el.type === "range" || el.tagName === "SELECT" && !isNaN(+el.value) ? +el.value : el.value;
+    if (valId) document.getElementById(valId).textContent = fmt ? fmt(v) : v;
+    apply(v);
+    D.refreshTheme();
+  });
+}
+
+wireField("root", "vRoot", function (v) { return v + " Hz"; }, function (v) { theme().root = v; });
+wireField("bright", "vBright", function (v) { return (+v).toFixed(2); }, function (v) { theme().bright = v; });
+wireField("detune", "vDetune", function (v) { return v; }, function (v) { theme().detune = v; });
+wireField("ambientEvery", "vAmbEvery", function (v) { return v; }, function (v) { theme().ambientEvery = v; });
+scaleSel.addEventListener("change", function () { theme().scale = scaleSel.value; D.refreshTheme(); });
+bassWaveSel.addEventListener("change", function () { theme().bassWave = bassWaveSel.value; D.refreshTheme(); });
+leadWaveSel.addEventListener("change", function () { theme().leadWave = leadWaveSel.value; D.refreshTheme(); });
+document.getElementById("kickDiv").addEventListener("change", function (e) { theme().kickDiv = +e.target.value; D.refreshTheme(); });
+document.getElementById("percStyle").addEventListener("change", function (e) { theme().percStyle = e.target.value; D.refreshTheme(); });
+document.getElementById("leadDegrees").addEventListener("change", function (e) {
+  var arr = e.target.value.split(",").map(function (s) { return parseInt(s, 10); }).filter(function (n) { return !isNaN(n); });
+  if (arr.length) { theme().leadDegrees = arr; D.refreshTheme(); }
+});
+
+function buildSteps() {
+  var wrap = document.getElementById("steps");
+  wrap.innerHTML = "";
+  var th = theme();
+  for (var i = 0; i < 16; i++) {
+    (function (i) {
+      var b = document.createElement("div");
+      b.className = "step" + (i % 4 === 0 ? " beat" : "");
+      var deg = th.bassPattern[i];
+      b.textContent = deg == null ? "" : deg;
+      if (deg != null) b.classList.add("on");
+      b.onclick = function (ev) {
+        var cur = th.bassPattern[i];
+        if (ev.shiftKey) {
+          th.bassPattern[i] = cur == null ? null : (cur <= 0 ? null : cur - 1);
+        } else {
+          th.bassPattern[i] = cur == null ? 0 : Math.min(6, cur + 1);
+        }
+        b.textContent = th.bassPattern[i] == null ? "" : th.bassPattern[i];
+        b.classList.toggle("on", th.bassPattern[i] != null);
+      };
+      wrap.appendChild(b);
+    })(i);
+  }
+}
+
+function buildMix() {
+  var wrap = document.getElementById("mix");
+  wrap.innerHTML = "";
+  var st = D.STATES[stateSel.value];
+  ["kick", "bass", "pad", "lead", "arp", "perc", "fx", "amb"].forEach(function (layer) {
+    var row = document.createElement("label");
+    row.textContent = layer;
+    var span = document.createElement("span"); span.className = "val"; span.textContent = " " + st[layer].toFixed(2);
+    row.appendChild(span);
+    var input = document.createElement("input");
+    input.type = "range"; input.min = 0; input.max = 1; input.step = 0.05; input.value = st[layer];
+    input.addEventListener("input", function () {
+      st[layer] = +input.value;
+      span.textContent = " " + st[layer].toFixed(2);
+      D.setState(stateSel.value, 150);
+    });
+    row.appendChild(input);
+    wrap.appendChild(row);
+  });
+  var frow = document.createElement("label");
+  frow.textContent = "filter (Hz)";
+  var fspan = document.createElement("span"); fspan.className = "val"; fspan.textContent = " " + st.filter;
+  frow.appendChild(fspan);
+  var finput = document.createElement("input");
+  finput.type = "range"; finput.min = 200; finput.max = 18000; finput.step = 100; finput.value = st.filter;
+  finput.addEventListener("input", function () {
+    st.filter = +finput.value;
+    fspan.textContent = " " + st.filter;
+    D.setState(stateSel.value, 150);
+  });
+  frow.appendChild(finput);
+  wrap.appendChild(frow);
+}
+
+document.getElementById("btnExport").onclick = function () {
+  if (!D) return;
+  var lines = [];
+  lines.push("// Pega esto dentro de BIOME_THEMES en audio.js (conserva ambientEvery/ambient del original si no lo tocaste)");
+  Object.keys(D.BIOME_THEMES).forEach(function (id) {
+    var th = D.BIOME_THEMES[id];
+    lines.push(id + ": {");
+    lines.push("  root: " + th.root + ", scale: \"" + th.scale + "\", bright: " + th.bright + ", bassWave: \"" + th.bassWave + "\", leadWave: \"" + th.leadWave + "\", detune: " + th.detune + ",");
+    lines.push("  kickDiv: " + th.kickDiv + ",");
+    lines.push("  bassPattern: [" + th.bassPattern.map(function (v) { return v == null ? "null" : v; }).join(", ") + "],");
+    lines.push("  leadDegrees: [" + th.leadDegrees.join(", ") + "], leadDiv: " + th.leadDiv + ",");
+    lines.push("  percStyle: \"" + th.percStyle + "\",");
+    lines.push("  ambientEvery: " + th.ambientEvery + ", ambient: /* sin cambios */ ...,");
+    lines.push("},");
+  });
+  lines.push("");
+  lines.push("// STATES (mezcla por estado)");
+  Object.keys(D.STATES).forEach(function (name) {
+    var st = D.STATES[name];
+    lines.push(name + ": { kick: " + st.kick + ", bass: " + st.bass + ", pad: " + st.pad + ", lead: " + st.lead + ", arp: " + st.arp + ", perc: " + st.perc + ", fx: " + st.fx + ", amb: " + st.amb + ", filter: " + st.filter + " },");
+  });
+  document.getElementById("out").value = lines.join("\n");
+};
+</script>
+</body>
+</html>

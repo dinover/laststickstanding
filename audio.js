@@ -220,47 +220,47 @@ var AudioManager = (function () {
   var BIOME_THEMES = {
     // Dark, sparse, echoing — ancient stone. The "default" feel.
     ruinas: {
-      root: 55, scale: "phrygian", bright: 1.0, bassWave: "sawtooth", leadWave: "square", detune: -6,
+      root: 96, scale: "phrygian", bright: 1.8, bassWave: "sawtooth", leadWave: "sawtooth", detune: 4,
       kickDiv: 4,
       bassPattern: [0, null, null, null, null, null, 3, null, 0, null, null, null, 5, null, null, null],
       leadDegrees: [0, 3, 5, 7], leadDiv: 4,
-      percStyle: "default",
-      ambientEvery: 16, ambient: function (t) { Instruments.ambientEcho(t); },
+      percStyle: "sparse",
+      ambientEvery: 4, ambient: function (t) { Instruments.ambientEcho(t); },
     },
     // Aggressive, tribal, driving — low rumble and double-time kicks.
     volcan: {
-      root: 49, scale: "harmonicMinor", bright: 0.7, bassWave: "square", leadWave: "sawtooth", detune: -10,
-      kickDiv: 2,
-      bassPattern: [0, null, 3, null, 0, null, 3, null, 0, null, 5, null, 0, null, 3, null],
+      root: 44, scale: "dorian", bright: 0.5, bassWave: "sawtooth", leadWave: "sine", detune: -18,
+      kickDiv: 4,
+      bassPattern: [5, null, null, null, null, null, 4, null, 6, null, 6, null, null, null, 6, null],
       leadDegrees: [0, 1, 3, 5], leadDiv: 4,
       percStyle: "tribal",
-      ambientEvery: 8, ambient: function (t) { Instruments.ambientRumble(t); },
+      ambientEvery: 4, ambient: function (t) { Instruments.ambientRumble(t); },
       stateOverrides: { fight: { kick: 1 }, clutch: { kick: 1 } },
     },
     // Organic, airy, sparse — soft pad, gentle shaker, occasional bird-like pluck.
     bosque: {
-      root: 58, scale: "dorian", bright: 0.85, bassWave: "triangle", leadWave: "triangle", detune: -3,
+      root: 30, scale: "dorian", bright: 0.55, bassWave: "square", leadWave: "square", detune: 24,
       kickDiv: 8,
       bassPattern: [0, null, null, null, null, null, null, null, null, 4, null, null, null, null, null, null],
       leadDegrees: [0, 2, 4, 6], leadDiv: 4,
-      percStyle: "soft",
-      ambientEvery: 24, ambient: function (t) { Instruments.ambientAir(t); },
+      percStyle: "tribal",
+      ambientEvery: 4, ambient: function (t) { Instruments.ambientAir(t); },
     },
     // Bright synthwave pulse — dense claps/hats, always-on arpeggio, octave-jump bass.
     neon: {
-      root: 55, scale: "aeolian", bright: 1.35, bassWave: "sawtooth", leadWave: "square", detune: -14,
+      root: 98, scale: "aeolian", bright: 1.55, bassWave: "sawtooth", leadWave: "square", detune: -10,
       kickDiv: 4,
       bassPattern: [0, null, 0, null, 7, null, 0, null, 0, null, 0, null, 7, null, 0, null],
       leadDegrees: [0, 4, 7, 4], leadDiv: 2,
       percStyle: "pulse",
-      ambientEvery: 16, ambient: function (t) { Instruments.ambientShimmer(t); },
+      ambientEvery: 32, ambient: function (t) { Instruments.ambientShimmer(t); },
       stateOverrides: { fight: { arp: 0.55 }, clutch: { arp: 0.8 } },
     },
     // Cold, glassy, hushed — near-silent bass, sparse bell tones, wind texture.
     nieve: {
-      root: 62, scale: "aeolian", bright: 1.15, bassWave: "triangle", leadWave: "square", detune: -4,
+      root: 62, scale: "aeolian", bright: 1.15, bassWave: "triangle", leadWave: "triangle", detune: -4,
       kickDiv: 8,
-      bassPattern: [0, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+      bassPattern: [1, null, null, null, 2, null, 3, null, 1, null, null, null, 2, null, null, null],
       leadDegrees: [0, 4], leadDiv: 8,
       percStyle: "sparse",
       ambientEvery: 16, ambient: function (t) { Instruments.ambientBell(t); },
@@ -463,7 +463,7 @@ var AudioManager = (function () {
   var STATES = {
     lobby: { kick: 0, bass: 0.5, pad: 0.7, lead: 0, arp: 0, perc: 0, fx: 0, amb: 0.5, filter: 16000 },
     countdown: { kick: 0, bass: 0.5, pad: 0.7, lead: 0, arp: 0, perc: 0, fx: 0, amb: 0.4, filter: 500 },
-    fight: { kick: 0.9, bass: 0.85, pad: 0.28, lead: 0.7, arp: 0, perc: 0.65, fx: 0, amb: 0.22, filter: 18000 },
+    fight: { kick: 0.7, bass: 0.75, pad: 0, lead: 0.2, arp: 0, perc: 0.55, fx: 0.15, amb: 0.15, filter: 9100 },
     clutch: { kick: 1, bass: 1, pad: 0.3, lead: 0.9, arp: 0.55, perc: 0.85, fx: 0.4, amb: 0.3, filter: 18000 },
     gameOver: { kick: 0, bass: 0.3, pad: 0.5, lead: 0, arp: 0, perc: 0, fx: 0, amb: 0.35, filter: 400 },
     silent: { kick: 0, bass: 0, pad: 0, lead: 0, arp: 0, perc: 0, fx: 0, amb: 0, filter: 18000 },
@@ -627,5 +627,25 @@ var AudioManager = (function () {
     setMuted: setMuted,
     getSettings: getSettings,
     on: on,
+    // Lab-only surface (used by music-lab.html to let you hand-design each biome's
+    // track live and export the result). Never referenced by screen.html/controller.html.
+    _debug: {
+      BIOME_THEMES: BIOME_THEMES,
+      STATES: STATES,
+      SCALES: SCALES,
+      setBiome: setBiome,
+      getBiomeId: function () {
+        for (var id in BIOME_THEMES) if (BIOME_THEMES[id] === theme) return id;
+        return null;
+      },
+      setState: function (name, rampMs) { Music.setState(name, rampMs); },
+      getStateName: function () { return currentStateName; },
+      refreshTheme: function () {
+        // call after mutating BIOME_THEMES[currentId] fields so the running scheduler
+        // picks up new values immediately (theme itself is the same object reference,
+        // so most edits are already live — this just re-applies the current state).
+        applyState(currentStateName, 200);
+      },
+    },
   };
 })();
