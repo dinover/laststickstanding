@@ -239,12 +239,17 @@ window.SNAIL_MODE = false;
       input: { left: false, right: false },
       jumpEdge: false,
       punchEdge: false,
+      kickEdge: false,
       walkCycle: 0,
       idleT: Math.random() * 10,
       squash: 0, // landing squash-and-stretch, 0..1 decaying
       hitStunT: 0, hitDir: 1, // knockback lean, decays after being hit
       jumpAnticT: 0, // brief crouch-anticipation before launch, decays
       deathFadeT: 0, // >0 while a recently-eliminated player fades out of the render
+      power: null, // { type: "fuego"|"hielo"|"tierra"|"aire", t: ms remaining } from an orb pickup
+      burnT: 0, burnTickT: 0, // fuego DoT stamped on a hit target, independent of the attacker's power window
+      burnFlashT: 0, // decaying — refreshed on the fire hit itself and on every DoT tick, purely visual
+      slowT: 0, // hielo slow stamped on a hit target
     };
   }
 
@@ -319,7 +324,12 @@ window.SNAIL_MODE = false;
       p.alive = true;
       p.attack = null;
       p.attackCooldown = 0;
+      p.power = null;
+      p.burnT = 0; p.burnTickT = 0; p.burnFlashT = 0;
+      p.slowT = 0;
     });
+    orb = null;
+    orbTimer = ORB_SPAWN_MS;
   }
 
   function nextRound() {
@@ -370,6 +380,7 @@ window.SNAIL_MODE = false;
       });
       phase = "roundEnd";
       phaseTimer = 2600;
+      orb = null;
       broadcastPhase();
     }
   }
@@ -407,6 +418,8 @@ window.SNAIL_MODE = false;
     scores = {};
     currentRound = 0;
     currentMap = MAP0;
+    orb = null;
+    orbTimer = ORB_SPAWN_MS;
     broadcastPhase();
     AudioManager.on.toLobby();
   }
@@ -433,6 +446,100 @@ window.SNAIL_MODE = false;
     frame();
   }
 
+  /* ---------------------------------------------------------------- player-vs-player collision */
+  // Simple pairwise AABB push-apart, run once per frame after every player has moved. O(n^2)
+  // over the live roster (never more than a handful of players), so it's negligible next to
+  // the rest of the frame. Purely positional (no velocity/mass simulation): each overlapping
+  // pair is split exactly in half along X, which is what keeps it jitter-free — once the
+  // overlap reaches 0 there's nothing left to correct, so it settles in a single frame instead
+  // of oscillating. Two passes let 3+ players tangled in a knot untangle smoothly instead of
+  // popping. Never touches vy/vx/attack state, so it can't affect combat, hitboxes or controls.
+  var COLLIDE_HW = PW + 4; // a hair wider than the platform half-width so bodies visibly touch
+  function resolvePlayerCollisions(ids) {
+    for (var pass = 0; pass < 2; pass++) {
+      for (var i = 0; i < ids.length; i++) {
+        var a = players[ids[i]];
+        if (!a || !a.alive) continue;
+        for (var j = i + 1; j < ids.length; j++) {
+          var b = players[ids[j]];
+          if (!b || !b.alive) continue;
+          var dx = b.x - a.x;
+          var dy = b.y - a.y;
+          var xOverlap = COLLIDE_HW * 2 - Math.abs(dx);
+          var yOverlap = PH - Math.abs(dy);
+          if (xOverlap <= 0 || yOverlap <= 0) continue;
+          if (dx === 0) dx = ids[i] < ids[j] ? -0.01 : 0.01;
+          var dir = dx > 0 ? 1 : -1;
+          var half = xOverlap / 2;
+          a.x -= dir * half;
+          b.x += dir * half;
+          a.x = clamp(a.x, 14, W - 14);
+          b.x = clamp(b.x, 14, W - 14);
+        }
+      }
+    }
+  }
+
+  /* ---------------------------------------------------------------- power orbs */
+  // Four elemental pickups that spawn on the map during a fight. Touching one (just walking
+  // into it, no button) grants an 8s power. Only one orb is ever live at a time — simple to
+  // read on screen, simple to balance, nothing to track across rounds. Fuego/hielo don't do
+  // anything to the wearer directly — they stamp a status on whoever the wearer *hits* while
+  // the power is active; tierra/aire are plain stat modifiers on the wearer for those 8s.
+  // Colors + all the aura/flash/recolor rendering for each power live in stickman.js
+  // (POWER_COLORS, auraSegment, drawOrbitAura, drawBurnFlash) right next to the rig that draws
+  // them — this file only owns the gameplay state (spawn/pickup/timers/damage), not how it looks.
+  var ORB_TYPES = Object.keys(POWER_COLORS);
+  var ORB_SPAWN_MS = 10000, ORB_POWER_MS = 8000, ORB_PICKUP_R = 28;
+  var BURN_MS = 3000, BURN_TICK_MS = 500, BURN_DMG = 2;
+  var SLOW_MS = 2500, SLOW_MULT = 0.5;
+  var ARMOR_MULT = 0.5;
+  var AIR_SPEED_MULT = 1.35, AIR_COOLDOWN_MULT = 0.55;
+
+  var orb = null; // { type, x, y, bornT }
+  var orbTimer = ORB_SPAWN_MS;
+
+  function spawnOrb() {
+    var plats = currentMap.platforms;
+    var pl = plats[Math.floor(Math.random() * plats.length)];
+    var pad = Math.min(24, pl.w / 3);
+    var lo = pl.x + pad, hi = pl.x + pl.w - pad;
+    var x = hi > lo ? lo + Math.random() * (hi - lo) : pl.x + pl.w / 2;
+    var type = ORB_TYPES[Math.floor(Math.random() * ORB_TYPES.length)];
+    orb = { type: type, x: x, y: pl.y - 30, bornT: 0 };
+  }
+
+  function updateOrbs(dt) {
+    if (phase !== "fight") return;
+    orbTimer -= dt;
+    if (orbTimer <= 0) { spawnOrb(); orbTimer = ORB_SPAWN_MS; }
+    if (!orb) return;
+    orb.bornT += dt;
+    for (var i = 0; i < roster.length; i++) {
+      var p = players[roster[i]];
+      if (!p || !p.alive) continue;
+      var dx = p.x - orb.x, dy = (p.y - 20) - orb.y;
+      if (dx * dx + dy * dy < ORB_PICKUP_R * ORB_PICKUP_R) {
+        p.power = { type: orb.type, t: ORB_POWER_MS };
+        AudioManager.on.uiClick();
+        orb = null;
+        break;
+      }
+    }
+  }
+
+  function drawOrb() {
+    if (!orb) return;
+    var color = POWER_COLORS[orb.type];
+    var y = orb.y + (window.SNAIL_MODE ? 0 : Math.sin(orb.bornT * 0.004) * 4);
+    ctx.save();
+    ctx.fillStyle = color;
+    if (!window.SNAIL_MODE) { ctx.shadowColor = color; ctx.shadowBlur = 14; }
+    ctx.beginPath(); ctx.arc(orb.x, y, 10, 0, Math.PI * 2); ctx.fill();
+    if (!window.SNAIL_MODE) ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
   /* ---------------------------------------------------------------- physics */
   function stepPlayer(p, dt, damageEnabled) {
     if (!p.alive) {
@@ -449,21 +556,32 @@ window.SNAIL_MODE = false;
     // position update by dt/16.6667 makes jump height AND hang time consistent regardless of
     // the device's real frame rate.
     var dtScale = dt / 16.6667;
-    if (p.input.left && !p.input.right) { p.vx = -SPEED; p.facing = -1; }
-    else if (p.input.right && !p.input.left) { p.vx = SPEED; p.facing = 1; }
+    // aire speeds the wearer up; hielo (stamped on hit, not on the wearer) slows the victim
+    // down — both are plain multipliers on the same SPEED constant, so neither touches the
+    // base physics tuning.
+    var speedMult = 1;
+    if (p.power && p.power.type === "aire") speedMult *= AIR_SPEED_MULT;
+    if (p.slowT > 0) speedMult *= SLOW_MULT;
+    var spd = SPEED * speedMult;
+    if (p.input.left && !p.input.right) { p.vx = -spd; p.facing = -1; }
+    else if (p.input.right && !p.input.left) { p.vx = spd; p.facing = 1; }
     else p.vx = 0;
 
     if (p.jumpEdge && p.grounded) { p.vy = JUMP_V; p.grounded = false; p.jumpAnticT = 90; AudioManager.on.jump(); }
     p.jumpEdge = false;
 
-    if (p.punchEdge && p.attackCooldown <= 0) {
-      var airborne = !p.grounded;
-      var dur = airborne ? KICK_MS : PUNCH_MS;
-      p.attack = { type: airborne ? "kick" : "punch", t: dur, dur: dur, hitSet: {} };
-      p.attackCooldown = ATTACK_COOLDOWN;
-      AudioManager.on.swing(p.attack.type);
+    if ((p.punchEdge || p.kickEdge) && p.attackCooldown <= 0) {
+      // punch/kick are two separate buttons now, each usable grounded or airborne — the
+      // button picks the type directly instead of inferring it from p.grounded.
+      var type = p.kickEdge ? "kick" : "punch";
+      var dur = type === "kick" ? KICK_MS : PUNCH_MS;
+      p.attack = { type: type, t: dur, dur: dur, hitSet: {} };
+      var cdMult = (p.power && p.power.type === "aire") ? AIR_COOLDOWN_MULT : 1;
+      p.attackCooldown = ATTACK_COOLDOWN * cdMult;
+      AudioManager.on.swing(type);
     }
     p.punchEdge = false;
+    p.kickEdge = false;
 
     p.vy += (p.vy < 0 ? GRAVITY_UP : GRAVITY_DOWN) * dtScale;
     var prevFeet = p.y;
@@ -480,6 +598,20 @@ window.SNAIL_MODE = false;
     if (p.jumpAnticT > 0) p.jumpAnticT = Math.max(0, p.jumpAnticT - dt);
     if (p.hitStunT > 0) p.hitStunT = Math.max(0, p.hitStunT - dt);
     if (p.deathFadeT > 0) p.deathFadeT = Math.max(0, p.deathFadeT - dt);
+    if (p.burnFlashT > 0) p.burnFlashT = Math.max(0, p.burnFlashT - dt);
+
+    if (p.power) { p.power.t -= dt; if (p.power.t <= 0) p.power = null; }
+    if (damageEnabled && p.burnT > 0) {
+      p.burnT -= dt;
+      p.burnTickT -= dt;
+      if (p.burnTickT <= 0) {
+        p.hp -= BURN_DMG;
+        p.burnTickT = BURN_TICK_MS;
+        p.burnFlashT = 220; // re-pop the "just got burned" flash on every DoT tick, not just the hit
+        if (p.hp <= 0) eliminate(p);
+      }
+    }
+    if (p.slowT > 0) p.slowT = Math.max(0, p.slowT - dt);
 
     p.grounded = false;
     var plats = currentMap.platforms;
@@ -520,9 +652,12 @@ window.SNAIL_MODE = false;
           if (facingOk && dy < 60) {
             p.attack.hitSet[oid] = true;
             var dmg = p.attack.type === "kick" ? 16 : 10;
+            if (o.power && o.power.type === "tierra") dmg = Math.round(dmg * ARMOR_MULT);
             var kbX = p.attack.type === "kick" ? 3.2 : 2.1;
             var kbY = p.attack.type === "kick" ? -2 : 0;
             o.hp -= dmg;
+            if (p.power && p.power.type === "fuego") { o.burnT = BURN_MS; o.burnTickT = BURN_TICK_MS; o.burnFlashT = 220; }
+            if (p.power && p.power.type === "hielo") o.slowT = SLOW_MS;
             o.kbx = (o.kbx || 0) + p.facing * kbX;
             o.vy += kbY;
             if (kbY < 0) o.grounded = false;
@@ -535,6 +670,11 @@ window.SNAIL_MODE = false;
             if (!window.SNAIL_MODE) Particles.punchSparks(hitX, hitY, p.facing, ac.getPlayerColor(p.id));
             ScreenFX.impactStreak(hitX, hitY, p.facing);
             AudioManager.on.hit(p.attack.type);
+            // impact squash on the one who got hit, and a smaller recoil pop on the attacker —
+            // both ride the same decaying squash field the landing impact already uses, so it's
+            // free (no new state, no render cost) and settles itself out over the next ~150ms.
+            o.squash = Math.max(o.squash || 0, isKick ? 0.55 : 0.4);
+            p.squash = Math.max(p.squash || 0, 0.2);
             o.hitStunT = 180;
             o.hitDir = p.facing;
 
@@ -580,6 +720,18 @@ window.SNAIL_MODE = false;
       ctx.fillRect(p.x - bw / 2, headY - 24, bw * Math.max(0, p.hp) / 100, 5);
     }
 
+    // active-power indicator: a flat dot above the head, cheap enough to keep even in snail
+    // mode (players need to know their own state) — only the glow around it is skipped there.
+    // The aura/flash/recolor that actually SELLS each power (flame border, ice repaint, etc.)
+    // is drawn by drawStickman itself, from the same p.power/burnT/slowT fields.
+    if (p.power) {
+      var pdef = POWER_COLORS[p.power.type];
+      ctx.fillStyle = pdef;
+      if (!window.SNAIL_MODE) { ctx.shadowColor = pdef; ctx.shadowBlur = 8; }
+      ctx.beginPath(); ctx.arc(p.x, headY - 32, 4, 0, Math.PI * 2); ctx.fill();
+      if (!window.SNAIL_MODE) ctx.shadowBlur = 0;
+    }
+
     // nickname — text rasterization (font metrics + glyph fill) is surprisingly costly per
     // player per frame on weak TV engines; skip it in snail mode, the colored topbar avatars
     // already identify who's who.
@@ -610,10 +762,12 @@ window.SNAIL_MODE = false;
       var damageEnabled = phase === "fight";
       var idsToStep = phase === "lobby" ? Object.keys(players) : roster;
       for (var si = 0; si < idsToStep.length; si++) stepPlayer(players[idsToStep[si]], dt, damageEnabled);
+      resolvePlayerCollisions(idsToStep);
+      updateOrbs(dt);
 
       if (phase === "fightIntro") {
         phaseTimer -= dt;
-        if (phaseTimer <= 0) { phase = "fight"; Camera.zoomImpulse(0.04); broadcastPhase(); AudioManager.on.fightBegin(); }
+        if (phaseTimer <= 0) { phase = "fight"; orbTimer = ORB_SPAWN_MS; Camera.zoomImpulse(0.04); broadcastPhase(); AudioManager.on.fightBegin(); }
       } else if (phase === "roundEnd") {
         phaseTimer -= dt;
         if (phaseTimer <= 0) nextRound();
@@ -626,6 +780,7 @@ window.SNAIL_MODE = false;
 
     Camera.begin(ctx, W, H);
     drawMap(currentMap, now, dt);
+    drawOrb();
     // plain for-loops here, not .forEach — a fresh closure allocated every single frame is
     // pure GC pressure with zero benefit, and this runs for every player every frame.
     if (phase === "lobby") {
@@ -668,6 +823,7 @@ window.SNAIL_MODE = false;
       if (data.k === "right") p.input.right = data.d;
       if (data.k === "jump" && data.d) p.jumpEdge = true;
       if (data.k === "punch" && data.d) p.punchEdge = true;
+      if (data.k === "kick" && data.d) p.kickEdge = true;
       if (phase === "lobby") renderTopbar();
       return;
     }

@@ -59,25 +59,28 @@ var ARM_KEYS = [
 
 /* One-shot strikes, keyframed the same way as the run cycle but sampled with
    sampleTableOnce() over the attack's 0..1 progress (t=0 is the moment the attack button
-   was pressed, t=1 is fully recovered) instead of looping. */
+   was pressed, t=1 is fully recovered) instead of looping. Follow-through overshoot (the limb
+   drifting past its resting angle before easing back) is baked in as the last two keyframes. */
 var PUNCH_ARM_KEYS = [
-  { t: 0.00, a: -43, b: 100 },
+  { t: 0.00, a: -78, b: 120 },
   { t: 0.20, a: -58, b: 76 },
   { t: 0.40, a: 74, b: -75 },
   { t: 0.55, a: 59, b: -29 },
   { t: 0.62, a: 40, b: -40 },
   { t: 0.80, a: 15, b: -11 },
-  { t: 1.00, a: -14, b: -4 },
+  { t: 0.92, a: -14, b: -4 },
+  { t: 1.00, a: -20, b: 2 },
 ];
 var KICK_LEG_KEYS = [
-  { t: 0.00, a: 10, b: 14 },
+  { t: 0.00, a: 9, b: 11 },
   { t: 0.20, a: 59, b: 73 },
   { t: 0.40, a: 83, b: 66 },
-  { t: 0.50, a: 88, b: 17 },
+  { t: 0.50, a: 100, b: -12 },
   { t: 0.60, a: 113, b: 0 },
   { t: 0.68, a: 113, b: -1 },
   { t: 0.85, a: 69, b: 5 },
-  { t: 1.00, a: 25, b: 41 },
+  { t: 0.94, a: 25, b: 41 },
+  { t: 1.00, a: 20, b: 46 },
 ];
 
 /* Standing still: just two fixed poses (no time axis), gently modulated by the breathing
@@ -97,29 +100,52 @@ var IDLE_ARMS = [
    through the air" value in between. Legs and arms are independent per side since they don't
    mirror each other the way a stride does. */
 var JUMP_LEGA_KEYS = [
-  { t: 0.00, a: 18, b: 88 },
+  { t: 0.00, a: -3, b: 88 },
   { t: 1.00, a: 10, b: 12 },
 ];
 var JUMP_LEGB_KEYS = [
-  { t: 0.00, a: -4, b: 66 },
+  { t: 0.00, a: -34, b: 66 },
   { t: 1.00, a: -14, b: 16 },
 ];
 var JUMP_ARMA_KEYS = [
-  { t: 0.00, a: 168, b: 20 },
+  { t: 0.00, a: 121, b: -27 },
   { t: 1.00, a: 46, b: 34 },
 ];
 var JUMP_ARMB_KEYS = [
-  { t: 0.00, a: -146, b: 24 },
+  { t: 0.00, a: -102, b: -40 },
   { t: 1.00, a: -22, b: 28 },
 ];
 
-/* Overshoot tails appended after the strike settles: the limb doesn't stop dead on the resting
-   angle, it drifts a touch past it and eases back — classic follow-through. Only added at the
-   very end of the existing tables (t stays within 0..1, sampleTableOnce is untouched). */
-PUNCH_ARM_KEYS[PUNCH_ARM_KEYS.length - 1] = { t: 0.92, a: -14, b: -4 };
-PUNCH_ARM_KEYS.push({ t: 1.00, a: -20, b: 2 });
-KICK_LEG_KEYS[KICK_LEG_KEYS.length - 1] = { t: 0.94, a: 25, b: 41 };
-KICK_LEG_KEYS.push({ t: 1.00, a: 20, b: 46 });
+/* Fixed one-off poses: the limb NOT being driven by a keyframe table during an attack (the
+   punching stance's legs, the kicking leg's planted support leg, the guard/balance arms).
+   Same {a,b} shape as IDLE_LEGS/IDLE_ARMS so the editor can treat every pose in the rig
+   uniformly, whether it's cyclic, one-shot, or completely static. */
+var STANCE = {
+  punchLegs: [{ a: -17, b: 25 }, { a: 36, b: 41 }],      // rear / lead
+  punchGuardArm: [{ a: -14, b: 85 }],                    // off-hand held by the chin
+  kickSupportLeg: [{ a: -28, b: -26 }],                  // planted leg bracing the kick
+  kickArms: [{ a: -60, b: 100 }, { a: 29, b: -30 }],     // thrown back for balance
+};
+
+/* Every scalar that shapes the *dynamic* motion (lean, twist, bob, breathing, squash/stretch,
+   secondary-motion lag...) lives here instead of as an inline literal, so the animation editor
+   can expose "how much does X lean" as a slider without touching drawStickman's logic. Values
+   below are exactly what shipped before this was pulled out — this refactor changes nothing
+   about how the game looks by default, only what's tunable. */
+var TUNE = {
+  runLean: 19, punchLeanBase: 9.5, punchLeanSnap: 20, kickLeanSnap: 14.5, airLeanMax: 8, idleLeanMix: 0.3,
+  runTwist: 4, punchTwist: 5, kickTwist: 9.5, headTwistRunMix: 1,
+  hitLean: 28, hitHeadShift: 2,
+  runBob: 5.4, headBobRun: 3, headLagPhase: 0.03, pelvisDrive: 3,
+  breatheAmp: 1.6, idleBobAmp: 0.3, idleSwayX: 1.5, idleWeightSwayX: 2.3, idleWeightLegSpread: 4,
+  idleShoulderRotAmp: 4.4, idleHeadTurnAmp: 3, idleHandDriftAmp: 4.2, armSwayAmp: 5.8,
+  headSpringK: 0.99,
+  squashScaleY: 0.4, squashScaleX: 0.31, squashWaveScaleY: 0.08, squashWaveScaleX: 0.05,
+  stretchScaleY: 0, stretchScaleX: 0, takeoffScaleY: 0.23, takeoffScaleX: 0.2,
+  actionPopSquash: 0.07, actionPopStretch: 0.03,
+};
+
+var THIGH = 12.5, SHIN = 13.5, UARM = 10, FARM = 11;
 
 /* angleDeg is UNSIGNED: positive always means "rotated toward the facing direction".
    facing (+1/-1) is applied exactly once, here — callers must never pre-multiply by it,
@@ -159,6 +185,13 @@ function limb(ctx, hipX, hipY, upperAngle, jointBend, upperLen, lowerLen, facing
   ctx.beginPath(); ctx.moveTo(mid.x, mid.y); ctx.lineTo(end.x, end.y); ctx.stroke();
   ctx.beginPath(); ctx.arc(mid.x, mid.y, 2, 0, Math.PI * 2); ctx.fill();
   if (drawEndDot) { ctx.beginPath(); ctx.arc(end.x, end.y, 2.4, 0, Math.PI * 2); ctx.fill(); }
+  // power aura, per bone: every limb (thigh+shin, upper arm+forearm) that goes through here
+  // gets its own overlay automatically — this is what makes fuego/hielo/tierra/aire hug the
+  // actual current pose instead of a generic shape around the whole body.
+  if (CURRENT_AURA) {
+    auraSegment(ctx, hipX, hipY, mid.x, mid.y, CURRENT_AURA);
+    auraSegment(ctx, mid.x, mid.y, end.x, end.y, CURRENT_AURA);
+  }
   return end;
 }
 function limbLeg(ctx, hipX, hipY, a, b, upperLen, lowerLen, facing, wA, wB) {
@@ -168,47 +201,212 @@ function limbArm(ctx, hipX, hipY, a, b, upperLen, lowerLen, facing, wA, wB, dot)
   return limb(ctx, hipX, hipY, a, b, upperLen, lowerLen, facing, wA, wB, dot, false);
 }
 
+/* ---------------------------------------------------------------- power FX
+   Single source of truth for what each orb power looks like — screen.html only ever reads
+   POWER_COLORS (for the orb pickup itself) and sets the plain state fields (power/burnT/
+   burnFlashT/slowT) on the player object; every bit of *rendering* for what those fields mean
+   lives here, right next to the rig that draws it. */
+var POWER_COLORS = { fuego: "#ff5a2e", hielo: "#4fd7ff", tierra: "#8a6a3a", aire: "#c9ffb0" };
+
+// Aire: a few motes orbiting the body — reads as swirling wind rather than a solid border,
+// which is what makes it visually distinct from the other three at a glance. Kept as a single
+// body-bounds halo (not per-limb, unlike the three below) because "orbiting the figure" is the
+// whole point of the effect — hugging individual bones would just make it look like sparks.
+function drawOrbitAura(ctx, cx, midY, halfW, halfH, t, color) {
+  var n = 3;
+  var rx = halfW + 6, ry = (halfH + 4) * 0.85;
+  ctx.lineWidth = 2;
+  ctx.shadowColor = color; ctx.shadowBlur = 8;
+  for (var i = 0; i < n; i++) {
+    var speed = 2.4 + i * 0.6;
+    var a = t * speed + i * (Math.PI * 2 / n);
+    var trailA = a - 0.4; // a short arc behind the head, so it reads as a swirl in motion
+    var x = cx + Math.cos(a) * rx, y = midY + Math.sin(a) * ry;
+    var tx = cx + Math.cos(trailA) * rx, ty = midY + Math.sin(trailA) * ry;
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.65;
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath(); ctx.arc(x, y, 1.8, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+}
+
+// The module-level "what's burning/frosting/crusting right now" context. Set once per player
+// right before their legs are drawn, read by every limb()/torso/neck stroke that follows, and
+// cleared once the rig is done. This is what lets fuego/hielo/tierra hug the ACTUAL current
+// pose bone-by-bone instead of a generic blob around the whole body: every segment the rig
+// already draws (thigh, shin, upper arm, forearm, spine, neck) gets its own little overlay.
+var CURRENT_AURA = null;
+function beginPowerAura(p) {
+  CURRENT_AURA = p.power ? { type: p.power.type, t: p.idleT || 0 } : null;
+}
+
+// Draws one bone's worth of aura, called from inside limb() (so legs+arms get it automatically)
+// and explicitly for the torso/neck strokes. Saves/restores fillStyle itself so callers never
+// have to think about it — the rig's own joint-dot fills right after must see the real body
+// color again, not whatever these shapes last set.
+function auraSegment(ctx, x1, y1, x2, y2, aura) {
+  if (!aura) return;
+  var savedFill = ctx.fillStyle, savedStroke = ctx.strokeStyle, savedWidth = ctx.lineWidth;
+  var dx = x2 - x1, dy = y2 - y1;
+  var len = Math.sqrt(dx * dx + dy * dy) || 1;
+  var nx = -dy / len, ny = dx / len;
+  var t = aura.t;
+
+  if (aura.type === "fuego") {
+    // small flame tongues riding along the bone, each licking mostly UPWARD (real fire rises
+    // regardless of which way the limb is angled) with its own flicker phase so a whole arm
+    // reads as dancing flame rather than one uniform pulse.
+    var n = 3;
+    for (var i = 0; i < n; i++) {
+      var u = (i + 0.5) / n;
+      var px = x1 + dx * u, py = y1 + dy * u;
+      var flick = 0.5 + 0.5 * Math.sin(t * 10 + i * 2.3 + u * 7);
+      var reach = 4 + flick * 6;
+      var sway = Math.sin(t * 15 + i * 4.1) * 2.5;
+      ctx.fillStyle = "rgba(255," + (110 + Math.round(flick * 90)) + ",35," + (0.22 + flick * 0.4).toFixed(2) + ")";
+      ctx.beginPath();
+      ctx.moveTo(px - 2, py);
+      ctx.lineTo(px + sway, py - reach);
+      ctx.lineTo(px + 2, py);
+      ctx.closePath();
+      ctx.fill();
+    }
+  } else if (aura.type === "hielo") {
+    // small crystal shards perched perpendicular to the bone, shimmering slowly — deliberately
+    // slower and dimmer than fire's flicker, per spec ("less glow").
+    var n2 = 3;
+    for (var j = 0; j < n2; j++) {
+      var u2 = (j + 0.5) / n2;
+      var px2 = x1 + dx * u2, py2 = y1 + dy * u2;
+      var shimmer = 0.35 + 0.3 * Math.sin(t * 2.4 + j * 1.7 + u2 * 4);
+      var sx = px2 + nx * 3.5, sy = py2 + ny * 3.5;
+      ctx.fillStyle = "rgba(170,230,255," + shimmer.toFixed(2) + ")";
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 3);
+      ctx.lineTo(sx + 1.6, sy);
+      ctx.lineTo(sx, sy + 3);
+      ctx.lineTo(sx - 1.6, sy);
+      ctx.closePath();
+      ctx.fill();
+    }
+  } else if (aura.type === "tierra") {
+    // small rock nubs jutting off the bone. No time term anywhere in here — fixed, static
+    // debris, per spec ("borde marrón de tierra estático").
+    var n3 = 2;
+    for (var k = 0; k < n3; k++) {
+      var u3 = (k + 0.5) / n3 * 0.7 + 0.15;
+      var px3 = x1 + dx * u3, py3 = y1 + dy * u3;
+      var jitter = ((Math.round(x1) * 7 + Math.round(y1) * 13 + k * 31) % 5) - 2;
+      var ox = px3 + nx * (4 + jitter), oy = py3 + ny * (4 + jitter);
+      ctx.fillStyle = "#8a6a3a";
+      ctx.beginPath();
+      ctx.moveTo(ox - 2.3, oy);
+      ctx.lineTo(ox, oy - 2.3);
+      ctx.lineTo(ox + 2.3, oy);
+      ctx.lineTo(ox, oy + 2.1);
+      ctx.closePath();
+      ctx.fill();
+    }
+  } else if (aura.type === "aire") {
+    // short gusts sliding continuously along the bone (base -> tip, looping), on top of the
+    // orbiting motes drawn once for the whole body — this is what makes air hug each limb the
+    // same way fire/ice/earth do, while the motes still sell "swirling around the figure".
+    var n4 = 2;
+    for (var m = 0; m < n4; m++) {
+      var u4 = (t * (0.6 + m * 0.35) + m * 0.5) % 1;
+      var tailU = Math.max(0, u4 - 0.16);
+      var px4 = x1 + dx * u4, py4 = y1 + dy * u4;
+      var tx = x1 + dx * tailU, ty = y1 + dy * tailU;
+      var off = Math.sin(t * 6 + m * 3) * 3;
+      ctx.strokeStyle = "rgba(220,255,225," + (0.55 - u4 * 0.25).toFixed(2) + ")";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(tx + nx * off, ty + ny * off);
+      ctx.lineTo(px4 + nx * off, py4 + ny * off);
+      ctx.stroke();
+    }
+  }
+  ctx.fillStyle = savedFill; ctx.strokeStyle = savedStroke; ctx.lineWidth = savedWidth;
+}
+
+// The classic "just got burned" pop: a soft additive flash over the whole silhouette, refreshed
+// every time fuego lands a hit (and every DoT tick while it keeps burning), decaying out over
+// ~0.2s. Drawn IN FRONT of the body (called after the limbs/head), unlike the aura above.
+function drawBurnFlash(ctx, p, cx, midY, halfH) {
+  if (!(p.burnFlashT > 0)) return;
+  var a = clamp(p.burnFlashT / 220, 0, 1) * 0.55;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = a;
+  ctx.fillStyle = POWER_COLORS.fuego;
+  ctx.beginPath(); ctx.ellipse(cx, midY, 17, halfH, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
 /**
  * @param {CanvasRenderingContext2D} ctx
  * @param {object} p - needs: x, y (feet), vx, vy, facing, grounded,
  *                     attack ({type,t,dur}|null), walkCycle (0..1), idleT, squash (0..1)
  * @param {string} color
+ * @param {object} [dbg] - optional out-param; if passed, filled with the computed hip/shoulder/
+ *                         head anchor points + facing + scaleX so a tool (the anim editor) can
+ *                         draw draggable handles in exact alignment with the real render. Costs
+ *                         nothing when omitted — every game call site leaves it undefined.
  * @return {{headY:number}} so callers can position an HP bar / nametag above the head
  */
-function drawStickman(ctx, p, color) {
+function drawStickman(ctx, p, color, dbg) {
+  var snail = !!window.SNAIL_MODE;
   var cx = p.x, feet = p.y;
   var running = p.grounded && p.vx !== 0;
-  var squash = p.squash || 0;
-  var stretch = !p.grounded ? clamp(Math.abs(p.vy) / 14, 0, 1) : 0;
-  // jump takeoff pop: a brief stretch right after launch, independent of fall-stretch above.
-  var jumpAntic = clamp((p.jumpAnticT || 0) / 90, 0, 1);
-  var takeoffStretch = jumpAntic * Math.sin(jumpAntic * Math.PI);
-  // landing bounce refinement: on top of the linear squash decay, add a tiny damped-sine
-  // (over-compress -> micro rebound -> settle), so the landing reads like a ball, not a clamp.
-  var squashWave = squash > 0 ? Math.sin(squash * Math.PI * 2.4) * squash * squash * 0.35 : 0;
-  var scaleY = 1 - squash * 0.16 + squashWave * 0.06 + stretch * 0.08 + takeoffStretch * 0.14;
-  var scaleX = 1 + squash * 0.18 - squashWave * 0.05 - stretch * 0.05 - takeoffStretch * 0.08;
+  var scaleX = 1, scaleY = 1;
+  if (!snail) {
+    // squash/stretch/action-pop only computed off snail mode — it's pure juice (a transform +
+    // a handful of sin() calls per player per frame) that a low-end TV never needs to pay for.
+    var squash = p.squash || 0;
+    var stretch = !p.grounded ? clamp(Math.abs(p.vy) / 14, 0, 1) : 0;
+    // jump takeoff pop: a brief stretch right after launch, independent of fall-stretch above.
+    var jumpAntic = clamp((p.jumpAnticT || 0) / 90, 0, 1);
+    var takeoffStretch = jumpAntic * Math.sin(jumpAntic * Math.PI);
+    // landing bounce refinement: on top of the linear squash decay, add a tiny damped-sine
+    // (over-compress -> micro rebound -> settle), so the landing reads like a ball, not a clamp.
+    var squashWave = squash > 0 ? Math.sin(squash * Math.PI * 2.4) * squash * squash * 0.35 : 0;
+    scaleY = 1 - squash * TUNE.squashScaleY + squashWave * TUNE.squashWaveScaleY + stretch * TUNE.stretchScaleY + takeoffStretch * TUNE.takeoffScaleY;
+    scaleX = 1 + squash * TUNE.squashScaleX - squashWave * TUNE.squashWaveScaleX - stretch * TUNE.stretchScaleX - takeoffStretch * TUNE.takeoffScaleX;
+    // dynamic whole-body scale pop (3-8%, per spec) layered on top of the squash/stretch skew
+    // above — a brief uniform enlarge on landings/takeoffs/hits reads as extra weight and impact
+    // without touching the squash math that already drives the skew itself.
+    var actionPop = 1 + clamp(squash, 0, 1) * TUNE.actionPopSquash + clamp(takeoffStretch, 0, 1) * TUNE.actionPopStretch;
+    scaleX *= actionPop; scaleY *= actionPop;
+  }
 
   var phaseNow = p.walkCycle || 0;
   // two soft bounces per stride (weight passing over each foot) — bigger than a walk's,
-  // since a sprinting stride has real vertical drive.
-  var runBob = running ? -Math.abs(Math.sin(phaseNow * Math.PI * 2)) * 3.9 : 0;
-  // idle: a slow chest-rise breathing cycle, plus a slower weight-shift sway.
-  var breathe = p.grounded && !running ? Math.sin(p.idleT * 1.1) * 1.6 : 0;
-  var idleBob = p.grounded && !running ? Math.sin(p.idleT * 1.6) * 0.6 + breathe * 0.6 : 0;
-  // weight-shift: a slow, low-frequency sway that favors one leg at a time (not symmetric
-  // breathing) — biases the two idle leg angles oppositely.
-  var idleWeight = p.grounded && !running ? Math.sin(p.idleT * 0.35) : 0;
-  // shoulder rotation + head micro-turn, each at their own slow frequency so idle never
-  // reads as one robotic bob repeating in lockstep.
-  var idleShoulderRot = p.grounded && !running ? Math.sin(p.idleT * 0.5 + 1.1) * 2.2 : 0;
-  var idleHeadTurn = p.grounded && !running ? Math.sin(p.idleT * 0.8 + 2.4) * 1.4 : 0;
-  var idleHandDrift = p.grounded && !running ? Math.sin(p.idleT * 1.3 + 0.6) * 2 : 0;
+  // since a sprinting stride has real vertical drive. Kept even in snail mode: without it a
+  // moving stickman visibly slides instead of running, which reads as broken, not "optimized".
+  var runBob = running ? -Math.abs(Math.sin(phaseNow * Math.PI * 2)) * TUNE.runBob : 0;
+  // idle micro-motion (breathing, weight-shift, shoulder/head sway, hand drift) and the
+  // running pelvis/shoulder counter-twist are pure secondary-motion flourish — skip all of it
+  // in snail mode instead of computing seven sin() calls a player never gets to appreciate on
+  // a struggling TV. The stance still reads correctly, just perfectly still between strides.
+  var idleActive = !snail && p.grounded && !running;
+  var breathe = idleActive ? Math.sin(p.idleT * 1.1) * TUNE.breatheAmp : 0;
+  var idleBob = idleActive ? Math.sin(p.idleT * 1.6) * TUNE.idleBobAmp + breathe * 0.6 : 0;
+  var idleWeight = idleActive ? Math.sin(p.idleT * 0.35) : 0;
+  var idleShoulderRot = idleActive ? Math.sin(p.idleT * 0.5 + 1.1) * TUNE.idleShoulderRotAmp : 0;
+  var idleHeadTurn = idleActive ? Math.sin(p.idleT * 0.8 + 2.4) * TUNE.idleHeadTurnAmp : 0;
+  var idleHandDrift = idleActive ? Math.sin(p.idleT * 1.3 + 0.6) * TUNE.idleHandDriftAmp : 0;
 
   // Shorter, stockier proportions than before.
+  // pelvis rotation: while running the hips drive fore-aft opposite the trailing/leading leg,
+  // half a stride out of phase with the shoulder twist below — a real stride counter-rotates
+  // hips and shoulders, it doesn't move the torso as one rigid slab.
+  var pelvisDrive = (running && !snail) ? Math.sin(phaseNow * Math.PI * 2 + Math.PI) * TUNE.pelvisDrive * p.facing : 0;
   var bodyH = 37 * scaleY;
   var hipY = feet - bodyH * 0.52 - runBob - idleBob;
-  var hipX = cx + (p.grounded && !running ? Math.sin(p.idleT * 0.7) * 1 + idleWeight * 1.4 : 0);
+  var hipX = cx + pelvisDrive + (idleActive ? Math.sin(p.idleT * 0.7) * TUNE.idleSwayX + idleWeight * TUNE.idleWeightSwayX : 0);
 
   var punching = p.attack && p.attack.type === "punch";
   var kicking = p.attack && p.attack.type === "kick";
@@ -221,21 +419,29 @@ function drawStickman(ctx, p, color) {
   // lean: driving forward hard while running, punching with the shoulder behind the fist,
   // arched back on the way up, tucked forward on the way down through the air.
   var lean = 0;
-  if (running) lean = p.facing * 13;
-  else if (punching) lean = p.facing * (4 + snap * 5);
-  else if (kicking) lean = -p.facing * snap * 5; // counter-lean away from the kicking leg
-  else if (!p.grounded) lean = p.facing * clamp(p.vy / 9, -1, 1) * 6;
-  else lean = idleShoulderRot * 0.3;
+  if (running) lean = p.facing * TUNE.runLean;
+  else if (punching) lean = p.facing * (TUNE.punchLeanBase + snap * TUNE.punchLeanSnap);
+  else if (kicking) lean = -p.facing * snap * TUNE.kickLeanSnap; // counter-lean away from the kicking leg
+  else if (!p.grounded) lean = p.facing * clamp(p.vy / 9, -1, 1) * TUNE.airLeanMax;
+  else lean = idleShoulderRot * TUNE.idleLeanMix;
 
   // knockback: torso tilts away from the hit and springs back over ~180ms (secondary motion,
   // not an instant snap). hitStunT/hitDir are additive fields set by screen.html on a landed hit.
   var hitStun = clamp((p.hitStunT || 0) / 180, 0, 1);
   var hitKick = hitStun * Math.sin(hitStun * Math.PI); // rises then eases back to 0
-  lean += -(p.hitDir || 1) * hitKick * 16;
+  lean += -(p.hitDir || 1) * hitKick * TUNE.hitLean;
 
   // pelvis vs shoulder rotation split: while running the shoulders twist a touch more than the
-  // hips and slightly out of phase, so the torso doesn't rotate as one rigid block.
-  var twist = running ? Math.sin(phaseNow * Math.PI * 2 + 0.6) * 4 : 0;
+  // hips and slightly out of phase, so the torso doesn't rotate as one rigid block. Punches and
+  // kicks add their own drive-through twist (shoulder leads the hip into the strike, same idea
+  // as a real boxer rotating the trunk behind a punch) so the follow-through reads in the torso,
+  // not just the arm.
+  var twist = 0;
+  if (!snail) {
+    if (running) twist = Math.sin(phaseNow * Math.PI * 2 + 0.6) * TUNE.runTwist;
+    if (punching) twist += p.facing * snap * TUNE.punchTwist;
+    else if (kicking) twist -= p.facing * snap * TUNE.kickTwist;
+  }
   var shoulderLean = lean + twist;
 
   var shoulderY = hipY - bodyH * 0.5 + breathe * 0.5;
@@ -243,35 +449,82 @@ function drawStickman(ctx, p, color) {
   var shoulderRad = shoulderLean * DEG;
   var shoulderX = hipX + Math.sin(shoulderRad) * (hipY - shoulderY);
   // slight secondary lag on the head, like it's loosely hinged rather than welded on.
-  var headLagPhase = running ? phaseNow - 0.09 : phaseNow;
-  var headBob = running ? -Math.abs(Math.sin(headLagPhase * Math.PI * 2)) * 3.4 : 0;
-  var headLean = shoulderLean + (running ? twist * 0.4 : idleHeadTurn);
+  var headLagPhase = running ? phaseNow - TUNE.headLagPhase : phaseNow;
+  var headBob = running ? -Math.abs(Math.sin(headLagPhase * Math.PI * 2)) * TUNE.headBobRun : 0;
+  var headLeanTarget = shoulderLean + (running ? twist * TUNE.headTwistRunMix : idleHeadTurn);
+  var headLean;
+  if (snail) {
+    // snap straight to the target instead of spring-lagging toward it — one less lerp and no
+    // persistent state to carry between frames.
+    headLean = headLeanTarget;
+  } else {
+    // secondary motion (overlap): the head doesn't snap to its target angle instantly, it eases
+    // toward it frame to frame — so when the torso whips around (landing, a strike, a hit), the
+    // head visibly trails behind for a couple frames instead of every part stopping in lockstep.
+    // State lives on the player object itself (persists frame to frame for free, no extra arrays).
+    p._headSpring = p._headSpring == null ? headLeanTarget : lerp(p._headSpring, headLeanTarget, TUNE.headSpringK);
+    headLean = p._headSpring;
+  }
   var headRad = headLean * DEG;
-  var headX = shoulderX + Math.sin(headRad) * 10 - (p.hitDir || 1) * hitKick * 3;
+  var headX = shoulderX + Math.sin(headRad) * 10 - (p.hitDir || 1) * hitKick * TUNE.hitHeadShift;
   var headY = shoulderY - 13 - headBob + idleBob * 0.3;
 
-  ctx.save();
-  ctx.translate(cx, feet);
-  ctx.scale(scaleX, 1);
-  ctx.translate(-cx, -feet);
+  if (dbg) {
+    dbg.hipX = hipX; dbg.hipY = hipY; dbg.shoulderX = shoulderX; dbg.shoulderY = shoulderY;
+    dbg.headX = headX; dbg.headY = headY; dbg.facing = p.facing; dbg.scaleX = scaleX; dbg.cx = cx; dbg.feet = feet;
+  }
+
+  // squash/stretch is forced to scaleX=1 in snail mode (and usually resolves to it in normal
+  // mode too, between hits/landings) — skip the transform entirely rather than pay for a
+  // save/translate/scale/translate round-trip that would just be a no-op.
+  var scaled = scaleX !== 1;
+  if (scaled) {
+    ctx.save();
+    ctx.translate(cx, feet);
+    ctx.scale(scaleX, 1);
+    ctx.translate(-cx, -feet);
+  }
   // round caps/joins make the software rasterizer stroke extra corner geometry on every
   // segment; butt/miter are the cheap defaults, and at this line width the visual difference
   // is negligible next to the frame-rate win.
-  ctx.lineCap = window.SNAIL_MODE ? "butt" : "round";
-  ctx.lineJoin = window.SNAIL_MODE ? "miter" : "round";
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  if (!window.SNAIL_MODE) {
-    ctx.shadowColor = color;
+  ctx.lineCap = snail ? "butt" : "round";
+  ctx.lineJoin = snail ? "miter" : "round";
+  // power status recolor: hielo paints the victim's whole body ice-blue for as long as the
+  // slow lasts, in BOTH modes (cheap — it's just which color the same strokes use). Snail mode
+  // additionally recolors by burn/own-power instead of drawing any of the fancier aura/flash
+  // effects below, which is the "redibujar los bordes con los colores del orbe" fallback.
+  var drawColor = color;
+  if (snail) {
+    if (p.burnT > 0) drawColor = POWER_COLORS.fuego;
+    else if (p.slowT > 0) drawColor = POWER_COLORS.hielo;
+    else if (p.power) drawColor = POWER_COLORS[p.power.type];
+  } else if (p.slowT > 0) {
+    drawColor = POWER_COLORS.hielo;
+  }
+  ctx.strokeStyle = drawColor;
+  ctx.fillStyle = drawColor;
+  if (!snail) {
+    ctx.shadowColor = drawColor;
     ctx.shadowBlur = 6;
   }
 
-  var THIGH = 12.5, SHIN = 13.5, UARM = 10, FARM = 11;
+  // ---- own-power aura ----
+  // aire also gets one whole-body orbit halo (drawn here, behind everything) on TOP of the
+  // per-bone gusts every limb()/torso/neck call adds below via CURRENT_AURA — the halo sells
+  // "swirling around the figure", the gusts sell "hugging each limb".
+  if (!snail) {
+    beginPowerAura(p);
+    if (p.power && p.power.type === "aire") {
+      var auraMidY = (headY + feet) / 2 - 4, auraHalfH = (feet - headY) / 2 + 6;
+      drawOrbitAura(ctx, hipX, auraMidY, 17, auraHalfH, p.idleT || 0, POWER_COLORS.aire);
+      ctx.strokeStyle = drawColor; ctx.fillStyle = drawColor; // restore before the rig itself
+    }
+  }
 
   // ---- legs first, so the torso overlaps them like a real silhouette ----
   if (kicking) {
     // planted support leg takes a slight backward give, bracing the kick
-    limbLeg(ctx, hipX, hipY, -14, 10, THIGH, SHIN, p.facing, 4.6, 3.4);
+    limbLeg(ctx, hipX, hipY, STANCE.kickSupportLeg[0].a, STANCE.kickSupportLeg[0].b, THIGH, SHIN, p.facing, 4.6, 3.4);
     // kicking leg: keyframed across the strike (raise the knee, snap the shin out, retract)
     var kk = sampleTableOnce(KICK_LEG_KEYS, attackLin);
     limbLeg(ctx, hipX, hipY, kk.a, kk.b, THIGH, SHIN + 1, p.facing, 4.6, 3.4);
@@ -291,13 +544,13 @@ function drawStickman(ctx, p, color) {
     limbLeg(ctx, hipX, hipY, legFront.a, legFront.b, THIGH, SHIN, p.facing, 4.6, 3.4);
   } else if (punching) {
     // a boxer's base: rear leg braced, lead leg planted a touch forward.
-    limbLeg(ctx, hipX, hipY, -10, 8, THIGH, SHIN, p.facing, 4.6, 3.4);
-    limbLeg(ctx, hipX, hipY, 14, 10, THIGH, SHIN, p.facing, 4.6, 3.4);
+    limbLeg(ctx, hipX, hipY, STANCE.punchLegs[0].a, STANCE.punchLegs[0].b, THIGH, SHIN, p.facing, 4.6, 3.4);
+    limbLeg(ctx, hipX, hipY, STANCE.punchLegs[1].a, STANCE.punchLegs[1].b, THIGH, SHIN, p.facing, 4.6, 3.4);
   } else {
     // fighting stance: staggered, knees bent and ready, not a flat-footed idle stand.
     // weight-shift biases the two legs oppositely, so the stance visibly favors one side.
-    limbLeg(ctx, hipX, hipY, IDLE_LEGS[0].a + idleWeight * 5, IDLE_LEGS[0].b, THIGH, SHIN, p.facing, 4.6, 3.4);
-    limbLeg(ctx, hipX, hipY, IDLE_LEGS[1].a - idleWeight * 5, IDLE_LEGS[1].b, THIGH, SHIN, p.facing, 4.6, 3.4);
+    limbLeg(ctx, hipX, hipY, IDLE_LEGS[0].a + idleWeight * TUNE.idleWeightLegSpread, IDLE_LEGS[0].b, THIGH, SHIN, p.facing, 4.6, 3.4);
+    limbLeg(ctx, hipX, hipY, IDLE_LEGS[1].a - idleWeight * TUNE.idleWeightLegSpread, IDLE_LEGS[1].b, THIGH, SHIN, p.facing, 4.6, 3.4);
   }
 
   // ---- torso ----
@@ -307,17 +560,18 @@ function drawStickman(ctx, p, color) {
   ctx.quadraticCurveTo(hipX + Math.sin(leanRad) * 6, (hipY + shoulderY) / 2, shoulderX, shoulderY);
   ctx.stroke();
   ctx.beginPath(); ctx.arc(hipX, hipY, 2.1, 0, Math.PI * 2); ctx.fill();
+  auraSegment(ctx, hipX, hipY, shoulderX, shoulderY, CURRENT_AURA);
 
   // ---- arms ----
   if (punching) {
     // off arm stays cocked by the chin, guard-style
-    limbArm(ctx, shoulderX, shoulderY, -20, 46, UARM, FARM, p.facing, 4.2, 3.2, false);
+    limbArm(ctx, shoulderX, shoulderY, STANCE.punchGuardArm[0].a, STANCE.punchGuardArm[0].b, UARM, FARM, p.facing, 4.2, 3.2, false);
     // punching arm: keyframed across the strike (wind-up -> throw -> recovery)
     var pa = sampleTableOnce(PUNCH_ARM_KEYS, attackLin);
     limbArm(ctx, shoulderX, shoulderY, pa.a, pa.b, UARM, FARM, p.facing, 4.2, 3.4, true);
   } else if (kicking) {
-    limbArm(ctx, shoulderX, shoulderY, -30, 40, UARM, FARM, p.facing, 4.2, 3.2, true); // thrown back for balance
-    limbArm(ctx, shoulderX, shoulderY, 26, 34, UARM, FARM, p.facing, 4.2, 3.2, true);
+    limbArm(ctx, shoulderX, shoulderY, STANCE.kickArms[0].a, STANCE.kickArms[0].b, UARM, FARM, p.facing, 4.2, 3.2, true); // thrown back for balance
+    limbArm(ctx, shoulderX, shoulderY, STANCE.kickArms[1].a, STANCE.kickArms[1].b, UARM, FARM, p.facing, 4.2, 3.2, true);
   } else if (!p.grounded) {
     var ta = (clamp(p.vy / 9, -1, 1) + 1) / 2;
     // angle convention: 0 = hanging down, 180 = reaching straight up. Rising throws both
@@ -334,7 +588,7 @@ function drawStickman(ctx, p, color) {
   } else {
     // simple resting pose: elbows stay put, relaxed by the sides; only the forearms turn in
     // to bring the fists together in front of the body. Rises and falls gently with the breath.
-    var armSway = breathe * 4;
+    var armSway = breathe * TUNE.armSwayAmp;
     limbArm(ctx, shoulderX, shoulderY, IDLE_ARMS[0].a - armSway + idleHandDrift, IDLE_ARMS[0].b, UARM, FARM, p.facing, 4.2, 3.2);
     limbArm(ctx, shoulderX, shoulderY, IDLE_ARMS[1].a + armSway - idleHandDrift, IDLE_ARMS[1].b, UARM, FARM, p.facing, 4.2, 3.2);
   }
@@ -342,11 +596,15 @@ function drawStickman(ctx, p, color) {
   // ---- head ----
   ctx.lineWidth = 4.4;
   ctx.beginPath(); ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(headX, headY + 8); ctx.stroke();
+  auraSegment(ctx, shoulderX, shoulderY, headX, headY + 8, CURRENT_AURA);
   ctx.lineWidth = 4;
   ctx.beginPath(); ctx.ellipse(headX, headY, 7.6, 8.8, 0, 0, Math.PI * 2); ctx.stroke();
 
-  ctx.shadowBlur = 0;
-  ctx.restore();
+  if (!snail) ctx.shadowBlur = 0;
+  // burn flash last, on top of everything, like a hit spark
+  if (!snail) drawBurnFlash(ctx, p, hipX, (headY + feet) / 2 - 4, (feet - headY) / 2 + 6);
+  CURRENT_AURA = null; // don't leak into whatever gets drawn next (ghost trails, another player)
+  if (scaled) ctx.restore();
 
   return { headY: headY };
 }

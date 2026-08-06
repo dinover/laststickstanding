@@ -57,7 +57,13 @@
   .padBtn.down { transform: scale(.97); border-color: var(--me); box-shadow: inset 0 0 40px color-mix(in srgb, var(--me) 25%, transparent); color: var(--me); }
   #punchBtn { background: linear-gradient(155deg, #2a1030, #180a18); }
   #punchBtn.down { border-color: var(--hot); color: var(--hot); box-shadow: inset 0 0 40px color-mix(in srgb, var(--hot) 25%, transparent); }
+  #kickBtn { background: linear-gradient(155deg, #0f2a30, #0a1818); }
+  #kickBtn.down { border-color: var(--glow); color: var(--glow); box-shadow: inset 0 0 40px color-mix(in srgb, var(--glow) 25%, transparent); }
   #jumpBtn.down { border-color: var(--amber); color: var(--amber); }
+  /* punch/kick sit side by side below jump, instead of each getting a full-width row —
+     three stacked full-width buttons would make each one uncomfortably short on a phone. */
+  .zone.action .strikeRow { flex: 1 1 0; display: flex; gap: 10px; min-height: 0; }
+  .zone.action .strikeRow .padBtn { height: 100%; }
 
   /* -------- host panel / wait panel: a compact floating card, not a full-width block,
      so the movement and action buttons stay reachable underneath it -------- */
@@ -142,7 +148,10 @@
   </div>
   <div class="zone action">
     <button class="padBtn" id="jumpBtn">SALTAR</button>
-    <button class="padBtn" id="punchBtn">GOLPEAR</button>
+    <div class="strikeRow">
+      <button class="padBtn" id="punchBtn">PIÑA</button>
+      <button class="padBtn" id="kickBtn">PATADA</button>
+    </div>
   </div>
 </div>
 
@@ -253,6 +262,7 @@
   bindHold(document.getElementById("rightBtn"), "right");
   bindHold(document.getElementById("jumpBtn"), "jump");
   bindHold(document.getElementById("punchBtn"), "punch");
+  bindHold(document.getElementById("kickBtn"), "kick");
 
   /* -------- resync on wake: a locked/backgrounded phone misses whatever "phase" broadcast
      fired while it was asleep (e.g. the host starting the match), and nothing re-sends it on

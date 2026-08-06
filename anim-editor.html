@@ -1,0 +1,889 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Editor de animación — Last Stick Standing</title>
+<style>
+  :root { --bg:#05060d; --panel:#0f1220; --line:#232a44; --glow:#35f0e0; --hot:#ff2e88; --amber:#ffd23f; --text:#eaf2ff; --dim:#8492b8; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,Segoe UI,sans-serif; }
+  h1 { font-size:16px; margin:0; padding:14px 18px 0; }
+  h1 span { color:var(--dim); font-weight:400; font-size:12px; margin-left:10px; }
+
+  .tabs { display:flex; gap:4px; padding:10px 18px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .tabBtn {
+    background:none; border:none; color:var(--dim); padding:9px 16px; font-size:13px; font-weight:600;
+    cursor:pointer; border-bottom:2px solid transparent; border-radius:0;
+  }
+  .tabBtn.active { color:var(--glow); border-bottom-color:var(--glow); }
+  .tabBtn:hover { color:var(--text); }
+
+  .panel { display:none; }
+  .panel.active { display:block; }
+  .layout { display:flex; gap:0; min-height:calc(100vh - 92px); }
+
+  /* ---- left: live preview ---- */
+  .preview { width:340px; flex-shrink:0; border-right:1px solid var(--line); padding:16px; display:flex; flex-direction:column; gap:14px; }
+  canvas.stage { background:#090b16; border:1px solid var(--line); border-radius:8px; width:100%; touch-action:none; cursor:grab; }
+  .row { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--dim); }
+  .row input[type=range] { flex:1; }
+  .row output { font-family:monospace; width:42px; text-align:right; color:var(--glow); }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; }
+  button { background:#1a2038; border:1px solid var(--line); color:var(--text); padding:8px 12px; border-radius:6px; cursor:pointer; font-size:12px; }
+  button:hover { border-color:var(--glow); }
+  button.primary { background:var(--glow); color:#05060d; border-color:var(--glow); font-weight:700; }
+  button.danger { color:var(--hot); }
+  .filmstrip { display:flex; gap:2px; overflow-x:auto; background:#090b16; border:1px solid var(--line); border-radius:8px; padding:4px; }
+  .filmstrip canvas { width:44px; height:60px; flex-shrink:0; border:none; border-radius:0; cursor:pointer; }
+  .dragHint { font-size:11px; color:var(--dim); line-height:1.5; background:#0a0d1a; border:1px solid var(--line); border-radius:6px; padding:8px 10px; }
+  .dragHint b.dot1 { color:var(--hot); } .dragHint b.dot2 { color:var(--amber); }
+
+  /* ---- right: tables ---- */
+  .tables { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:22px; max-height:calc(100vh - 92px); }
+  .tableGrid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .tableBlock h2 { font-size:13px; margin:0 0 8px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th { text-align:left; color:var(--dim); font-weight:600; padding:4px 6px; border-bottom:1px solid var(--line); }
+  td { padding:4px 6px; border-bottom:1px solid #171b2c; vertical-align:middle; }
+  td.tcell input[type=number] { width:56px; background:#0a0d1a; border:1px solid var(--line); color:var(--text); border-radius:4px; padding:5px 6px; font-family:monospace; font-size:12px; }
+  .valcell { display:flex; align-items:center; gap:6px; }
+  .valcell input[type=range] { width:90px; }
+  .valcell input[type=number] { width:52px; background:#0a0d1a; border:1px solid var(--line); color:var(--text); border-radius:4px; padding:5px 6px; font-family:monospace; font-size:12px; }
+  input:focus { outline:none; border-color:var(--glow) !important; }
+  .hint { font-size:11px; color:var(--dim); margin:6px 0 10px; line-height:1.5; }
+  .hint b { color:var(--text); }
+  .rowLabel { font-size:11.5px; color:var(--dim); white-space:nowrap; }
+
+  /* ---- Cuerpo tab: plain named sliders (TUNE) ---- */
+  .tuneGrid { display:grid; grid-template-columns:1fr 1fr; gap:6px 24px; }
+  .tuneRow { display:flex; align-items:center; gap:8px; font-size:12px; padding:4px 0; border-bottom:1px solid #171b2c; }
+  .tuneRow label { width:190px; color:var(--dim); flex-shrink:0; }
+  .tuneRow input[type=range] { flex:1; }
+  .tuneRow input[type=number] { width:56px; background:#0a0d1a; border:1px solid var(--line); color:var(--text); border-radius:4px; padding:4px 6px; font-family:monospace; font-size:12px; }
+  .tuneSection h2 { font-size:13px; margin:18px 0 4px; color:var(--glow); text-transform:uppercase; letter-spacing:.08em; }
+  .tuneSection:first-child h2 { margin-top:0; }
+
+  .exportBox { border-top:1px solid var(--line); padding:14px 18px; }
+  .exportBox .row { margin-bottom:8px; }
+  textarea { width:100%; height:160px; background:#0a0d1a; color:var(--glow); border:1px solid var(--line); border-radius:6px; font-family:monospace; font-size:11.5px; padding:10px; resize:vertical; }
+</style>
+</head>
+<body>
+<h1>Editor de animación<span>igual al motor real del juego — arrastrá los puntos <b style="color:#ff2e88">●</b> (articulación) y <b style="color:#ffd23f">●</b> (punta) del muñeco, o tocá cualquier slider</span></h1>
+<div class="tabs">
+  <button class="tabBtn active" data-tab="run">Correr</button>
+  <button class="tabBtn" data-tab="punch">Piña</button>
+  <button class="tabBtn" data-tab="kick">Patada</button>
+  <button class="tabBtn" data-tab="idle">Quieto</button>
+  <button class="tabBtn" data-tab="jump">Salto</button>
+  <button class="tabBtn" data-tab="body">Cuerpo</button>
+</div>
+
+<!-- ============================================================ CORRER ============================================================ -->
+<div class="panel active" id="panel-run">
+  <div class="layout">
+    <div class="preview">
+      <canvas class="stage" id="stage-run" width="300" height="260"></canvas>
+      <div class="dragHint">Arrastrá <b class="dot1">●</b> para rotar el muslo/hombro, o <b class="dot2">●</b> para doblar la rodilla/codo del cuadro clave más cercano a la fase actual.</div>
+      <div class="row"><label style="width:60px">Fase</label><input type="range" id="phase-run" min="0" max="1" step="0.001" value="0" /><output id="phaseOut-run">0.000</output></div>
+      <div class="btns"><button id="play-run">⏸ Pausar</button><button id="facing-run">Mirando: derecha</button></div>
+      <div><div class="row" style="margin-bottom:6px">Cuadros (10 fases fijas — click para saltar ahí)</div><div class="filmstrip" id="film-run"></div></div>
+      <div class="btns"><button id="reset-run" class="danger">↺ Restaurar valores del juego</button></div>
+    </div>
+    <div class="tables">
+      <div class="tableGrid">
+        <div class="tableBlock">
+          <h2>Piernas — LEG_KEYS</h2>
+          <p class="hint"><b>t</b> = momento del ciclo (cíclico). <b>a</b> = ángulo cadera. <b>b</b> = flexión de rodilla.</p>
+          <table id="table-legs"><thead><tr><th>t</th><th>a (cadera)</th><th>b (rodilla)</th><th></th></tr></thead><tbody></tbody></table>
+          <button id="add-legs">+ agregar cuadro</button>
+        </div>
+        <div class="tableBlock">
+          <h2>Brazos — ARM_KEYS</h2>
+          <p class="hint"><b>t</b> = momento del ciclo (cíclico). <b>a</b> = ángulo hombro. <b>b</b> = flexión de codo.</p>
+          <table id="table-arms"><thead><tr><th>t</th><th>a (hombro)</th><th>b (codo)</th><th></th></tr></thead><tbody></tbody></table>
+          <button id="add-arms">+ agregar cuadro</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ PIÑA ============================================================ -->
+<div class="panel" id="panel-punch">
+  <div class="layout">
+    <div class="preview">
+      <canvas class="stage" id="stage-punch" width="300" height="260"></canvas>
+      <div class="dragHint">El brazo que pega se arrastra igual que en "Correr". Las piernas y el brazo de guardia son una pose fija (STANCE) — también arrastrables.</div>
+      <div class="row"><label style="width:60px">Progreso</label><input type="range" id="phase-punch" min="0" max="1" step="0.001" value="0" /><output id="phaseOut-punch">0.000</output></div>
+      <div class="btns"><button id="play-punch">⏸ Pausar</button><button id="facing-punch">Mirando: derecha</button></div>
+      <div><div class="row" style="margin-bottom:6px">Cuadros (10 momentos del golpe)</div><div class="filmstrip" id="film-punch"></div></div>
+      <div class="btns"><button id="reset-punch" class="danger">↺ Restaurar valores del juego</button></div>
+    </div>
+    <div class="tables">
+      <div class="tableBlock">
+        <h2>Brazo que pega — PUNCH_ARM_KEYS</h2>
+        <p class="hint"><b>t</b> = 0 al apretar el botón, 1 al terminar de recuperarse (no cíclico). <b>a</b> = ángulo hombro. <b>b</b> = flexión de codo (negativo = brazo se extiende más allá de recto, el remate).</p>
+        <table id="table-punch"><thead><tr><th>t</th><th>a (hombro)</th><th>b (codo)</th><th></th></tr></thead><tbody></tbody></table>
+        <button id="add-punch">+ agregar cuadro</button>
+      </div>
+      <div class="tableGrid">
+        <div class="tableBlock">
+          <h2>Postura — STANCE.punchLegs</h2>
+          <p class="hint">Piernas fijas durante todo el golpe (no cíclico).</p>
+          <table id="table-punchLegs"><thead><tr><th></th><th>a</th><th>b</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div class="tableBlock">
+          <h2>Guardia — STANCE.punchGuardArm</h2>
+          <p class="hint">Brazo que no pega, cerca del mentón.</p>
+          <table id="table-punchGuard"><thead><tr><th></th><th>a</th><th>b</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ PATADA ============================================================ -->
+<div class="panel" id="panel-kick">
+  <div class="layout">
+    <div class="preview">
+      <canvas class="stage" id="stage-kick" width="300" height="260"></canvas>
+      <div class="dragHint">La pierna que patea se arrastra igual que en "Correr". La pierna de apoyo y los brazos de equilibrio son pose fija (STANCE).</div>
+      <div class="row"><label style="width:60px">Progreso</label><input type="range" id="phase-kick" min="0" max="1" step="0.001" value="0" /><output id="phaseOut-kick">0.000</output></div>
+      <div class="btns"><button id="play-kick">⏸ Pausar</button><button id="facing-kick">Mirando: derecha</button></div>
+      <div><div class="row" style="margin-bottom:6px">Cuadros (10 momentos de la patada)</div><div class="filmstrip" id="film-kick"></div></div>
+      <div class="btns"><button id="reset-kick" class="danger">↺ Restaurar valores del juego</button></div>
+    </div>
+    <div class="tables">
+      <div class="tableBlock">
+        <h2>Pierna que patea — KICK_LEG_KEYS</h2>
+        <p class="hint"><b>t</b> = 0 al apretar el botón, 1 al terminar de recuperarse (no cíclico). <b>a</b> = ángulo cadera. <b>b</b> = flexión de rodilla (negativo = pierna se extiende más allá de recta, el latigazo).</p>
+        <table id="table-kick"><thead><tr><th>t</th><th>a (cadera)</th><th>b (rodilla)</th><th></th></tr></thead><tbody></tbody></table>
+        <button id="add-kick">+ agregar cuadro</button>
+      </div>
+      <div class="tableGrid">
+        <div class="tableBlock">
+          <h2>Apoyo — STANCE.kickSupportLeg</h2>
+          <p class="hint">Pierna plantada, brindando el golpe.</p>
+          <table id="table-kickSupport"><thead><tr><th></th><th>a</th><th>b</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div class="tableBlock">
+          <h2>Brazos de equilibrio — STANCE.kickArms</h2>
+          <table id="table-kickArms"><thead><tr><th></th><th>a</th><th>b</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ QUIETO ============================================================ -->
+<div class="panel" id="panel-idle">
+  <div class="layout">
+    <div class="preview">
+      <canvas class="stage" id="stage-idle" width="300" height="260"></canvas>
+      <div class="dragHint">Las 4 extremidades de la pose de reposo son siempre arrastrables (no hay cuadros clave, es una pose fija que respira).</div>
+      <p class="hint">Se anima solo con la respiración — no hay cuadros ni pausa, es una pose fija que se mece.</p>
+      <div class="btns"><button id="facing-idle">Mirando: derecha</button></div>
+      <div class="btns"><button id="reset-idle" class="danger">↺ Restaurar valores del juego</button></div>
+    </div>
+    <div class="tables">
+      <div class="tableGrid">
+        <div class="tableBlock">
+          <h2>Piernas — IDLE_LEGS</h2>
+          <p class="hint">Dos piernas fijas (no cíclico, sin <b>t</b>). <b>a</b> = ángulo cadera. <b>b</b> = flexión de rodilla.</p>
+          <table id="table-idleLegs"><thead><tr><th></th><th>a (cadera)</th><th>b (rodilla)</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div class="tableBlock">
+          <h2>Brazos — IDLE_ARMS</h2>
+          <p class="hint">Dos brazos fijos. <b>a</b> = ángulo hombro. <b>b</b> = flexión de codo (negativo = extendido).</p>
+          <table id="table-idleArms"><thead><tr><th></th><th>a (hombro)</th><th>b (codo)</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ SALTO ============================================================ -->
+<div class="panel" id="panel-jump">
+  <div class="layout">
+    <div class="preview">
+      <canvas class="stage" id="stage-jump" width="300" height="260"></canvas>
+      <div class="dragHint">Arrastrá el cuadro clave más cercano (despegando t=0 / cayendo t=1) según el progreso del slider.</div>
+      <div class="row"><label style="width:60px">Progreso</label><input type="range" id="phase-jump" min="0" max="1" step="0.001" value="0" /><output id="phaseOut-jump">0.000</output></div>
+      <p class="hint">0 = recién despega (subiendo fuerte). 1 = por aterrizar (cayendo fuerte).</p>
+      <div class="btns"><button id="play-jump">⏸ Pausar</button><button id="facing-jump">Mirando: derecha</button></div>
+      <div><div class="row" style="margin-bottom:6px">Cuadros (10 momentos del salto)</div><div class="filmstrip" id="film-jump"></div></div>
+      <div class="btns"><button id="reset-jump" class="danger">↺ Restaurar valores del juego</button></div>
+    </div>
+    <div class="tables">
+      <div class="tableGrid">
+        <div class="tableBlock">
+          <h2>Pierna A — JUMP_LEGA_KEYS</h2>
+          <table id="table-jumpLegA"><thead><tr><th>t</th><th>a</th><th>b</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div class="tableBlock">
+          <h2>Pierna B — JUMP_LEGB_KEYS</h2>
+          <table id="table-jumpLegB"><thead><tr><th>t</th><th>a</th><th>b</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div class="tableBlock">
+          <h2>Brazo A — JUMP_ARMA_KEYS</h2>
+          <table id="table-jumpArmA"><thead><tr><th>t</th><th>a</th><th>b</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div class="tableBlock">
+          <h2>Brazo B — JUMP_ARMB_KEYS</h2>
+          <table id="table-jumpArmB"><thead><tr><th>t</th><th>a</th><th>b</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+      <p class="hint">Cada tabla tiene 2 filas fijas: la primera es "despegando" (t=0), la segunda "cayendo" (t=1). <b>a</b> = ángulo (0=abajo, 180=arriba). <b>b</b> = flexión (rodilla dobla hacia atrás siempre; codo dobla hacia el cuerpo).</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ CUERPO ============================================================ -->
+<div class="panel" id="panel-body">
+  <div class="layout">
+    <div class="preview">
+      <canvas class="stage" id="stage-body" width="300" height="260" style="cursor:default"></canvas>
+      <div class="row"><label style="width:60px">Estado</label>
+        <select id="bodyState" style="flex:1; background:#161a2c; color:#cfe; border:1px solid #2a3050; border-radius:4px; padding:5px">
+          <option value="run">Correr</option>
+          <option value="idle">Quieto</option>
+          <option value="jumpUp">Salto (despegando)</option>
+          <option value="jumpDown">Salto (cayendo)</option>
+          <option value="punch">Piña</option>
+          <option value="kick">Patada</option>
+          <option value="hit">Golpe recibido</option>
+        </select>
+      </div>
+      <p class="hint">Estos valores son multiplicadores globales del sistema (inclinación, torsión, rebote, respiración, squash&amp;stretch) — no son cuadros clave, se aplican en tiempo real sobre <b>todas</b> las animaciones. Cambiá el estado de arriba para ver el efecto de cada grupo.</p>
+      <div class="btns"><button id="reset-body" class="danger">↺ Restaurar valores del juego</button></div>
+    </div>
+    <div class="tables">
+      <div class="tuneSection">
+        <h2>Inclinación (lean) y torsión</h2>
+        <div class="tuneGrid" id="tune-lean"></div>
+      </div>
+      <div class="tuneSection">
+        <h2>Movimiento (bob / pelvis / cabeza)</h2>
+        <div class="tuneGrid" id="tune-motion"></div>
+      </div>
+      <div class="tuneSection">
+        <h2>Reposo (respiración / peso / mirada)</h2>
+        <div class="tuneGrid" id="tune-idle"></div>
+      </div>
+      <div class="tuneSection">
+        <h2>Squash &amp; stretch</h2>
+        <div class="tuneGrid" id="tune-squash"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="exportBox">
+  <div class="row">
+    <button id="exportBtn" class="primary">Generar código para pegar en stickman.js (todo: cuadros + STANCE + TUNE)</button>
+    <button id="copyBtn">Copiar</button>
+  </div>
+  <textarea id="exportOut" readonly placeholder="Apretá &quot;Generar código&quot; para ver el resultado…"></textarea>
+</div>
+
+<script src="stickman.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  /* ---- tabs ---- */
+  document.querySelectorAll(".tabBtn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".tabBtn").forEach(function (b) { b.classList.remove("active"); });
+      document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+    });
+  });
+
+  // Snapshot the game's shipped values so "restore" always has something real to fall back to.
+  var ALL_TABLE_NAMES = [
+    "LEG_KEYS", "ARM_KEYS", "PUNCH_ARM_KEYS", "KICK_LEG_KEYS",
+    "IDLE_LEGS", "IDLE_ARMS", "JUMP_LEGA_KEYS", "JUMP_LEGB_KEYS", "JUMP_ARMA_KEYS", "JUMP_ARMB_KEYS",
+  ];
+  var DEFAULTS = {};
+  ALL_TABLE_NAMES.forEach(function (n) { DEFAULTS[n] = JSON.parse(JSON.stringify(window[n])); });
+  var STANCE_DEFAULTS = JSON.parse(JSON.stringify(STANCE));
+  var TUNE_DEFAULTS = JSON.parse(JSON.stringify(TUNE));
+
+  /* ---- geometry helpers shared by the drag system (mirror stickman.js's own limb() math
+     exactly, so a dragged handle lands on precisely the pose the real rig would draw) ---- */
+  function nearestKey(table, phase) {
+    var t = ((phase % 1) + 1) % 1;
+    var best = table[0], bestD = Infinity;
+    table.forEach(function (k) {
+      var d = Math.abs(k.t - t);
+      d = Math.min(d, 1 - d);
+      if (d < bestD) { bestD = d; best = k; }
+    });
+    return best;
+  }
+  function lowerAngleOf(key, foldAway) {
+    return foldAway ? key.a - key.b : key.a - (key.a < 0 ? -1 : 1) * key.b;
+  }
+  function setBendFromLowerAngle(key, lowerAngleDeg, foldAway) {
+    key.b = foldAway ? key.a - lowerAngleDeg : (key.a < 0 ? -1 : 1) * (key.a - lowerAngleDeg);
+  }
+
+  /* ---- editable table with BOTH a slider and a number box per value (drag for feel, type
+     for an exact number) ---- */
+  function buildTable(tbodyEl, arr, onChange, opts) {
+    opts = opts || {};
+    tbodyEl.innerHTML = "";
+    arr.forEach(function (key, i) {
+      var tr = document.createElement("tr");
+
+      if (opts.rowLabels) {
+        var lbl = document.createElement("td");
+        lbl.className = "rowLabel";
+        lbl.textContent = opts.rowLabels[i] || "";
+        tr.appendChild(lbl);
+      }
+
+      function sliderCell(field, min, max, step) {
+        var td = document.createElement("td");
+        var wrap = document.createElement("div");
+        wrap.className = "valcell";
+        var range = document.createElement("input");
+        range.type = "range"; range.min = min; range.max = max; range.step = step; range.value = key[field];
+        range.autocomplete = "off";
+        var num = document.createElement("input");
+        num.type = "number"; num.step = step; num.value = key[field];
+        num.autocomplete = "off";
+        function set(v) {
+          key[field] = v;
+          range.value = v; num.value = v;
+          onChange();
+        }
+        range.addEventListener("input", function () { set(parseFloat(range.value)); });
+        num.addEventListener("input", function () { if (num.value !== "" && num.value !== "-") set(parseFloat(num.value)); });
+        wrap.appendChild(range); wrap.appendChild(num);
+        td.appendChild(wrap);
+        return td;
+      }
+      function tCell() {
+        var td = document.createElement("td");
+        td.className = "tcell";
+        var num = document.createElement("input");
+        num.type = "number"; num.step = 0.01; num.min = 0; num.max = 1; num.value = key.t;
+        num.autocomplete = "off";
+        num.addEventListener("input", function () {
+          if (num.value === "") return;
+          key.t = parseFloat(num.value);
+          onChange();
+        });
+        td.appendChild(num);
+        return td;
+      }
+
+      if (!opts.noTime) tr.appendChild(tCell());
+      tr.appendChild(sliderCell("a", opts.aMin != null ? opts.aMin : -180, opts.aMax != null ? opts.aMax : 180, 1));
+      tr.appendChild(sliderCell("b", opts.bMin != null ? opts.bMin : -90, opts.bMax != null ? opts.bMax : 100, 1));
+
+      if (opts.removable) {
+        var delTd = document.createElement("td");
+        var delBtn = document.createElement("button");
+        delBtn.textContent = "✕"; delBtn.className = "danger";
+        delBtn.addEventListener("click", function () {
+          if (arr.length <= 2) { alert("Necesitás al menos 2 cuadros."); return; }
+          arr.splice(i, 1);
+          buildTable(tbodyEl, arr, onChange, opts);
+          onChange();
+        });
+        delTd.appendChild(delBtn);
+        tr.appendChild(delTd);
+      }
+
+      tbodyEl.appendChild(tr);
+    });
+  }
+
+  /* ---- drag-to-pose: hit-test + drag a limb's joint (rotates 'a') or tip (bends 'b'),
+     working directly in the SAME local coordinate space drawStickman itself draws in (via
+     the optional dbg out-param it now accepts), so the handle always lands exactly where
+     the stroke does. ---- */
+  function attachDrag(stageEl, getLimbs, getDbg, onEdited) {
+    var dragging = null;
+    function canvasPos(evt) {
+      var rect = stageEl.getBoundingClientRect();
+      var sx = stageEl.width / rect.width, sy = stageEl.height / rect.height;
+      return { x: (evt.clientX - rect.left) * sx, y: (evt.clientY - rect.top) * sy };
+    }
+    function toLocal(pt, dbg) {
+      return { x: dbg.cx + (pt.x - dbg.cx) / dbg.scaleX, y: pt.y };
+    }
+    stageEl.addEventListener("pointerdown", function (evt) {
+      var dbg = getDbg();
+      if (!dbg) return;
+      var limbs = getLimbs();
+      var m = canvasPos(evt);
+      var best = null, bestD = 15 * 15;
+      limbs.forEach(function (limb) {
+        var origin = limb.origin === "hip" ? { x: dbg.hipX, y: dbg.hipY } : { x: dbg.shoulderX, y: dbg.shoulderY };
+        var mid = limbEnd(origin.x, origin.y, limb.key.a, limb.upperLen, dbg.facing);
+        var end = limbEnd(mid.x, mid.y, lowerAngleOf(limb.key, limb.foldAway), limb.lowerLen, dbg.facing);
+        function toCanvas(pt) { return { x: dbg.cx + (pt.x - dbg.cx) * dbg.scaleX, y: pt.y }; }
+        var midC = toCanvas(mid), endC = toCanvas(end);
+        var dMid = (m.x - midC.x) * (m.x - midC.x) + (m.y - midC.y) * (m.y - midC.y);
+        var dEnd = (m.x - endC.x) * (m.x - endC.x) + (m.y - endC.y) * (m.y - endC.y);
+        if (dEnd < bestD) { bestD = dEnd; best = { limb: limb, type: "end", origin: origin }; }
+        if (dMid < bestD) { bestD = dMid; best = { limb: limb, type: "mid", origin: origin }; }
+      });
+      if (!best) return;
+      dragging = best;
+      stageEl.style.cursor = "grabbing";
+      evt.preventDefault();
+    });
+    window.addEventListener("pointermove", function (evt) {
+      if (!dragging) return;
+      var dbg = getDbg();
+      if (!dbg) return;
+      var local = toLocal(canvasPos(evt), dbg);
+      var limb = dragging.limb;
+      var aMin = limb.aMin != null ? limb.aMin : -180, aMax = limb.aMax != null ? limb.aMax : 180;
+      var bMin = limb.bMin != null ? limb.bMin : -100, bMax = limb.bMax != null ? limb.bMax : 120;
+      if (dragging.type === "mid") {
+        var dx = local.x - dragging.origin.x, dy = local.y - dragging.origin.y;
+        limb.key.a = clamp(Math.atan2(dx * dbg.facing, dy) / DEG, aMin, aMax);
+      } else {
+        var mid = limbEnd(dragging.origin.x, dragging.origin.y, limb.key.a, limb.upperLen, dbg.facing);
+        var dx2 = local.x - mid.x, dy2 = local.y - mid.y;
+        var lowerAng = Math.atan2(dx2 * dbg.facing, dy2) / DEG;
+        setBendFromLowerAngle(limb.key, lowerAng, limb.foldAway);
+        limb.key.b = clamp(limb.key.b, bMin, bMax);
+      }
+      onEdited();
+    });
+    window.addEventListener("pointerup", function () { dragging = null; stageEl.style.cursor = "grab"; });
+  }
+
+  /**
+   * One self-contained mini-editor: canvas preview + optional phase scrubber + play/pause +
+   * optional filmstrip + one or more editable tables, plus (if cfg.dragLimbs is given)
+   * draggable joint/tip handles drawn right on the preview. Everything animates in a
+   * continuous loop by default so you can drag a slider (or a limb) and see it land in context.
+   */
+  function createEditor(cfg) {
+    var stageEl = document.getElementById("stage-" + cfg.id);
+    var ctx = stageEl.getContext("2d");
+    var phaseSlider = cfg.hasPhase ? document.getElementById("phase-" + cfg.id) : null;
+    var phaseOut = cfg.hasPhase ? document.getElementById("phaseOut-" + cfg.id) : null;
+    var playBtn = cfg.hasPhase ? document.getElementById("play-" + cfg.id) : null;
+    var facingBtn = document.getElementById("facing-" + cfg.id);
+    var filmstrip = cfg.hasFilmstrip ? document.getElementById("film-" + cfg.id) : null;
+    var facing = 1;
+    var playing = true;
+    var playT = 0;
+    var idleClock = 0;
+    var lastTime = performance.now();
+    var lastDbg = null;
+
+    function drawFrame(targetCtx, w, h, phase, withDbg) {
+      targetCtx.clearRect(0, 0, w, h);
+      targetCtx.fillStyle = "#090b16";
+      targetCtx.fillRect(0, 0, w, h);
+      targetCtx.strokeStyle = "rgba(53,240,224,.35)";
+      targetCtx.beginPath();
+      targetCtx.moveTo(0, h - h * 0.18);
+      targetCtx.lineTo(w, h - h * 0.18);
+      targetCtx.stroke();
+      var p = cfg.buildPlayer(phase, facing, w / 2, h - h * 0.18);
+      var scale = w / 300;
+      targetCtx.save();
+      targetCtx.translate(w / 2, 0);
+      targetCtx.scale(scale, scale);
+      targetCtx.translate(-w / 2, 0);
+      var dbg = withDbg ? {} : undefined;
+      drawStickman(targetCtx, p, "#35f0e0", dbg);
+      if (dbg && cfg.dragLimbs) {
+        var limbs = cfg.dragLimbs(phase);
+        targetCtx.save();
+        targetCtx.translate(dbg.cx, dbg.feet);
+        targetCtx.scale(dbg.scaleX, 1);
+        targetCtx.translate(-dbg.cx, -dbg.feet);
+        limbs.forEach(function (limb) {
+          var origin = limb.origin === "hip" ? { x: dbg.hipX, y: dbg.hipY } : { x: dbg.shoulderX, y: dbg.shoulderY };
+          var mid = limbEnd(origin.x, origin.y, limb.key.a, limb.upperLen, dbg.facing);
+          var end = limbEnd(mid.x, mid.y, lowerAngleOf(limb.key, limb.foldAway), limb.lowerLen, dbg.facing);
+          targetCtx.fillStyle = "#ff2e88";
+          targetCtx.beginPath(); targetCtx.arc(mid.x, mid.y, 5, 0, Math.PI * 2); targetCtx.fill();
+          targetCtx.fillStyle = "#ffd23f";
+          targetCtx.beginPath(); targetCtx.arc(end.x, end.y, 5.5, 0, Math.PI * 2); targetCtx.fill();
+        });
+        targetCtx.restore();
+        lastDbg = dbg;
+      }
+      targetCtx.restore();
+    }
+
+    function renderMain() {
+      var phase = cfg.hasPhase ? parseFloat(phaseSlider.value) : idleClock;
+      if (phaseOut) phaseOut.textContent = phase.toFixed(3);
+      drawFrame(ctx, 300, 260, phase, true);
+    }
+
+    function renderFilmstrip() {
+      if (!filmstrip) return;
+      filmstrip.innerHTML = "";
+      for (var i = 0; i < 10; i++) {
+        var phase = i / 10;
+        var c = document.createElement("canvas");
+        c.width = 90; c.height = 120;
+        c.title = phase.toFixed(2);
+        var fctx = c.getContext("2d");
+        drawFrame(fctx, 90, 120, phase, false);
+        c.addEventListener("click", (function (ph) { return function () { phaseSlider.value = ph; renderMain(); }; })(phase));
+        filmstrip.appendChild(c);
+      }
+    }
+
+    facingBtn.addEventListener("click", function () {
+      facing *= -1;
+      facingBtn.textContent = "Mirando: " + (facing === 1 ? "derecha" : "izquierda");
+      renderMain(); renderFilmstrip();
+    });
+
+    if (phaseSlider) phaseSlider.addEventListener("input", renderMain);
+
+    function loop(now) {
+      var dt = Math.min(40, now - lastTime); lastTime = now;
+      if (playing) {
+        if (cfg.hasPhase) {
+          playT = (playT + dt * (cfg.rate || 0.0006)) % 1;
+          phaseSlider.value = playT;
+        } else {
+          idleClock += dt * 0.001;
+        }
+        renderMain();
+      }
+      requestAnimationFrame(loop);
+    }
+    if (playBtn) {
+      playBtn.addEventListener("click", function () {
+        playing = !playing;
+        playBtn.textContent = playing ? "⏸ Pausar" : "▶ Reproducir";
+        lastTime = performance.now();
+      });
+    }
+    requestAnimationFrame(loop);
+
+    function rebuildAllTables() {
+      cfg.tables.forEach(function (t) {
+        buildTable(t.tbody, t.arr, function () { renderMain(); renderFilmstrip(); }, t.opts);
+      });
+    }
+
+    var resetBtn = document.getElementById("reset-" + cfg.id);
+    if (resetBtn) {
+      resetBtn.addEventListener("click", function () {
+        cfg.tables.forEach(function (t) {
+          t.arr.length = 0;
+          t.defaults.forEach(function (k) { t.arr.push(JSON.parse(JSON.stringify(k))); });
+        });
+        rebuildAllTables();
+        renderMain(); renderFilmstrip();
+      });
+    }
+
+    cfg.tables.forEach(function (t) {
+      buildTable(t.tbody, t.arr, function () { renderMain(); renderFilmstrip(); }, t.opts);
+      if (t.addBtn) {
+        t.addBtn.addEventListener("click", function () {
+          t.arr.splice(t.arr.length - 1, 0, { t: 0.5, a: 0, b: 20 });
+          t.arr.sort(function (a, b) { return a.t - b.t; });
+          buildTable(t.tbody, t.arr, function () { renderMain(); renderFilmstrip(); }, t.opts);
+          renderMain(); renderFilmstrip();
+        });
+      }
+    });
+
+    if (cfg.dragLimbs) {
+      attachDrag(
+        stageEl,
+        function () { return cfg.dragLimbs(cfg.hasPhase ? parseFloat(phaseSlider.value) : idleClock); },
+        function () { return lastDbg; },
+        function () { playing = false; if (playBtn) playBtn.textContent = "▶ Reproducir"; rebuildAllTables(); renderMain(); renderFilmstrip(); }
+      );
+    }
+
+    renderMain();
+    renderFilmstrip();
+  }
+
+  var TL = THIGH, SH = SHIN, UA = UARM, FA = FARM; // shorthand, read from stickman.js globals
+
+  createEditor({
+    id: "run", hasPhase: true, hasFilmstrip: true, rate: 0.0006,
+    buildPlayer: function (phase, facing, x, y) {
+      return { x: x, y: y, vx: 1, vy: 0, facing: facing, grounded: true, attack: null, walkCycle: phase, idleT: 0, squash: 0 };
+    },
+    dragLimbs: function (phase) {
+      return [
+        { key: nearestKey(LEG_KEYS, phase), origin: "hip", upperLen: TL, lowerLen: SH, foldAway: true, bMin: -20, bMax: 100 },
+        { key: nearestKey(LEG_KEYS, phase + 0.5), origin: "hip", upperLen: TL, lowerLen: SH, foldAway: true, bMin: -20, bMax: 100 },
+        { key: nearestKey(ARM_KEYS, phase + 0.5), origin: "shoulder", upperLen: UA, lowerLen: FA, foldAway: false, bMin: -100, bMax: 100 },
+        { key: nearestKey(ARM_KEYS, phase), origin: "shoulder", upperLen: UA, lowerLen: FA, foldAway: false, bMin: -100, bMax: 100 },
+      ];
+    },
+    tables: [
+      { name: "LEG_KEYS", arr: LEG_KEYS, defaults: DEFAULTS.LEG_KEYS, tbody: document.querySelector("#table-legs tbody"), addBtn: document.getElementById("add-legs"), opts: { removable: true } },
+      { name: "ARM_KEYS", arr: ARM_KEYS, defaults: DEFAULTS.ARM_KEYS, tbody: document.querySelector("#table-arms tbody"), addBtn: document.getElementById("add-arms"), opts: { removable: true } },
+    ],
+  });
+
+  createEditor({
+    id: "punch", hasPhase: true, hasFilmstrip: true, rate: 0.00035,
+    buildPlayer: function (phase, facing, x, y) {
+      return {
+        x: x, y: y, vx: 0, vy: 0, facing: facing, grounded: true, idleT: 0, squash: 0, walkCycle: 0,
+        attack: { type: "punch", t: 1000 * (1 - phase), dur: 1000, hitSet: {} },
+      };
+    },
+    dragLimbs: function (phase) {
+      return [
+        { key: nearestKey(PUNCH_ARM_KEYS, phase), origin: "shoulder", upperLen: UA, lowerLen: FA, foldAway: false, bMin: -100, bMax: 120 },
+        { key: STANCE.punchLegs[0], origin: "hip", upperLen: TL, lowerLen: SH, foldAway: true, aMin: -90, aMax: 90, bMin: -30, bMax: 60 },
+        { key: STANCE.punchLegs[1], origin: "hip", upperLen: TL, lowerLen: SH, foldAway: true, aMin: -90, aMax: 90, bMin: -30, bMax: 60 },
+        { key: STANCE.punchGuardArm[0], origin: "shoulder", upperLen: UA, lowerLen: FA, foldAway: false, aMin: -90, aMax: 90, bMin: -30, bMax: 100 },
+      ];
+    },
+    tables: [
+      { name: "PUNCH_ARM_KEYS", arr: PUNCH_ARM_KEYS, defaults: DEFAULTS.PUNCH_ARM_KEYS, tbody: document.querySelector("#table-punch tbody"), addBtn: document.getElementById("add-punch"), opts: { removable: true } },
+      { name: "STANCE.punchLegs", arr: STANCE.punchLegs, defaults: STANCE_DEFAULTS.punchLegs, tbody: document.querySelector("#table-punchLegs tbody"), opts: { noTime: true, rowLabels: ["Pierna atrás", "Pierna adelante"], aMin: -90, aMax: 90, bMin: -30, bMax: 60 } },
+      { name: "STANCE.punchGuardArm", arr: STANCE.punchGuardArm, defaults: STANCE_DEFAULTS.punchGuardArm, tbody: document.querySelector("#table-punchGuard tbody"), opts: { noTime: true, rowLabels: ["Brazo guardia"], aMin: -90, aMax: 90, bMin: -30, bMax: 100 } },
+    ],
+  });
+
+  createEditor({
+    id: "kick", hasPhase: true, hasFilmstrip: true, rate: 0.00035,
+    buildPlayer: function (phase, facing, x, y) {
+      return {
+        x: x, y: y, vx: 0, vy: 0, facing: facing, grounded: true, idleT: 0, squash: 0, walkCycle: 0,
+        attack: { type: "kick", t: 1000 * (1 - phase), dur: 1000, hitSet: {} },
+      };
+    },
+    dragLimbs: function (phase) {
+      return [
+        { key: nearestKey(KICK_LEG_KEYS, phase), origin: "hip", upperLen: TL, lowerLen: SH + 1, foldAway: true, bMin: -30, bMax: 130 },
+        { key: STANCE.kickSupportLeg[0], origin: "hip", upperLen: TL, lowerLen: SH, foldAway: true, aMin: -90, aMax: 90, bMin: -30, bMax: 60 },
+        { key: STANCE.kickArms[0], origin: "shoulder", upperLen: UA, lowerLen: FA, foldAway: false, aMin: -90, aMax: 90, bMin: -30, bMax: 100 },
+        { key: STANCE.kickArms[1], origin: "shoulder", upperLen: UA, lowerLen: FA, foldAway: false, aMin: -90, aMax: 90, bMin: -30, bMax: 100 },
+      ];
+    },
+    tables: [
+      { name: "KICK_LEG_KEYS", arr: KICK_LEG_KEYS, defaults: DEFAULTS.KICK_LEG_KEYS, tbody: document.querySelector("#table-kick tbody"), addBtn: document.getElementById("add-kick"), opts: { removable: true, bMin: -30, bMax: 130 } },
+      { name: "STANCE.kickSupportLeg", arr: STANCE.kickSupportLeg, defaults: STANCE_DEFAULTS.kickSupportLeg, tbody: document.querySelector("#table-kickSupport tbody"), opts: { noTime: true, rowLabels: ["Pierna de apoyo"], aMin: -90, aMax: 90, bMin: -30, bMax: 60 } },
+      { name: "STANCE.kickArms", arr: STANCE.kickArms, defaults: STANCE_DEFAULTS.kickArms, tbody: document.querySelector("#table-kickArms tbody"), opts: { noTime: true, rowLabels: ["Brazo atrás", "Brazo adelante"], aMin: -90, aMax: 90, bMin: -30, bMax: 100 } },
+    ],
+  });
+
+  createEditor({
+    id: "idle", hasPhase: false,
+    buildPlayer: function (phase, facing, x, y) {
+      return { x: x, y: y, vx: 0, vy: 0, facing: facing, grounded: true, attack: null, walkCycle: 0, idleT: phase, squash: 0 };
+    },
+    dragLimbs: function () {
+      return [
+        { key: IDLE_LEGS[0], origin: "hip", upperLen: TL, lowerLen: SH, foldAway: true, aMin: -90, aMax: 90, bMin: -30, bMax: 60 },
+        { key: IDLE_LEGS[1], origin: "hip", upperLen: TL, lowerLen: SH, foldAway: true, aMin: -90, aMax: 90, bMin: -30, bMax: 60 },
+        { key: IDLE_ARMS[0], origin: "shoulder", upperLen: UA, lowerLen: FA, foldAway: false, bMin: -100, bMax: 100 },
+        { key: IDLE_ARMS[1], origin: "shoulder", upperLen: UA, lowerLen: FA, foldAway: false, bMin: -100, bMax: 100 },
+      ];
+    },
+    tables: [
+      { name: "IDLE_LEGS", arr: IDLE_LEGS, defaults: DEFAULTS.IDLE_LEGS, tbody: document.querySelector("#table-idleLegs tbody"), opts: { noTime: true, rowLabels: ["Pierna atrás", "Pierna adelante"] } },
+      { name: "IDLE_ARMS", arr: IDLE_ARMS, defaults: DEFAULTS.IDLE_ARMS, tbody: document.querySelector("#table-idleArms tbody"), opts: { noTime: true, rowLabels: ["Brazo atrás", "Brazo adelante"] } },
+    ],
+  });
+
+  createEditor({
+    id: "jump", hasPhase: true, hasFilmstrip: true, rate: 0.00035,
+    buildPlayer: function (phase, facing, x, y) {
+      // vy swept from -9 (launch) to +9 (landing) so phase 0..1 matches the in-game
+      // (vy/9+1)/2 normalisation exactly.
+      return { x: x, y: y, vx: 0, vy: lerpJump(-9, 9, phase), facing: facing, grounded: false, attack: null, walkCycle: 0, idleT: 0, squash: 0 };
+    },
+    dragLimbs: function (phase) {
+      return [
+        { key: nearestKey(JUMP_LEGA_KEYS, phase), origin: "hip", upperLen: TL, lowerLen: SH, foldAway: true, aMin: -60, aMax: 60, bMin: -20, bMax: 100 },
+        { key: nearestKey(JUMP_LEGB_KEYS, phase), origin: "hip", upperLen: TL, lowerLen: SH, foldAway: true, aMin: -60, aMax: 60, bMin: -20, bMax: 100 },
+        { key: nearestKey(JUMP_ARMA_KEYS, phase), origin: "shoulder", upperLen: UA, lowerLen: FA, foldAway: false, aMin: -180, aMax: 180, bMin: -40, bMax: 60 },
+        { key: nearestKey(JUMP_ARMB_KEYS, phase), origin: "shoulder", upperLen: UA, lowerLen: FA, foldAway: false, aMin: -180, aMax: 180, bMin: -40, bMax: 60 },
+      ];
+    },
+    tables: [
+      { name: "JUMP_LEGA_KEYS", arr: JUMP_LEGA_KEYS, defaults: DEFAULTS.JUMP_LEGA_KEYS, tbody: document.querySelector("#table-jumpLegA tbody"), opts: { aMin: -60, aMax: 60, bMin: -20, bMax: 100 } },
+      { name: "JUMP_LEGB_KEYS", arr: JUMP_LEGB_KEYS, defaults: DEFAULTS.JUMP_LEGB_KEYS, tbody: document.querySelector("#table-jumpLegB tbody"), opts: { aMin: -60, aMax: 60, bMin: -20, bMax: 100 } },
+      { name: "JUMP_ARMA_KEYS", arr: JUMP_ARMA_KEYS, defaults: DEFAULTS.JUMP_ARMA_KEYS, tbody: document.querySelector("#table-jumpArmA tbody"), opts: { aMin: -180, aMax: 180, bMin: -40, bMax: 60 } },
+      { name: "JUMP_ARMB_KEYS", arr: JUMP_ARMB_KEYS, defaults: DEFAULTS.JUMP_ARMB_KEYS, tbody: document.querySelector("#table-jumpArmB tbody"), opts: { aMin: -180, aMax: 180, bMin: -40, bMax: 60 } },
+    ],
+  });
+  function lerpJump(a, b, t) { return a + (b - a) * t; }
+
+  /* ============================================================ CUERPO (TUNE) ============================================================ */
+  (function () {
+    var stageEl = document.getElementById("stage-body");
+    var ctx = stageEl.getContext("2d");
+    var stateSel = document.getElementById("bodyState");
+    var clock = 0, lastTime = performance.now();
+
+    var STATE_BUILDERS = {
+      run: function (t, facing, x, y) { return { x: x, y: y, vx: 1, vy: 0, facing: facing, grounded: true, attack: null, walkCycle: (t * 0.6) % 1, idleT: 0, squash: 0 }; },
+      idle: function (t, facing, x, y) { return { x: x, y: y, vx: 0, vy: 0, facing: facing, grounded: true, attack: null, walkCycle: 0, idleT: t, squash: 0 }; },
+      jumpUp: function (t, facing, x, y) { return { x: x, y: y, vx: 0, vy: -9, facing: facing, grounded: false, attack: null, walkCycle: 0, idleT: 0, squash: 0 }; },
+      jumpDown: function (t, facing, x, y) { return { x: x, y: y, vx: 0, vy: 9, facing: facing, grounded: false, attack: null, walkCycle: 0, idleT: 0, squash: 0.3 }; },
+      punch: function (t, facing, x, y) { return { x: x, y: y, vx: 0, vy: 0, facing: facing, grounded: true, walkCycle: 0, idleT: 0, squash: 0, attack: { type: "punch", t: 230 - (t * 0.35 % 1) * 230, dur: 230, hitSet: {} } }; },
+      kick: function (t, facing, x, y) { return { x: x, y: y, vx: 0, vy: 0, facing: facing, grounded: true, walkCycle: 0, idleT: 0, squash: 0, attack: { type: "kick", t: 280 - (t * 0.35 % 1) * 280, dur: 280, hitSet: {} } }; },
+      hit: function (t, facing, x, y) { return { x: x, y: y, vx: 0, vy: 0, facing: facing, grounded: true, attack: null, walkCycle: 0, idleT: 0, squash: 0.4, hitStunT: 180 - (t * 0.4 % 1) * 180, hitDir: 1 }; },
+    };
+
+    function render() {
+      var w = 300, h = 260;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#090b16"; ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "rgba(53,240,224,.35)";
+      ctx.beginPath(); ctx.moveTo(0, h - h * 0.18); ctx.lineTo(w, h - h * 0.18); ctx.stroke();
+      var builder = STATE_BUILDERS[stateSel.value] || STATE_BUILDERS.idle;
+      var p = builder(clock, 1, w / 2, h - h * 0.18);
+      drawStickman(ctx, p, "#35f0e0");
+    }
+    function loop(now) {
+      var dt = Math.min(40, now - lastTime); lastTime = now;
+      clock += dt * 0.001;
+      render();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+    stateSel.addEventListener("change", render);
+
+    /* ---- named sliders, one per TUNE.* field, grouped into the 4 sections in the HTML ---- */
+    var GROUPS = {
+      "tune-lean": [
+        ["runLean", "Inclinación al correr", 0, 30, 0.5],
+        ["punchLeanBase", "Inclinación base al pegar", 0, 20, 0.5],
+        ["punchLeanSnap", "Inclinación extra en el remate (piña)", 0, 20, 0.5],
+        ["kickLeanSnap", "Contra-inclinación en patada", 0, 20, 0.5],
+        ["airLeanMax", "Inclinación máxima en el aire", 0, 20, 0.5],
+        ["idleLeanMix", "Mezcla de balanceo en reposo", 0, 1, 0.02],
+        ["runTwist", "Torsión de hombros al correr", 0, 15, 0.5],
+        ["punchTwist", "Torsión de hombros al pegar", 0, 15, 0.5],
+        ["kickTwist", "Torsión de hombros al patear", 0, 15, 0.5],
+        ["headTwistRunMix", "Torsión que hereda la cabeza (correr)", 0, 1, 0.02],
+        ["hitLean", "Inclinación al recibir un golpe", 0, 30, 0.5],
+        ["hitHeadShift", "Desplazamiento de cabeza al ser golpeado", 0, 10, 0.2],
+      ],
+      "tune-motion": [
+        ["runBob", "Rebote vertical al correr", 0, 10, 0.2],
+        ["headBobRun", "Rebote de cabeza al correr", 0, 10, 0.2],
+        ["headLagPhase", "Retraso de fase de la cabeza", 0, 0.3, 0.01],
+        ["pelvisDrive", "Rotación de pelvis (cadera) al correr", 0, 8, 0.2],
+        ["headSpringK", "Suavizado (overlap) de la cabeza", 0.05, 1, 0.02],
+      ],
+      "tune-idle": [
+        ["breatheAmp", "Amplitud de respiración", 0, 5, 0.1],
+        ["idleBobAmp", "Rebote sutil en reposo", 0, 3, 0.1],
+        ["idleSwayX", "Balanceo horizontal de cadera", 0, 4, 0.1],
+        ["idleWeightSwayX", "Cambio de peso (cadera)", 0, 4, 0.1],
+        ["idleWeightLegSpread", "Cambio de peso (piernas)", 0, 12, 0.5],
+        ["idleShoulderRotAmp", "Rotación de hombros en reposo", 0, 6, 0.2],
+        ["idleHeadTurnAmp", "Giro de cabeza en reposo", 0, 6, 0.2],
+        ["idleHandDriftAmp", "Deriva de manos en reposo", 0, 6, 0.2],
+        ["armSwayAmp", "Balanceo de brazos con la respiración", 0, 10, 0.2],
+      ],
+      "tune-squash": [
+        ["squashScaleY", "Aplastado vertical (aterrizaje)", 0, 0.4, 0.01],
+        ["squashScaleX", "Ensanche horizontal (aterrizaje)", 0, 0.4, 0.01],
+        ["squashWaveScaleY", "Rebote-eco vertical (settle)", 0, 0.2, 0.01],
+        ["squashWaveScaleX", "Rebote-eco horizontal (settle)", 0, 0.2, 0.01],
+        ["stretchScaleY", "Estiramiento vertical (caída)", 0, 0.3, 0.01],
+        ["stretchScaleX", "Estiramiento horizontal (caída)", 0, 0.3, 0.01],
+        ["takeoffScaleY", "Estiramiento al despegar", 0, 0.3, 0.01],
+        ["takeoffScaleX", "Compresión al despegar", 0, 0.3, 0.01],
+        ["actionPopSquash", "Escala extra (impacto/aterrizaje)", 0, 0.15, 0.005],
+        ["actionPopStretch", "Escala extra (despegue)", 0, 0.15, 0.005],
+      ],
+    };
+
+    function buildTuneUI() {
+      Object.keys(GROUPS).forEach(function (groupId) {
+        var host = document.getElementById(groupId);
+        host.innerHTML = "";
+        GROUPS[groupId].forEach(function (spec) {
+          var field = spec[0], label = spec[1], min = spec[2], max = spec[3], step = spec[4];
+          var row = document.createElement("div");
+          row.className = "tuneRow";
+          var lbl = document.createElement("label"); lbl.textContent = label;
+          var range = document.createElement("input");
+          range.type = "range"; range.min = min; range.max = max; range.step = step; range.value = TUNE[field];
+          var num = document.createElement("input");
+          num.type = "number"; num.step = step; num.value = TUNE[field];
+          function set(v) { TUNE[field] = v; range.value = v; num.value = v; }
+          range.addEventListener("input", function () { set(parseFloat(range.value)); });
+          num.addEventListener("input", function () { if (num.value !== "" && num.value !== "-") set(parseFloat(num.value)); });
+          row.appendChild(lbl); row.appendChild(range); row.appendChild(num);
+          host.appendChild(row);
+        });
+      });
+    }
+    buildTuneUI();
+
+    document.getElementById("reset-body").addEventListener("click", function () {
+      Object.keys(TUNE_DEFAULTS).forEach(function (k) { TUNE[k] = TUNE_DEFAULTS[k]; });
+      buildTuneUI();
+    });
+  })();
+
+  /* ---- export: exact JS literal for every table + STANCE + TUNE, ready to paste into stickman.js ---- */
+  function fmtTable(name, arr, noTime) {
+    var lines = arr.map(function (k) {
+      return "  { " + (noTime ? "" : "t: " + k.t.toFixed(2) + ", ") + "a: " + Math.round(k.a) + ", b: " + Math.round(k.b) + " },";
+    });
+    return "var " + name + " = [\n" + lines.join("\n") + "\n];";
+  }
+  function fmtStance() {
+    var lines = Object.keys(STANCE).map(function (k) {
+      var items = STANCE[k].map(function (o) { return "{ a: " + Math.round(o.a) + ", b: " + Math.round(o.b) + " }"; }).join(", ");
+      return "  " + k + ": [" + items + "],";
+    });
+    return "var STANCE = {\n" + lines.join("\n") + "\n};";
+  }
+  function fmtTune() {
+    var lines = Object.keys(TUNE).map(function (k) {
+      var v = TUNE[k];
+      return "  " + k + ": " + (Math.round(v * 1000) / 1000) + ",";
+    });
+    return "var TUNE = {\n" + lines.join("\n") + "\n};";
+  }
+  document.getElementById("exportBtn").addEventListener("click", function () {
+    var out = [
+      fmtTable("LEG_KEYS", LEG_KEYS),
+      fmtTable("ARM_KEYS", ARM_KEYS),
+      fmtTable("PUNCH_ARM_KEYS", PUNCH_ARM_KEYS),
+      fmtTable("KICK_LEG_KEYS", KICK_LEG_KEYS),
+      fmtTable("IDLE_LEGS", IDLE_LEGS, true),
+      fmtTable("IDLE_ARMS", IDLE_ARMS, true),
+      fmtTable("JUMP_LEGA_KEYS", JUMP_LEGA_KEYS),
+      fmtTable("JUMP_LEGB_KEYS", JUMP_LEGB_KEYS),
+      fmtTable("JUMP_ARMA_KEYS", JUMP_ARMA_KEYS),
+      fmtTable("JUMP_ARMB_KEYS", JUMP_ARMB_KEYS),
+      fmtStance(),
+      fmtTune(),
+    ].join("\n\n");
+    document.getElementById("exportOut").value = out;
+  });
+  document.getElementById("copyBtn").addEventListener("click", function () {
+    var ta = document.getElementById("exportOut");
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    if (navigator.clipboard) navigator.clipboard.writeText(ta.value).catch(function () {});
+  });
+})();
+</script>
+</body>
+</html>
