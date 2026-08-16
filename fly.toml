@@ -5,7 +5,7 @@
 # ~120-150 ms que costaría cualquier región de EE.UU. En un juego de pelea con cooldowns de
 # 380 ms esa diferencia se siente. No la muevas sin medir.
 
-app = "last-stick-standing"
+app = "laststickstanding"
 primary_region = "gru"
 
 [build]
