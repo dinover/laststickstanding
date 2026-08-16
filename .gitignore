@@ -1,0 +1,9 @@
+node_modules/
+dist/
+
+# El instalador pesa 111 MB: GitHub rechaza archivos de más de 100 MB, así que no puede
+# vivir en el repo. Para distribuirlo usá un release de GitHub, itch.io o Drive.
+*.exe
+
+# Fly guarda acá el estado de la última app desplegada.
+.fly/

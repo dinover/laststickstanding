@@ -1,0 +1,42 @@
+# Last Stick Standing — servidor online.
+#
+# primary_region = "gru" (São Paulo) es la decisión importante de este archivo: es la región
+# más cercana a Argentina que tiene Fly. Desde Buenos Aires son ~25-40 ms, contra los
+# ~120-150 ms que costaría cualquier región de EE.UU. En un juego de pelea con cooldowns de
+# 380 ms esa diferencia se siente. No la muevas sin medir.
+
+app = "last-stick-standing"
+primary_region = "gru"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_start_machines = true
+  # "suspend" en vez de "stop": la máquina se congela y despierta en ~1 s en lugar de bootear
+  # de cero. Si querés cero riesgo de que el primero en entrar espere, poné
+  # min_machines_running = 1 (pasa a facturar 24/7).
+  auto_stop_machines = "suspend"
+  min_machines_running = 0
+
+  # IMPORTANTE: las salas viven en la memoria de ESTE proceso. Si Fly levanta una segunda
+  # máquina, dos jugadores con el mismo código de sala pueden caer en máquinas distintas y no
+  # verse nunca. Mantené siempre una sola: `fly scale count 1`.
+  # Los límites de acá evitan que el autoscaler quiera abrir otra por carga.
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 200
+    hard_limit = 250
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -1,0 +1,16 @@
+{
+  "name": "last-stick-standing-online",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servidor autoritativo de Last Stick Standing (Fly.io, region gru)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

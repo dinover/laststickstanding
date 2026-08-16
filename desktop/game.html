@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Last Stick Standing</title>
+<style>
+  html, body { height: 100%; margin: 0; overflow: hidden; background: #05060d; font-family: 'Chakra Petch', sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; }
+
+  /* Slow drifting aurora haze + faint scanlines over the lobby background — same atmosphere
+     used on screen.html/controller.html, inlined here (no external CSS fetch) so the desktop
+     build stays fully self-contained. Sits ON TOP of the lobby biome canvas+vignette (both
+     opaque) rather than behind everything like the original, or it would never be visible;
+     hidden once a match starts so it doesn't tint the actual fight. */
+  .atmosphere { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+  .atmosphere::before {
+    content: ""; position: absolute; inset: -30%;
+    background:
+      radial-gradient(48% 42% at 18% 12%, rgba(53, 240, 224, 0.14), transparent 60%),
+      radial-gradient(42% 38% at 84% 22%, rgba(255, 46, 136, 0.13), transparent 62%),
+      radial-gradient(52% 46% at 62% 88%, rgba(94, 92, 255, 0.12), transparent 64%);
+    filter: blur(30px);
+    animation: drift 26s ease-in-out infinite alternate;
+  }
+  .atmosphere::after {
+    content: ""; position: absolute; inset: 0;
+    background: repeating-linear-gradient(to bottom, rgba(255,255,255,.028) 0px, rgba(255,255,255,.028) 1px, transparent 1px, transparent 3px);
+    mix-blend-mode: overlay;
+  }
+  @keyframes drift {
+    0%   { transform: translate3d(0, 0, 0) scale(1); }
+    100% { transform: translate3d(2%, -2%, 0) scale(1.08); }
+  }
+
+  #wrap { position: relative; z-index: 1; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; background: #05060d; box-shadow: 0 0 80px rgba(53,240,224,.08); }
+  #wrap.playing canvas { display: block; }
+  canvas#c { display: none; }
+  #wrap.playing #lobby { display: none; }
+
+  #room, #topbar { display: none; }
+  #wrap.playing #room, #wrap.playing #topbar { display: flex; }
+  #room { position: absolute; top: 14px; left: 18px; z-index: 5; color: #9aa3bd; font-size: 13px; letter-spacing: .08em; }
+  #room b { color: #35f0e0; }
+  #topbar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); gap: 10px; z-index: 5; }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 50%; position: relative;
+    border: 2px solid rgba(255,255,255,.25); box-shadow: 0 0 12px currentColor;
+    display: flex; align-items: center; justify-content: center; font-size: 11px; color: #05060d; font-weight: 700;
+    transition: opacity .3s;
+  }
+  .avatar.out { opacity: .35; }
+  .avatar .x { position: absolute; inset: -4px; display: none; align-items: center; justify-content: center; font-weight: 900; font-size: 30px; color: #ff2e88; text-shadow: 0 0 10px #ff2e88, 0 0 2px #000; }
+  .avatar.out .x { display: flex; }
+
+  #audioPanel { position: absolute; top: 14px; right: 18px; z-index: 6; }
+  #audioToggle {
+    width: 34px; height: 34px; border-radius: 50%; border: 1px solid #2a3050; background: rgba(10,12,24,.6);
+    color: #9aa3bd; cursor: pointer; font-size: 15px; padding: 0; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #audioMenu { display: none; position: absolute; top: 42px; right: 0; width: 190px; background: rgba(10,12,24,.92); border: 1px solid #2a3050; border-radius: 10px; padding: 12px 14px; color: #eaf0ff; box-sizing: border-box; }
+  #audioMenu.show { display: block; }
+  #audioMenu label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: #eaf0ff; font-size: 12px; }
+  #audioMenu label span { width: 46px; flex-shrink: 0; }
+  #audioMenu input[type="range"] { flex: 1; min-width: 0; accent-color: #35f0e0; display: block; }
+  #audioMenu .muteRow { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; color: #eaf0ff; }
+  #audioMenu button#muteBtn { background: transparent; border: 1px solid #2a3050; color: #9aa3bd; border-radius: 999px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
+  #audioMenu button#muteBtn.active { color: #ff3d63; border-color: #ff3d63; }
+
+  #roundBanner {
+    position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
+    color: #eaf0ff; font-size: 15px; background: rgba(10,12,24,.6); padding: 4px 14px;
+    border-radius: 999px; border: 1px solid #2a3050; letter-spacing: .1em; z-index: 5; display: none;
+  }
+  #roundBanner.show { display: block; }
+
+  #overlay { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+  #fightText {
+    font-weight: 900; font-size: 96px; color: #ff3d63; text-shadow: 0 0 24px rgba(255,61,99,.7);
+    opacity: 0; letter-spacing: .05em; transform: scale(.6);
+  }
+  #fightText.show { animation: fightPop .9s cubic-bezier(.2,1.4,.4,1) forwards; }
+  @keyframes fightPop {
+    0% { opacity: 0; transform: scale(.4) rotate(-4deg); }
+    35% { opacity: 1; transform: scale(1.15) rotate(2deg); }
+    60% { transform: scale(1) rotate(0); }
+    85% { opacity: 1; }
+    100% { opacity: 0; transform: scale(1.3); }
+  }
+
+  #finalScreen {
+    position: absolute; inset: 0; z-index: 20; display: none;
+    background: radial-gradient(circle at 50% 30%, rgba(53,240,224,.08), transparent 60%), #05060d;
+    flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  }
+  #finalScreen.show { display: flex; }
+  #finalScreen h1 { font-size: 42px; color: #ffc247; text-shadow: 0 0 20px rgba(255,194,71,.6); margin: 0; }
+  #ranking { display: flex; flex-direction: column; gap: 8px; width: 420px; }
+  .rankRow { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: rgba(255,255,255,.03); border: 1px solid #2a3050; border-radius: 8px; color: #eaf0ff; }
+  .rankRow .pos { color: #6b7394; width: 24px; }
+  .rankRow .dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
+  .rankRow .nm { flex: 1; }
+  .rankRow .sc { color: #35f0e0; }
+  .rankRow.win { border-color: #ffc247; box-shadow: 0 0 18px rgba(255,194,71,.25); }
+  #playAgainBtn { margin-top: 6px; }
+
+  #lobbyBg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; object-fit: cover; }
+  #lobbyVignette { position: absolute; inset: 0; z-index: 2; background: radial-gradient(circle at 50% 45%, rgba(5,6,13,.32), rgba(5,6,13,.88) 78%); }
+  #wrap.playing #lobbyBg, #wrap.playing #lobbyVignette, #wrap.playing .atmosphere { display: none; }
+
+  #lobby {
+    position: relative; z-index: 3; width: min(480px, 92vw); text-align: center;
+    color: #eaf0ff; display: flex; flex-direction: column; align-items: center; gap: 22px;
+  }
+  #lobby h1 { font-size: 28px; color: #35f0e0; text-shadow: 0 0 16px rgba(53,240,224,.5); margin: 0; letter-spacing: .04em; }
+  #lobby p.sub { color: #9aa3bd; font-size: 13px; margin: 0 0 16px; line-height: 1.5; }
+  .card { background: rgba(10,12,24,.55); backdrop-filter: blur(6px); border: 1px solid #2a3050; border-radius: 12px; padding: 26px 24px; width: 100%; box-sizing: border-box; }
+  .rolePick { display: flex; gap: 12px; width: 100%; margin-top: 4px; }
+  .rolePick button { flex: 1; }
+  button, input {
+    font-family: inherit; font-size: 14px; border-radius: 8px; border: 1px solid #2a3050;
+    background: #12162a; color: #eaf0ff; padding: 13px 16px;
+  }
+  button { cursor: pointer; background: #35f0e0; color: #05060d; font-weight: 700; border: none; box-shadow: 0 0 16px rgba(53,240,224,.3); }
+  button.ghost { background: transparent; color: #eaf0ff; border: 1px solid #2a3050; box-shadow: none; }
+  button.snail { background: transparent; color: #9aa3bd; border: 1px solid #2a3050; box-shadow: none; margin-top: 10px; width: 100%; }
+  button.snail.on { color: #35f0e0; border-color: #35f0e0; }
+  button:disabled { opacity: .5; cursor: default; box-shadow: none; }
+  input { width: 100%; box-sizing: border-box; margin-bottom: 14px; text-align: center; letter-spacing: .08em; }
+  input#codeInput { text-transform: uppercase; }
+  .codeShow { font-size: 40px; letter-spacing: .18em; color: #35f0e0; text-shadow: 0 0 20px rgba(53,240,224,.5); margin: 16px 0; }
+  .rosterList { display: flex; flex-direction: column; gap: 8px; margin: 18px 0; text-align: left; }
+  .rosterRow { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .rosterRow .dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
+  .roundsRow { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 4px 0 20px; }
+  .roundsRow button { padding: 7px 13px; }
+  .hint { font-size: 11px; color: #6b7394; letter-spacing: .04em; margin-top: 16px; }
+  .err { color: #ff5e7a; font-size: 12px; min-height: 16px; margin-top: 8px; }
+  a.back { color: #6b7394; font-size: 12px; text-decoration: none; margin-top: 2px; display: inline-block; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c" width="960" height="540"></canvas>
+  <div id="room">SALA <b id="roomCode">----</b></div>
+  <div id="audioPanel">
+    <button id="audioToggle" title="Audio">♪</button>
+    <div id="audioMenu">
+      <label>SFX <input type="range" id="sfxRange" min="0" max="1" step="0.01" /></label>
+      <label>Música <input type="range" id="musicRange" min="0" max="1" step="0.01" /></label>
+      <label>Master <input type="range" id="masterRange" min="0" max="1" step="0.01" /></label>
+      <div class="muteRow"><span>Silenciar</span><button id="muteBtn">OFF</button></div>
+    </div>
+  </div>
+  <div id="topbar"></div>
+  <div id="roundBanner"></div>
+  <div id="overlay"><div id="fightText">FIGHT!</div></div>
+
+  <canvas id="lobbyBg" width="1280" height="720"></canvas>
+  <div id="lobbyVignette"></div>
+  <div class="atmosphere"></div>
+
+  <div id="lobby">
+    <h1>LAST STICK STANDING</h1>
+    <p class="sub">Modo online — jugá con amigos, cada uno desde su PC.</p>
+
+    <div class="card" id="choiceCard">
+      <input id="nickInputMain" maxlength="14" placeholder="Tu nombre" />
+      <div class="rolePick">
+        <button id="createBtn">Crear sala</button>
+        <button class="ghost" id="joinShowBtn">Unirme a una sala</button>
+      </div>
+    </div>
+
+    <div class="card" id="joinCard" style="display:none">
+      <input id="codeInput" maxlength="4" placeholder="CÓDIGO DE SALA" />
+      <button id="joinBtn" style="width:100%">Conectar</button>
+      <div class="err" id="joinErr"></div>
+    </div>
+
+    <div class="card" id="hostCard" style="display:none">
+      <p class="sub">Compartí este código con tus amigos:</p>
+      <div class="codeShow" id="hostCode">----</div>
+      <div class="rosterList" id="hostRoster"></div>
+      <div class="roundsRow">
+        <button class="ghost" id="minusBtn">−</button>
+        <span id="roundsN">3</span> rondas
+        <button class="ghost" id="plusBtn">+</button>
+      </div>
+      <button class="snail" id="snailBtn" role="switch" aria-checked="false">🐌 Modo caracol (PCs lentas)</button>
+      <button id="startBtn" style="width:100%; margin-top: 10px;">Empezar partida</button>
+      <div class="hint">A/D mover · ESPACIO saltar · J piña · K patada</div>
+    </div>
+
+    <div class="card" id="waitCard" style="display:none">
+      <p class="sub">Conectado. Esperando a que el host empiece…</p>
+      <div class="hint">A/D mover · ESPACIO saltar · J piña · K patada</div>
+    </div>
+
+    <a class="back" id="backLink" href="#" style="display:none">‹ volver</a>
+  </div>
+
+  <div id="finalScreen">
+    <h1 id="winnerTitle">GANADOR</h1>
+    <div id="ranking"></div>
+    <button id="playAgainBtn">Jugar de nuevo</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="../stickman.js"></script>
+<script src="../fx.js"></script>
+<script src="../world.js"></script>
+<script src="../audio.js"></script>
+<script src="../net.js"></script>
+<script src="sim.js"></script>
+<script>
+(function () {
+  "use strict";
+  AudioManager.armUnlock();
+  var canvas = document.getElementById("c");
+  var ctx = canvas.getContext("2d");
+  var HOST_ID = 0;
+  var PLAYER_COLORS = ["#35f0e0", "#ff2e88", "#9dff4f", "#ffc247", "#7b6cff", "#4fd2ff", "#ff7a3d", "#ff5ec4"];
+
+  var role = null; // "host" | "guest"
+  var myId = null;
+  var names = {}, colors = {};
+  var snailOn = false;
+  var totalRoundsPick = 3;
+
+  function colorFor(id) { return colors[id] || PLAYER_COLORS[id % PLAYER_COLORS.length]; }
+  function nameFor(id) { return id === myId ? "Vos" : (names[id] || ("Jugador " + id)); }
+
+  Sim.init({ colorFor: colorFor, nameFor: nameFor, onPhaseChange: onSimPhaseChange });
+
+  function onSimPhaseChange(evt) {
+    if (evt.t === "roundStart") {
+      var rb = document.getElementById("roundBanner");
+      rb.textContent = "RONDA " + evt.round + " / " + evt.totalRounds + " — " + evt.mapName;
+      rb.classList.add("show");
+      var ft = document.getElementById("fightText");
+      ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
+      renderTopbar();
+    } else if (evt.t === "final") {
+      document.getElementById("roundBanner").classList.remove("show");
+      showFinal(evt.ranked);
+    }
+  }
+
+  /* ---------------------------------------------------------------- topbar / roster UI */
+  function renderTopbar() {
+    var bar = document.getElementById("topbar");
+    bar.innerHTML = "";
+    var players = Sim.getPlayers();
+    var phase = Sim.getPhase();
+    Sim.getRoster().forEach(function (id) {
+      var p = players[id];
+      var div = document.createElement("div");
+      div.className = "avatar" + (p && !p.alive && phase !== "lobby" ? " out" : "");
+      var color = colorFor(id);
+      div.style.color = color; div.style.background = color;
+      div.innerHTML = '<div class="x">✕</div>';
+      bar.appendChild(div);
+    });
+  }
+
+  function renderHostRoster() {
+    var el = document.getElementById("hostRoster");
+    if (!el) return;
+    var players = Sim.getPlayers();
+    var ids = [HOST_ID].concat(Object.keys(players).map(Number).filter(function (id) { return id !== HOST_ID; }));
+    el.innerHTML = ids.map(function (id) {
+      return '<div class="rosterRow"><div class="dot" style="color:' + colorFor(id) + ';background:' + colorFor(id) + '"></div>' + nameFor(id) + '</div>';
+    }).join("");
+  }
+
+  function showFinal(ranked) {
+    var winner = ranked[0];
+    var scores = Sim.getScores();
+    document.getElementById("winnerTitle").textContent = winner !== undefined ? (nameFor(winner).toUpperCase() + " GANA") : "SIN GANADOR";
+    var rk = document.getElementById("ranking");
+    rk.innerHTML = "";
+    ranked.forEach(function (id, i) {
+      var row = document.createElement("div");
+      row.className = "rankRow" + (i === 0 ? " win" : "");
+      row.innerHTML = '<div class="pos">#' + (i + 1) + '</div>' +
+        '<div class="dot" style="color:' + colorFor(id) + ';background:' + colorFor(id) + '"></div>' +
+        '<div class="nm">' + nameFor(id) + '</div>' +
+        '<div class="sc">' + (scores[id] || 0) + ' pts</div>';
+      rk.appendChild(row);
+    });
+    document.getElementById("finalScreen").classList.add("show");
+  }
+
+  function resetToLobby() {
+    document.getElementById("finalScreen").classList.remove("show");
+    document.getElementById("roundBanner").classList.remove("show");
+    Sim.resetToLobby();
+    if (role === "host") {
+      Sim.addPlayer(HOST_ID);
+      Object.keys(names).forEach(function (id) { Sim.addPlayer(Number(id)); });
+      renderHostRoster();
+    }
+  }
+
+  /* ---------------------------------------------------------------- HOST loop */
+  var hostLoopStarted = false;
+  var last = performance.now();
+  var broadcastAccum = 0;
+
+  function startMatch(rounds, snail) {
+    Sim.startMatch(rounds, snail);
+    document.getElementById("wrap").classList.add("playing");
+    stopLobbyBackground();
+    if (!hostLoopStarted) { hostLoopStarted = true; last = performance.now(); requestAnimationFrame(hostLoop); }
+  }
+
+  function hostLoop(now) {
+    var realDt = Math.min(40, now - last);
+    last = now;
+    Sim.step(realDt);
+    Sim.draw(ctx, now, realDt);
+
+    if (Sim.getPhase() !== "lobby") {
+      broadcastAccum += realDt;
+      if (broadcastAccum >= 40) {
+        broadcastAccum = 0;
+        var snap = Sim.snapshot();
+        snap.names = names; snap.colors = colors;
+        NetHost.broadcast(snap);
+      }
+    }
+    requestAnimationFrame(hostLoop);
+  }
+
+  function isTyping() {
+    var a = document.activeElement;
+    return a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA");
+  }
+  var HOST_KEYS = { a: "left", d: "right", " ": "jump", j: "punch", k: "kick" };
+
+  function startAsHost(nickname) {
+    role = "host";
+    myId = HOST_ID;
+    names[HOST_ID] = nickname || "Host"; colors[HOST_ID] = PLAYER_COLORS[HOST_ID];
+    Sim.addPlayer(HOST_ID);
+    renderHostRoster();
+
+    NetHost.onGuestJoin(function (guestId, nickname) {
+      names[guestId] = nickname;
+      colors[guestId] = PLAYER_COLORS[guestId % PLAYER_COLORS.length];
+      Sim.addPlayer(guestId);
+      renderHostRoster();
+    });
+    NetHost.onGuestLeave(function (guestId) {
+      Sim.removePlayer(guestId);
+      renderHostRoster();
+    });
+    NetHost.onGuestInput(function (guestId, data) {
+      Sim.addPlayer(guestId);
+      Sim.handleInput(guestId, data.k, data.d);
+    });
+
+    window.addEventListener("keydown", function (e) {
+      if (isTyping() || role !== "host") return;
+      var action = HOST_KEYS[e.key.toLowerCase()];
+      if (!action) return;
+      e.preventDefault();
+      if (e.repeat && action !== "left" && action !== "right") return;
+      Sim.handleInput(HOST_ID, action, true);
+    });
+    window.addEventListener("keyup", function (e) {
+      if (isTyping() || role !== "host") return;
+      var action = HOST_KEYS[e.key.toLowerCase()];
+      if (action !== "left" && action !== "right") return;
+      Sim.handleInput(HOST_ID, action, false);
+    });
+  }
+
+  /* ---------------------------------------------------------------- GUEST loop */
+  var guestRoomCode = null;
+  var lastGuestFrame = performance.now();
+
+  function guestLoop(now) {
+    var frameDt = Math.min(40, Math.max(0, now - lastGuestFrame));
+    lastGuestFrame = now;
+    var frame = Sim.guestFrame(now, frameDt);
+    if (frame) {
+      var isPlaying = frame.phase !== "lobby";
+      document.getElementById("wrap").classList.toggle("playing", isPlaying);
+      if (isPlaying) stopLobbyBackground(); else startLobbyBackground();
+      document.getElementById("roomCode").textContent = guestRoomCode || "----";
+      var rb = document.getElementById("roundBanner");
+      if (frame.phase === "lobby") { rb.classList.remove("show"); }
+      else {
+        var map = Sim.getCurrentMap();
+        rb.textContent = "RONDA " + frame.round + " / " + frame.totalRounds + " — " + (map ? map.name : "");
+        rb.classList.add("show");
+      }
+      renderTopbar();
+      if (frame.phase === "final" && !document.getElementById("finalScreen").classList.contains("show")) {
+        var ranked = frame.roster.slice().sort(function (a, b) { return (frame.scores[b] || 0) - (frame.scores[a] || 0); });
+        showFinal(ranked);
+      } else if (frame.phase !== "final") {
+        document.getElementById("finalScreen").classList.remove("show");
+      }
+      Sim.draw(ctx, now, frameDt);
+    }
+    requestAnimationFrame(guestLoop);
+  }
+
+  var GUEST_KEYS = { a: "left", d: "right", " ": "jump", j: "punch", k: "kick" };
+
+  function startAsGuest(code, nickname) {
+    role = "guest";
+    guestRoomCode = code.toUpperCase().trim();
+    Sim.resetGuest();
+    NetGuest.onState(function (data) {
+      if (data.yourId != null) myId = data.yourId;
+      names = data.names; colors = data.colors;
+      Sim.guestApplySnapshot(data);
+    });
+    NetGuest.onOpen(function () {
+      document.getElementById("choiceCard").style.display = "none";
+      document.getElementById("joinCard").style.display = "none";
+      document.getElementById("waitCard").style.display = "block";
+    });
+    NetGuest.onError(function (type) {
+      document.getElementById("joinErr").textContent = "No se pudo conectar (" + type + "). Revisá el código.";
+    });
+    NetGuest.onClose(function () {
+      document.getElementById("joinErr").textContent = "Se cerró la sala.";
+    });
+
+    window.addEventListener("keydown", function (e) {
+      if (isTyping() || role !== "guest") return;
+      var action = GUEST_KEYS[e.key.toLowerCase()];
+      if (!action) return;
+      e.preventDefault();
+      if (e.repeat && action !== "left" && action !== "right") return;
+      NetGuest.sendInput({ k: action, d: true });
+    });
+    window.addEventListener("keyup", function (e) {
+      if (isTyping() || role !== "guest") return;
+      var action = GUEST_KEYS[e.key.toLowerCase()];
+      if (action !== "left" && action !== "right") return;
+      NetGuest.sendInput({ k: action, d: false });
+    });
+
+    NetGuest.join(code, nickname);
+    requestAnimationFrame(guestLoop);
+  }
+
+  /* ---------------------------------------------------------------- lobby background */
+  var lobbyBgRaf = null;
+  function startLobbyBackground() {
+    if (lobbyBgRaf) return;
+    var bgCanvas = document.getElementById("lobbyBg");
+    var bgCtx = bgCanvas.getContext("2d");
+    var BW = bgCanvas.width, BH = bgCanvas.height;
+    var biomeId = Biomes.random(Math.random);
+    var bg = WorldBackground.build(biomeId, Math.floor(Math.random() * 1e6), BW, BH);
+    function frame() {
+      Camera.update(16);
+      WorldBackground.draw(bgCtx, bg, BW, BH, Camera);
+      EnvironmentFX.update(16, bg.biome, BW, BH);
+      EnvironmentFX.draw(bgCtx);
+      lobbyBgRaf = requestAnimationFrame(frame);
+    }
+    lobbyBgRaf = requestAnimationFrame(frame);
+  }
+  function stopLobbyBackground() {
+    if (lobbyBgRaf) { cancelAnimationFrame(lobbyBgRaf); lobbyBgRaf = null; }
+  }
+
+  /* ---------------------------------------------------------------- lobby UI wiring */
+  document.getElementById("createBtn").addEventListener("click", function () {
+    var nickname = document.getElementById("nickInputMain").value.trim() || "Host";
+    document.getElementById("choiceCard").style.display = "none";
+    document.getElementById("hostCard").style.display = "block";
+    document.getElementById("backLink").style.display = "inline";
+    document.getElementById("hostCode").textContent = "…";
+    NetHost.create(function (code) {
+      document.getElementById("hostCode").textContent = code;
+      document.getElementById("roomCode").textContent = code;
+      startAsHost(nickname);
+    }, function (err) {
+      document.getElementById("hostCode").textContent = "ERROR";
+    });
+  });
+
+  document.getElementById("joinShowBtn").addEventListener("click", function () {
+    document.getElementById("choiceCard").style.display = "none";
+    document.getElementById("joinCard").style.display = "block";
+    document.getElementById("backLink").style.display = "inline";
+  });
+
+  document.getElementById("backLink").addEventListener("click", function (e) {
+    e.preventDefault();
+    document.getElementById("hostCard").style.display = "none";
+    document.getElementById("joinCard").style.display = "none";
+    document.getElementById("choiceCard").style.display = "block";
+    document.getElementById("backLink").style.display = "none";
+  });
+
+  document.getElementById("joinBtn").addEventListener("click", function () {
+    var code = document.getElementById("codeInput").value;
+    var nick = document.getElementById("nickInputMain").value.trim() || "Jugador";
+    if (!code || code.trim().length < 4) {
+      document.getElementById("joinErr").textContent = "Ingresá el código de 4 letras.";
+      return;
+    }
+    document.getElementById("joinErr").textContent = "Conectando…";
+    startAsGuest(code, nick);
+  });
+
+  document.getElementById("minusBtn").addEventListener("click", function () {
+    totalRoundsPick = Math.max(1, totalRoundsPick - 1);
+    document.getElementById("roundsN").textContent = totalRoundsPick;
+  });
+  document.getElementById("plusBtn").addEventListener("click", function () {
+    totalRoundsPick = Math.min(20, totalRoundsPick + 1);
+    document.getElementById("roundsN").textContent = totalRoundsPick;
+  });
+  document.getElementById("snailBtn").addEventListener("click", function () {
+    snailOn = !snailOn;
+    this.classList.toggle("on", snailOn);
+    this.setAttribute("aria-checked", String(snailOn));
+  });
+  document.getElementById("startBtn").addEventListener("click", function () { startMatch(totalRoundsPick, snailOn); });
+  document.getElementById("playAgainBtn").addEventListener("click", function () {
+    if (role === "host") {
+      resetToLobby();
+      document.getElementById("wrap").classList.remove("playing");
+      document.getElementById("hostCard").style.display = "block";
+      startLobbyBackground();
+    }
+  });
+
+  /* ---------------------------------------------------------------- audio panel */
+  (function () {
+    var s = AudioManager.getSettings();
+    var sfxRange = document.getElementById("sfxRange");
+    var musicRange = document.getElementById("musicRange");
+    var masterRange = document.getElementById("masterRange");
+    var muteBtn = document.getElementById("muteBtn");
+    sfxRange.value = s.sfx; musicRange.value = s.music; masterRange.value = s.master;
+    muteBtn.textContent = s.muted ? "ON" : "OFF";
+    muteBtn.classList.toggle("active", s.muted);
+
+    document.getElementById("audioToggle").addEventListener("click", function () {
+      document.getElementById("audioMenu").classList.toggle("show");
+    });
+    sfxRange.addEventListener("input", function () { AudioManager.setSfxVolume(parseFloat(sfxRange.value)); });
+    musicRange.addEventListener("input", function () { AudioManager.setMusicVolume(parseFloat(musicRange.value)); });
+    masterRange.addEventListener("input", function () { AudioManager.setMasterVolume(parseFloat(masterRange.value)); });
+    muteBtn.addEventListener("click", function () {
+      var muted = !AudioManager.getSettings().muted;
+      AudioManager.setMuted(muted);
+      muteBtn.textContent = muted ? "ON" : "OFF";
+      muteBtn.classList.toggle("active", muted);
+    });
+  })();
+
+  startLobbyBackground();
+})();
+</script>
+</body>
+</html>

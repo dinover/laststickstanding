@@ -461,7 +461,7 @@ var AudioManager = (function () {
   // <audio> element, whatever) could implement the same four methods and swap in here
   // without a single line changing outside this file.
   var STATES = {
-    lobby: { kick: 0, bass: 0.5, pad: 0.7, lead: 0, arp: 0, perc: 0, fx: 0, amb: 0.5, filter: 16000 },
+    lobby: { kick: 0, bass: 0.6, pad: 0.45, lead: 0, arp: 0, perc: 0, fx: 0, amb: 0, filter: 16000 },
     countdown: { kick: 0, bass: 0.5, pad: 0.7, lead: 0, arp: 0, perc: 0, fx: 0, amb: 0.4, filter: 500 },
     fight: { kick: 0.7, bass: 0.75, pad: 0, lead: 0.2, arp: 0, perc: 0.55, fx: 0.15, amb: 0.15, filter: 9100 },
     clutch: { kick: 1, bass: 1, pad: 0.3, lead: 0.9, arp: 0.55, perc: 0.85, fx: 0.4, amb: 0.3, filter: 18000 },

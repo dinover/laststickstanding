@@ -1,0 +1,30 @@
+{
+  "name": "last-stick-standing-desktop",
+  "version": "1.0.0",
+  "description": "Last Stick Standing — versión de escritorio instalable, online vía PeerJS/WebRTC (sin Steam, sin tienda).",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.lastonestanding.laststickstanding.desktop",
+    "productName": "Last Stick Standing",
+    "files": [
+      "**/*",
+      "!README-desktop.md"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

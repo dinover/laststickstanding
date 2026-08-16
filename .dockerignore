@@ -1,0 +1,25 @@
+.git
+node_modules
+**/node_modules
+**/dist
+
+# El instalador pesa 111 MB y no tiene nada que hacer en la imagen del servidor.
+*.exe
+
+# Builds de escritorio / Steam: no los usa el servidor.
+steam/
+desktop/main.js
+desktop/preload.js
+desktop/package.json
+desktop/_two-tab-test.html
+
+# Assets y herramientas que solo se usan en el navegador o en dev.
+# Rutas con / adelante = solo la raíz del contexto, para que no se lleven puesto
+# online/public/index.html.
+*.png
+/anim-editor.html
+/music-lab.html
+/controller.html
+/screen.html
+/index.html
+/net.js
