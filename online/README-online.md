@@ -82,15 +82,81 @@ hay nadie y despierta en ~1 s. Si preferís cero espera para el primero que entr
 
 ## Números medidos
 
-Test de integración con 8 clientes reales, partida completa de 3 rondas:
+Test de integración con 8 clientes reales (partida completa de 3 rondas) y medición de latencia
+contra el servidor desplegado, desde Buenos Aires:
 
 | | |
 |---|---|
-| Snapshot promedio | 2.262 bytes (máx. 3.402) |
-| Bajada por cliente | ~450 kbps |
-| **Subida del servidor con 8 jugadores** | **~3,6 Mbps** |
+| RTT a `gru` (São Paulo) | **30 ms**, 0% de pérdida |
+| **Input lag** (tecla → visible en snapshot) | **53 ms** de mediana |
+| Cadencia de snapshots | 32,3 ms de mediana (objetivo 33) |
+| Snapshot promedio | ~2.270 bytes |
+| Bajada por cliente | ~545 kbps |
+| **Subida del servidor con 8 jugadores** | **~4,4 Mbps** |
 | CPU de simulación | ~16.000 ticks/s en frío (hacen falta 60) |
-| Tráfico por hora de partida | ~1,6 GB |
+
+El input lag arrancó en **69 ms** y bajó a 53 sin agregar predicción del lado del cliente, con
+dos cambios en `server.js`:
+
+- **El acumulador de broadcast reseteaba a 0 en vez de restar el intervalo.** Como el tick real
+  dura ~16,6 ms, el umbral de 40 ms recién se cruzaba en el tercer tick y el sobrante se tiraba:
+  los snapshots salían cada ~50 ms (20 Hz medidos), no cada 40.
+- **El intervalo pasó a 33 ms**, que cae justo en el segundo tick (16,6 × 2 = 33,2). Cadencia
+  pareja y ~9 ms menos de espera promedio.
+
+Quedan picos ocasionales (~500 ms, ~1,6% de los frames) que son contención de CPU del
+`shared-cpu-1x`. Si molestan, la salida es una VM dedicada, no tocar el código.
+
+Dos optimizaciones bajaron el payload ~45% sin tocar `sim.js` (`compressSnapshot`):
+
+- **Redondeo de floats.** `Sim.snapshot()` emite `"x":299.34149729142337`; a 1 decimal sobra
+  para un canvas de 960x540 donde además el cliente interpola.
+- **El mapa se manda una vez por ronda**, no en cada tick. Era el 24% del payload.
+
+## Reconexión
+
+Un corte de conexión ya no te deja afuera de la partida. Al entrar, el servidor emite un
+**token** que el cliente guarda en `sessionStorage` (por pestaña, así dos pestañas en la misma
+PC no se pisan). Si el socket se cae:
+
+1. El cliente reintenta solo, con backoff creciente hasta 12 veces, mostrando un overlay.
+2. El servidor **le guarda el slot 30 segundos** (`REJOIN_GRACE_MS`) con su puntaje y su lugar
+   en el roster. Su muñeco se queda quieto — y por lo tanto es carne de cañón.
+3. Al volver con el token recupera el mismo id y sigue jugando.
+4. Si vence la gracia, ahí sí se libera el slot y el cuerpo se baja (`dropBody`).
+
+Detalles que importan:
+
+- El token es obligatorio: sin él, cualquiera que viera el código de sala podría robarle el
+  lugar a otro en mitad de una partida.
+- Se acepta la reconexión **aunque el socket viejo figure abierto**. Cuando se corta el wifi el
+  servidor tarda hasta un ciclo de heartbeat en enterarse, y para entonces el jugador ya apretó
+  F5. Quien presenta el token es el dueño legítimo y se echa al socket viejo.
+- Al reconectar se limpian las teclas: si se cayó con "derecha" apretada, nunca llegó el keyup
+  y el muñeco seguiría empujando solo.
+- El heartbeat es de 10 s (antes 30). Hacen falta dos ciclos para dar a alguien por muerto, así
+  que el peor caso bajó de ~60 s a ~20 s de fantasma en la ronda.
+
+## Balance de combate (solo web)
+
+`balance.js` ajusta el combate **únicamente de este build**. Se aplica con
+`Sim.init({ attacks })` sobre los valores por defecto de `../desktop/sim.js`, que quedan
+intactos: escritorio y Steam siguen jugando igual que siempre.
+
+| | piña | patada |
+|---|---|---|
+| Duración | 140 ms | 280 ms |
+| Cooldown | 190 ms | 380 ms |
+| Daño | 8 | 15 |
+| Empuje (kbX) | 0,8 | 3,6 |
+
+Entran exactamente **dos piñas en el tiempo de una patada**. El equilibrio no está en el daño
+por golpe sino en el DPS: piña 42,1/s contra patada 39,5/s. La piña gana por poco en daño
+sostenido — si no, sería estrictamente peor y nadie la usaría. Lo que compra la patada no es
+DPS sino **espacio**: con `kbX 3.6` y `kbY -2.5` saca al rival de la plataforma, y en este juego
+caerse es morir.
+
+Para tocar el balance no hace falta entender el servidor: es un solo archivo de constantes.
 
 Dos optimizaciones del lado del servidor bajaron el payload ~45% sin tocar `sim.js`
 (`compressSnapshot` en `server.js`):
