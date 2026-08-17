@@ -12,7 +12,20 @@ set -euo pipefail
 REPO_URL="https://github.com/dinover/laststickstanding.git"
 APP_DIR="$HOME/laststickstanding"
 
-echo "== 1/5: Docker =="
+echo "== 1/5: Swap (colchón de seguridad — la VM tiene 1 GB de RAM) =="
+# Va PRIMERO a propósito: con solo 1 GB de RAM, hasta "dnf install" de los paquetes de
+# Docker puede quedarse sin memoria y el kernel lo mata (OOM-kill) antes de terminar. El
+# mismo server corría con 512 MB en Fly, pero acá además hay que instalar cosas encima.
+# 2 GB de swap en disco es gratis (Always Free incluye block storage) y evita eso.
+if ! swapon --show | grep -q .; then
+  sudo fallocate -l 2G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile
+  sudo swapon /swapfile
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+fi
+
+echo "== 2/5: Docker =="
 if ! command -v docker &>/dev/null; then
   sudo dnf install -y dnf-utils
   sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
@@ -22,7 +35,7 @@ if ! command -v docker &>/dev/null; then
   NEEDS_RELOGIN=1
 fi
 
-echo "== 2/5: Firewall del sistema operativo (firewalld) =="
+echo "== 3/5: Firewall del sistema operativo (firewalld) =="
 # Las imágenes Oracle Linux de OCI traen firewalld activo con solo el 22 abierto.
 # Sin esto, aunque el Security List de la consola OCI esté bien configurado, el
 # tráfico igual se cae adentro de la VM — es el paso que más se olvida en OCI.
@@ -30,19 +43,6 @@ if command -v firewall-cmd &>/dev/null && sudo systemctl is-active --quiet firew
   sudo firewall-cmd --permanent --add-port=80/tcp
   sudo firewall-cmd --permanent --add-port=443/tcp
   sudo firewall-cmd --reload
-fi
-
-echo "== 3/5: Swap (colchón de seguridad — la VM tiene 1 GB de RAM) =="
-# 1 GB alcanza para Node + Caddy en régimen normal (el mismo server corría con 512 MB en
-# Fly), pero sin swap un pico transitorio (ej. "docker compose build") puede terminar en
-# un OOM-kill. 2 GB de swap en disco es gratis (Always Free incluye block storage) y
-# evita ese escenario a costa de nada.
-if ! swapon --show | grep -q .; then
-  sudo fallocate -l 2G /swapfile
-  sudo chmod 600 /swapfile
-  sudo mkswap /swapfile
-  sudo swapon /swapfile
-  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
 fi
 
 echo "== 4/5: Clonar / actualizar el repo =="
