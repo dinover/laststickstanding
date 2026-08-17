@@ -5,9 +5,10 @@ Infrastructure (OCI), en vez de Fly.io o Render. Ventaja sobre Render: OCI tiene
 **São Paulo** (`sa-saopaulo-1`), la misma que usaba Fly en `gru` — ~25-40 ms desde Buenos Aires,
 en vez de los ~120-150 ms de Render.
 
-Esta VM quedó como **Oracle Linux, shape `VM.Standard.E2.1.Micro`** (1 OCPU AMD, 1 GB RAM) — es
-lo que el flujo rápido de "Create Instance" preseleccionó. Todo lo de acá está armado para esa
-combinación puntual (usuario SSH `opc`, `dnf`/`firewalld`, swap de colchón por la RAM ajustada).
+Esta VM quedó como **Oracle Linux, shape `VM.Standard.E2.1.Micro`** — la consola de creación
+dice "1 GB RAM", pero la RAM real disponible dentro de la VM es **~500 MB** (confirmado con
+`free -h`). Todo lo de acá está armado para esa combinación puntual (usuario SSH `opc`,
+`dnf`/`firewalld`, swap extra por la RAM ajustada).
 
 > Si en el futuro creás en cambio una VM Ampere (`VM.Standard.A1.Flex`, hasta 4 OCPU/24 GB, misma
 > cuota Always Free pero separada de la AMD Micro), va a ser Ubuntu por default y estos scripts
@@ -15,11 +16,13 @@ combinación puntual (usuario SSH `opc`, `dnf`/`firewalld`, swap de colchón por
 
 Contras a tener en cuenta con esta shape en particular:
 
-- **1 GB de RAM es justo.** El server corría con 512 MB en Fly, así que el proceso Node en sí
-  entra sin problema, pero acá además corre Docker y Caddy encima. Por eso el bootstrap agrega
-  2 GB de swap como colchón — evita un OOM-kill en un pico, no lo evita bajo carga sostenida. Si
-  en algún momento ves reinicios raros del contenedor, `docker stats` para confirmar memoria antes
-  de sospechar de otra cosa.
+- **~500 MB de RAM real es poco.** El server corría con 512 MB en Fly (RAM sola, sin nada más
+  encima), y acá además corre Docker y Caddy. La imagen ya trae un swap default de Oracle
+  (`/.swapfile`, manejado por cloud-init, del mismo tamaño que la RAM — insuficiente solo) y el
+  bootstrap agrega **4 GB más** en `/swapfile-extra`. Con eso `dnf install` de los paquetes de
+  Docker dejó de morir por OOM. Sigue siendo un colchón para picos, no una solución para carga
+  sostenida — si en algún momento ves reinicios raros del contenedor, `docker stats` y `free -h`
+  antes de sospechar de otra cosa.
 - **No hay "congelar cuando no hay nadie".** A diferencia de Fly (`auto_stop_machines`), acá la VM
   queda prendida 24/7. Es gratis igual (Always Free no cobra por horas de VM).
 - **El mantenimiento es tuyo.** Actualizaciones de SO, Docker, certificados — Fly y Render lo

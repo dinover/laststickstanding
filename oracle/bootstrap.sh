@@ -12,17 +12,21 @@ set -euo pipefail
 REPO_URL="https://github.com/dinover/laststickstanding.git"
 APP_DIR="$HOME/laststickstanding"
 
-echo "== 1/5: Swap (colchón de seguridad — la VM tiene 1 GB de RAM) =="
-# Va PRIMERO a propósito: con solo 1 GB de RAM, hasta "dnf install" de los paquetes de
-# Docker puede quedarse sin memoria y el kernel lo mata (OOM-kill) antes de terminar. El
-# mismo server corría con 512 MB en Fly, pero acá además hay que instalar cosas encima.
-# 2 GB de swap en disco es gratis (Always Free incluye block storage) y evita eso.
-if ! swapon --show | grep -q .; then
-  sudo fallocate -l 2G /swapfile
-  sudo chmod 600 /swapfile
-  sudo mkswap /swapfile
-  sudo swapon /swapfile
-  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+echo "== 1/5: Swap (colchón de seguridad — la VM tiene ~500 MB de RAM real) =="
+# Va PRIMERO a propósito: con tan poca RAM, hasta "dnf install" de los paquetes de Docker
+# puede quedarse sin memoria y el kernel lo mata (OOM-kill) antes de terminar.
+#
+# Las imágenes Oracle Linux de OCI ya traen un swap propio por default (/.swapfile,
+# manejado por cloud-init, del mismo tamaño que la RAM — o sea, insuficiente él solo). NO
+# se toca ese archivo: se agrega uno adicional, en un path distinto, para no pisar lo que
+# cloud-init espera encontrar. Se chequea por NUESTRO archivo puntual, no por "hay swap o
+# no" en general, porque esa condición ya daba falso positivo con el swap default.
+if ! swapon --show | grep -q '/swapfile-extra'; then
+  sudo fallocate -l 4G /swapfile-extra
+  sudo chmod 600 /swapfile-extra
+  sudo mkswap /swapfile-extra
+  sudo swapon /swapfile-extra
+  echo '/swapfile-extra none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
 fi
 
 echo "== 2/5: Docker =="
