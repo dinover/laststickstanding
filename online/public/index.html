@@ -595,7 +595,9 @@
     $("joinCard").style.display = "none";
     $("modeCard").style.display = "none";
     $("roomCard").style.display = "block";
-    $("backLink").style.display = "none";
+    // Antes se ocultaba acá — no había forma de salir de una sala ya creada sin recargar la
+    // página. Ahora el mismo link sirve de "salir de la sala" (ver el handler de click).
+    $("backLink").style.display = "inline";
     $("showCode").textContent = msg.code;
     $("roomCode").textContent = msg.code;
 
@@ -772,11 +774,21 @@
     $("backLink").style.display = "inline";
   });
 
-  // Un solo back link para las dos ramas (crear / unirse): ocultar la que no esté no molesta.
+  // Un solo back link para las tres ramas (crear / unirse / ya adentro de la sala): ocultar
+  // la que no esté no molesta. Si estábamos DENTRO de una sala ya creada (roomCard visible),
+  // "volver" significa salir de verdad — avisarle al servidor, no solo cambiar de pantalla.
   $("backLink").addEventListener("click", function (e) {
     e.preventDefault();
+    if ($("roomCard").style.display === "block") {
+      Net.leave();
+      myId = null;
+      finalShown = false;
+      hideScoreReveal();
+      names = {};
+    }
     $("joinCard").style.display = "none";
     $("modeCard").style.display = "none";
+    $("roomCard").style.display = "none";
     $("choiceCard").style.display = "block";
     $("backLink").style.display = "none";
   });

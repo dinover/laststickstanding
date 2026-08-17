@@ -595,6 +595,20 @@ function handleMessage(ws, raw) {
     pushLobby(room);
     return;
   }
+
+  if (msg.t === "leave") {
+    /* Salida voluntaria del lobby ("‹ volver" ya con la sala creada). Reusa exactamente la
+       misma leaveRoom() que dispara un corte de conexión — libera el slot si estaba en lobby,
+       o lo deja "ausente" con gracia si por algún motivo se llama mid-partida (no debería pasar
+       desde la UI, que solo ofrece este botón en el lobby, pero no cuesta nada que el camino
+       sea seguro igual). A diferencia de un cierre de socket real, ACÁ el socket sigue vivo —
+       hay que limpiar ws._room/_playerId a mano para que el mismo socket pueda crear o unirse
+       a otra sala después sin necesidad de recargar la página. */
+    leaveRoom(ws);
+    ws._room = null;
+    ws._playerId = null;
+    return;
+  }
 }
 
 /* ------------------------------------------------------------------ WebSocket */

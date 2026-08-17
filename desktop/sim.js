@@ -406,6 +406,19 @@ var Sim = (function () {
       Trails.clear(p);
     }
 
+    /* Estela de velocidad del orbe de aire: mismo mecanismo que el trail de golpe de arriba,
+       pero en su propio canal (key "_airTrail") para que uno no le coma los fantasmas al otro
+       si ambos coinciden (pegar mientras tenés aire activo). Bien exagerada a propósito — más
+       fantasmas, capturados más seguido, bastante más visibles — porque el objetivo es que se
+       note "esto se mueve rapidísimo" de un vistazo, no una sutileza. */
+    if (p.power && p.power.type === "aire" && p.alive && !snailMode) {
+      Trails.push(p, performance.now(), { key: "_airTrail", maxGhosts: 6, minIntervalMs: 18 });
+      Trails.draw(ctx, p, function (gctx, ghost) { drawStickman(gctx, ghost, color); },
+        { key: "_airTrail", baseAlpha: 0.05, alphaSpread: 0.34 });
+    } else if (p._airTrail) {
+      Trails.clear(p, { key: "_airTrail" });
+    }
+
     var fading = !p.alive && p.deathFadeT > 0;
     if (fading) ctx.globalAlpha = clamp(p.deathFadeT / 420, 0, 1);
     var rig = drawStickman(ctx, p, color);

@@ -240,7 +240,13 @@ function drawOrbitAura(ctx, cx, midY, halfW, halfH, t, color) {
 // already draws (thigh, shin, upper arm, forearm, spine, neck) gets its own little overlay.
 var CURRENT_AURA = null;
 function beginPowerAura(p) {
-  CURRENT_AURA = p.power ? { type: p.power.type, t: p.idleT || 0 } : null;
+  if (p.power) CURRENT_AURA = { type: p.power.type, t: p.idleT || 0 };
+  // Una víctima quemándose (burnT, infligido por OTRO jugador con fuego) no tiene p.power
+  // propio, así que antes se quedaba sin este aura y dependía solo del flash plano de abajo.
+  // Reusa el mismo tratamiento de "fuego" ronda por hueso — es lo que hace que arda de verdad
+  // en vez de solo tener un blob encima.
+  else if (p.burnT > 0) CURRENT_AURA = { type: "fuego", t: p.idleT || 0 };
+  else CURRENT_AURA = null;
 }
 
 // Draws one bone's worth of aura, called from inside limb() (so legs+arms get it automatically)
@@ -293,20 +299,23 @@ function auraSegment(ctx, x1, y1, x2, y2, aura) {
       ctx.fill();
     }
   } else if (aura.type === "tierra") {
-    // small rock nubs jutting off the bone. No time term anywhere in here — fixed, static
-    // debris, per spec ("borde marrón de tierra estático").
-    var n3 = 2;
+    // Rock nubs jutting off the bone. Antes eran solo 2 por hueso y apenas se notaban; ahora
+    // son 5, más grandes, y alternan tamaño/tono por índice para leer como un borde rocoso de
+    // verdad en vez de un par de motitas sueltas. Sigue sin término de tiempo (estático,
+    // "borde marrón de tierra estático" — a diferencia del resto, que sí flickea/fluye).
+    var n3 = 5;
     for (var k = 0; k < n3; k++) {
-      var u3 = (k + 0.5) / n3 * 0.7 + 0.15;
+      var u3 = (k + 0.5) / n3 * 0.82 + 0.09;
       var px3 = x1 + dx * u3, py3 = y1 + dy * u3;
       var jitter = ((Math.round(x1) * 7 + Math.round(y1) * 13 + k * 31) % 5) - 2;
-      var ox = px3 + nx * (4 + jitter), oy = py3 + ny * (4 + jitter);
-      ctx.fillStyle = "#8a6a3a";
+      var ox = px3 + nx * (4.5 + jitter), oy = py3 + ny * (4.5 + jitter);
+      var sz = 2.6 + (k % 3) * 0.6; // 2.6 / 3.2 / 3.8 alternado, para que no sean todos iguales
+      ctx.fillStyle = k % 2 === 0 ? "#8a6a3a" : "#6f5530";
       ctx.beginPath();
-      ctx.moveTo(ox - 2.3, oy);
-      ctx.lineTo(ox, oy - 2.3);
-      ctx.lineTo(ox + 2.3, oy);
-      ctx.lineTo(ox, oy + 2.1);
+      ctx.moveTo(ox - sz, oy);
+      ctx.lineTo(ox, oy - sz);
+      ctx.lineTo(ox + sz, oy);
+      ctx.lineTo(ox, oy + sz * 0.9);
       ctx.closePath();
       ctx.fill();
     }
@@ -332,17 +341,32 @@ function auraSegment(ctx, x1, y1, x2, y2, aura) {
   ctx.fillStyle = savedFill; ctx.strokeStyle = savedStroke; ctx.lineWidth = savedWidth;
 }
 
-// The classic "just got burned" pop: a soft additive flash over the whole silhouette, refreshed
-// every time fuego lands a hit (and every DoT tick while it keeps burning), decaying out over
-// ~0.2s. Drawn IN FRONT of the body (called after the limbs/head), unlike the aura above.
+// The "just got burned" pop: refreshed every time fuego lands a hit (and every DoT tick while
+// it keeps burning), decaying out over ~0.2s. Drawn IN FRONT of the body (called after the
+// limbs/head), unlike the aura above. Used to be one flat additive ellipse over the whole
+// silhouette — now it's a handful of embers popping off and drifting up, since the persistent
+// per-bone flame aura (beginPowerAura, above) already carries the "on fire" read the rest of
+// the time; this only needs to sell the TICK, not the whole state.
 function drawBurnFlash(ctx, p, cx, midY, halfH) {
   if (!(p.burnFlashT > 0)) return;
-  var a = clamp(p.burnFlashT / 220, 0, 1) * 0.55;
+  var a = clamp(p.burnFlashT / 220, 0, 1);
+  var n = 5;
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
-  ctx.globalAlpha = a;
-  ctx.fillStyle = POWER_COLORS.fuego;
-  ctx.beginPath(); ctx.ellipse(cx, midY, 17, halfH, 0, 0, Math.PI * 2); ctx.fill();
+  for (var i = 0; i < n; i++) {
+    // Determinista por jugador+índice (no Math.random): así dos jugadores quemándose a la vez
+    // no comparten el mismo patrón de chispas, pero el mismo jugador es estable cuadro a
+    // cuadro en vez de titilar en posiciones nuevas cada frame.
+    var seed = (p.id || 0) * 13 + i * 7;
+    var ang = ((seed * 37) % 100) / 100 * Math.PI * 2;
+    var dist = 3 + ((seed * 53) % 100) / 100 * 12;
+    var rise = (1 - a) * 14; // suben a medida que se apagan
+    var sx = cx + Math.cos(ang) * dist * 0.6;
+    var sy = midY - halfH * 0.3 + Math.sin(ang) * dist * 0.4 - rise;
+    ctx.globalAlpha = a * (0.5 + 0.5 * Math.sin(seed));
+    ctx.fillStyle = i % 2 === 0 ? "#ffb347" : POWER_COLORS.fuego;
+    ctx.beginPath(); ctx.arc(sx, sy, 1.6 * a + 0.6, 0, Math.PI * 2); ctx.fill();
+  }
   ctx.restore();
 }
 
@@ -498,6 +522,11 @@ function drawStickman(ctx, p, color, dbg) {
     if (p.burnT > 0) drawColor = POWER_COLORS.fuego;
     else if (p.slowT > 0) drawColor = POWER_COLORS.hielo;
     else if (p.power) drawColor = POWER_COLORS[p.power.type];
+  } else if (p.burnT > 0) {
+    // Recolor + el shadowBlur que ya se aplica más abajo a drawColor = el "borde exterior"
+    // con glow que antes solo pasaba en snail mode. Antes de esto, en modo normal quien se
+    // quemaba no cambiaba de color en absoluto — solo tenía el flash puntual cada tick.
+    drawColor = POWER_COLORS.fuego;
   } else if (p.slowT > 0) {
     drawColor = POWER_COLORS.hielo;
   }

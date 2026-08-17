@@ -12,22 +12,23 @@
 
    El equilibrio real está en el DPS, no en el daño por golpe:
 
-     piña   8 daño / 0.19 s = 42.1 daño/s
+     piña   9 daño / 0.19 s = 47.4 daño/s
      patada 15 daño / 0.38 s = 39.5 daño/s
 
-   La piña gana por poco en daño sostenido — si no, sería estrictamente peor que la patada y
-   nadie la usaría. Lo que compra la patada no es DPS sino ESPACIO: con kbX 3.6 y kbY -2.5
-   saca al rival de la plataforma, y en este juego caerse es morir. O sea: piña para ganar la
-   carrera de daño, patada para cerrar la ronda de un empujón. */
+   La piña gana en daño sostenido — si no, sería estrictamente peor que la patada y nadie la
+   usaría. Lo que compra la patada no es DPS sino ESPACIO: con kbX 4.2 y kbY -3.0 saca al rival
+   de la plataforma más lejos que antes, y en este juego caerse es morir. O sea: piña para
+   ganar la carrera de daño, patada para cerrar la ronda de un empujón — ahora un empujón más
+   contundente. */
 
 module.exports = {
   attacks: {
     punch: {
       dur: 140,       // mitad exacta de la patada: la animación también tiene que leerse rápida
       cooldown: 190,  // mitad exacta de la patada -> dos piñas por patada
-      damage: 8,
+      damage: 9,      // +1: un poco más de fuerza sin romper el diseño (sigue ganando por poco, no por mucho)
       reach: 34,
-      kbX: 0.8,       // "apenas hacia atrás"
+      kbX: 0.8,       // "apenas hacia atrás" — el empuje sigue siendo cosa de la patada, no de esto
       kbY: 0,
       hitStun: 110,
       hitStop: 25,    // corto a propósito: un hitstop largo arruinaría el ritmo del ataque rápido
@@ -39,8 +40,8 @@ module.exports = {
       cooldown: 380,
       damage: 15,
       reach: 44,
-      kbX: 3.6,       // 4.5x el empuje de la piña
-      kbY: -2.5,      // lo despega un poco del piso: es lo que lo tira fuera de la plataforma
+      kbX: 4.2,       // +0.6: empuja más lejos de la plataforma
+      kbY: -3.0,      // +0.5: despega un poco más del piso, mismo motivo
       hitStun: 220,
       hitStop: 60,
       trauma: 0.55,

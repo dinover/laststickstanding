@@ -174,6 +174,21 @@ var Net = (function () {
       send({ t: "endMatch" });
     },
 
+    /* Salida voluntaria del lobby ("‹ volver" con la sala ya creada). A diferencia de un corte
+       de conexión, el socket queda vivo — solo se resetea el estado LOCAL de esta sesión para
+       que Net vuelva a quedar "sin sala", listo para un create/join nuevo. Limpiamos la sesión
+       ANTES de mandar el mensaje: si por lo que sea el socket se cortara justo después, no
+       queremos que el reconnect intente volver a una sala que dejamos a propósito. */
+    leave: function () {
+      clearSession();
+      send({ t: "leave" });
+      myId = null;
+      roomCode = null;
+      ownerId = null;
+      roomMode = null;
+      roomRounds = null;
+    },
+
     /* Sesión previa en esta pestaña, si la hay. El index la consulta al cargar para saber si
        tiene que mostrar "reconectando" en vez del lobby. */
     getSavedSession: loadSession,

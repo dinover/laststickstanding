@@ -190,6 +190,41 @@ Un detalle de transporte: `totalRounds` viaja como `Infinity` dentro del proceso
 `JSON.stringify(Infinity)` da `null` — así llega al cliente, que lo interpreta como "∞" en el
 cartel de ronda.
 
+## Salir de una sala ya creada
+
+Antes solo se podía volver atrás ANTES de crear la sala (desde `modeCard`/`joinCard`). Ahora el
+mismo link `‹ volver` sigue visible una vez dentro del lobby (`roomCard`) y funciona como "salir
+de la sala": manda `{t:"leave"}` al servidor (reusa la misma `leaveRoom()` que ya disparaba un
+corte de conexión) pero **sin cerrar el socket** — así el mismo cliente puede crear o unirse a
+otra sala al toque, sin recargar la página. Si eras el dueño, la sala le pasa la posta al
+próximo conectado; si eras el último, la sala queda con gracia de 60s por si alguien vuelve a
+entrar con el código (mismo comportamiento que ya existía para una desconexión).
+
+## Efectos visuales (stickman.js / fx.js — compartido, no solo web)
+
+Estos tres viven en los archivos compartidos, así que escritorio y Steam los reciben gratis —
+son mejoras puramente cosméticas, sin ningún cambio de comportamiento de juego.
+
+- **Quemado.** Antes: un óvalo naranja plano con blend aditivo, encima del cuerpo sin recolorear,
+  parpadeando 220ms cada medio segundo y sin nada visible el resto del tiempo. Ahora: la víctima
+  (no solo quien tiene el orbe) dispara el mismo aura de llamas por hueso que ya usaba el
+  poseedor del poder (`beginPowerAura` chequea `p.burnT > 0` además de `p.power`), más el cuerpo
+  recolor a naranja con el glow (`shadowBlur`) que ya se aplicaba a todos los trazos — eso es el
+  "borde exterior" que ardía. El flash puntual de cada tick de daño pasó de una elipse a un
+  puñado de chispas que suben y se apagan (`drawBurnFlash`), determinísticas por jugador así no
+  titilan en una posición nueva cada frame.
+- **Aura de tierra (resistencia).** De 2 nubs de piedra por hueso a 5, más grandes (alternando
+  tamaño para que lea rocoso, no uniforme) — antes apenas se notaba.
+- **Estela de aire (velocidad).** `Trails` (antes solo usado para el trail de golpe) ahora acepta
+  `opts.key`/`opts.maxGhosts`/`opts.minIntervalMs`/`opts.baseAlpha`/`opts.alphaSpread`, así puede
+  llevar dos canales de fantasmas independientes por jugador sin pisarse (golpe vs. velocidad).
+  Mientras el orbe de aire está activo, deja una estela bastante más exagerada que la de golpe —
+  el doble de fantasmas, capturados el doble de seguido, mucho más visibles.
+
+Prototipados y comparados lado a lado (actual vs. propuesta) con el código real —no un mockup—
+en un harness aislado antes de aplicarlos acá, verificados después contra 22+ rondas de partida
+real sin errores de consola.
+
 ## Balance de combate (solo web)
 
 `balance.js` ajusta el combate **únicamente de este build**. Se aplica con
@@ -200,14 +235,14 @@ intactos: escritorio y Steam siguen jugando igual que siempre.
 |---|---|---|
 | Duración | 140 ms | 280 ms |
 | Cooldown | 190 ms | 380 ms |
-| Daño | 8 | 15 |
-| Empuje (kbX) | 0,8 | 3,6 |
+| Daño | 9 | 15 |
+| Empuje (kbX) | 0,8 | 4,2 |
 
 Entran exactamente **dos piñas en el tiempo de una patada**. El equilibrio no está en el daño
-por golpe sino en el DPS: piña 42,1/s contra patada 39,5/s. La piña gana por poco en daño
-sostenido — si no, sería estrictamente peor y nadie la usaría. Lo que compra la patada no es
-DPS sino **espacio**: con `kbX 3.6` y `kbY -2.5` saca al rival de la plataforma, y en este juego
-caerse es morir.
+por golpe sino en el DPS: piña 47,4/s contra patada 39,5/s. La piña gana en daño sostenido — si
+no, sería estrictamente peor y nadie la usaría. Lo que compra la patada no es DPS sino
+**espacio**: con `kbX 4.2` y `kbY -3.0` saca al rival de la plataforma, y en este juego caerse
+es morir.
 
 Para tocar el balance no hace falta entender el servidor: es un solo archivo de constantes.
 

@@ -218,41 +218,59 @@ var Particles = (function () {
 /* ---- Trails: lightweight snapshot ghosts for motion trails. Stores only the fields
    drawStickman() actually reads, so callers can redraw a ghost by calling drawStickman again
    with a reduced alpha — no separate silhouette-draw path needed. Snapshots live on the player
-   object itself (p._trail) since ad-hoc per-player fields are already the pattern in this game. */
+   object itself (p._trail by default) since ad-hoc per-player fields are already the pattern
+   in this game.
+
+   opts.key lets a caller keep its OWN independent trail (different buffer, different tuning)
+   without clobbering another caller's — e.g. the attack-hit trail below and the aire-power
+   speed trail (desktop/sim.js's drawPlayer) can both be active on the same player at once
+   without fighting over ghost count or overwriting each other's snapshots. Callers that don't
+   pass opts get byte-identical behavior to before (key "_trail", 3 ghosts, alpha 0.10-0.26). */
 var Trails = {
   maxGhosts: 3,
   minIntervalMs: 26,
 
-  push: function (p, nowMs) {
-    if (!p._trail) p._trail = [];
-    if (!p._trailT) p._trailT = 0;
-    if (nowMs - p._trailT < this.minIntervalMs) return;
-    p._trailT = nowMs;
-    p._trail.push({
+  push: function (p, nowMs, opts) {
+    opts = opts || {};
+    var key = opts.key || "_trail";
+    var tKey = key + "T";
+    var maxGhosts = opts.maxGhosts != null ? opts.maxGhosts : this.maxGhosts;
+    var minInterval = opts.minIntervalMs != null ? opts.minIntervalMs : this.minIntervalMs;
+    if (!p[key]) p[key] = [];
+    if (!p[tKey]) p[tKey] = 0;
+    if (nowMs - p[tKey] < minInterval) return;
+    p[tKey] = nowMs;
+    p[key].push({
       x: p.x, y: p.y, vx: p.vx, vy: p.vy, facing: p.facing, grounded: p.grounded,
       attack: p.attack ? { type: p.attack.type, t: p.attack.t, dur: p.attack.dur } : null,
       walkCycle: p.walkCycle, idleT: p.idleT, squash: p.squash,
     });
-    if (p._trail.length > this.maxGhosts) p._trail.shift();
+    if (p[key].length > maxGhosts) p[key].shift();
   },
 
-  draw: function (ctx, p, drawFn) {
-    // ghost trails redraw the full stickman 1-3x per attacking player, per frame — skip
-    // them entirely in snail mode, they're pure juice with no gameplay meaning.
+  draw: function (ctx, p, drawFn, opts) {
+    // ghost trails redraw the full stickman 1-6x per player, per frame — skip them entirely
+    // in snail mode, they're pure juice with no gameplay meaning.
     if (window.SNAIL_MODE) return;
-    if (!p._trail || !p._trail.length) return;
-    var n = p._trail.length;
+    opts = opts || {};
+    var key = opts.key || "_trail";
+    var baseAlpha = opts.baseAlpha != null ? opts.baseAlpha : 0.10;
+    var alphaSpread = opts.alphaSpread != null ? opts.alphaSpread : 0.16;
+    var list = p[key];
+    if (!list || !list.length) return;
+    var n = list.length;
     for (var i = 0; i < n; i++) {
-      var g = p._trail[i];
+      var g = list[i];
       ctx.save();
-      ctx.globalAlpha = 0.10 + (i / n) * 0.16;
+      ctx.globalAlpha = baseAlpha + (i / n) * alphaSpread;
       drawFn(ctx, g);
       ctx.restore();
     }
   },
 
-  clear: function (p) {
-    if (p._trail) p._trail.length = 0;
+  clear: function (p, opts) {
+    var key = (opts && opts.key) || "_trail";
+    if (p[key]) p[key].length = 0;
   },
 };
 
