@@ -157,6 +157,11 @@ var Net = (function () {
     sendInput: function (action, down) {
       send({ t: "input", k: action, d: down });
     },
+    /* Solo tiene efecto en modo "rounds" y solo en el lobby (el servidor lo valida igual, esto
+       es solo para no gastar un mensaje si obviamente no aplica). */
+    setRounds: function (rounds) {
+      send({ t: "setRounds", rounds: rounds });
+    },
     start: function (snail) {
       send({ t: "start", snail: snail });
     },

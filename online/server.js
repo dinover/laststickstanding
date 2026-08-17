@@ -540,11 +540,25 @@ function handleMessage(ws, raw) {
     return;
   }
 
+  if (msg.t === "setRounds") {
+    /* Corregido: originalmente "rounds" se fijaba solo al crear la sala. El anfitrión tiene
+       que poder seguir ajustándolo mientras espera a que se sumen amigos — capaz crea la sala
+       para 3 y termina siendo para 6. Solo tiene efecto en el lobby: una vez que la partida
+       arrancó, room.rounds queda congelado en lo que ya se usó para startMatch(). No aplica a
+       "infinite" (ahí no hay cantidad de rondas que fijar). */
+    if (room.ownerId !== id) return;
+    if (room.mode !== "rounds") return;
+    if (room.host.sim.getPhase() !== "lobby") return;
+    room.rounds = Math.max(1, Math.min(20, Number(msg.rounds) || room.rounds));
+    pushLobby(room); // así todos ven el número actualizado en el resumen del lobby, no solo el anfitrión
+    return;
+  }
+
   if (msg.t === "start") {
     if (room.ownerId !== id) return;
     if (room.host.sim.getPhase() !== "lobby") return;
     room.lastMapKey = null; // fuerza que el primer snapshot lleve el mapa entero
-    // room.mode/room.rounds ya están fijados desde "create" — ver el comentario de ahí.
+    // room.mode/room.rounds ya están fijados (room.rounds puede haber cambiado via setRounds).
     room.host.sim.startMatch(room.rounds, !!msg.snail, { mode: room.mode });
     broadcast(room, { t: "started" });
     startLoop(room);

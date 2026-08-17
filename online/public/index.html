@@ -80,6 +80,29 @@
   }
   #roundBanner.show { display: block; }
 
+  /* Reveal de puntajes del modo infinito: cada 5 rondas, cuando vuelve el mapa inicial. A la
+     izquierda para no pisar el "FIGHT!" centrado ni el cartel de ronda. Cada fila se inserta
+     al DOM con demora creciente (ver showScoreReveal) — es eso lo que da el efecto "máquina de
+     escribir línea por línea", no una animación CSS con delays fijos. */
+  #scoreReveal {
+    position: absolute; z-index: 12; top: 50%; left: 22px; transform: translateY(-50%);
+    display: none; flex-direction: column; gap: 9px;
+    background: rgba(10,12,24,.85); backdrop-filter: blur(4px);
+    border: 1px solid #2a3050; border-radius: 12px; padding: 16px 18px;
+    min-width: 168px; pointer-events: none;
+  }
+  #scoreReveal.show { display: flex; }
+  #scoreReveal h3 { margin: 0 0 2px; font-size: 11px; color: #6b7394; letter-spacing: .16em; }
+  .scoreRevealRow {
+    display: flex; align-items: center; gap: 10px; font-size: 15px; color: #eaf0ff;
+    opacity: 0; transform: translateX(-6px);
+    animation: scoreRowIn .3s ease forwards;
+  }
+  .scoreRevealRow .dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 8px currentColor; flex-shrink: 0; }
+  .scoreRevealRow .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+  .scoreRevealRow .sc { color: #35f0e0; font-weight: 700; font-variant-numeric: tabular-nums; }
+  @keyframes scoreRowIn { to { opacity: 1; transform: translateX(0); } }
+
   #overlay { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: flex; align-items: center; justify-content: center; flex-direction: column; }
   #fightText {
     font-weight: 900; font-size: 96px; color: #ff3d63; text-shadow: 0 0 24px rgba(255,61,99,.7);
@@ -198,6 +221,7 @@
   </div>
   <div id="topbar"></div>
   <div id="roundBanner"></div>
+  <div id="scoreReveal"><h3>PUNTAJES</h3><div id="scoreRevealList"></div></div>
   <div id="overlay"><div id="fightText">FIGHT!</div></div>
 
   <canvas id="lobbyBg" width="1280" height="720"></canvas>
@@ -257,6 +281,11 @@
       <p class="sub" id="modeSummary" style="margin:0 0 16px"></p>
 
       <div id="ownerControls" style="display:none">
+        <div class="roundsRow" id="roomRoundsRow" style="display:none">
+          <button class="ghost" id="roomMinusBtn" type="button">&minus;</button>
+          <span id="roomRoundsN">3</span> rondas
+          <button class="ghost" id="roomPlusBtn" type="button">+</button>
+        </div>
         <button class="snail" id="snailBtn" role="switch" aria-checked="false">&#128012; Modo caracol (PCs lentas)</button>
         <button id="startBtn" style="width:100%; margin-top: 10px;">Empezar partida</button>
       </div>
@@ -302,7 +331,8 @@
   var names = {};
   var myId = null;
   var snailOn = false;
-  var totalRoundsPick = 3;
+  var totalRoundsPick = 3; // valor elegido ANTES de crear la sala (modeCard)
+  var roomRoundsPick = 3; // último valor CONFIRMADO por el servidor una vez dentro (roomCard)
   var selectedMode = "rounds"; // "rounds" | "infinite" — elegido antes de crear la sala
   var finalShown = false;
   var lastMap = null; // último mapa recibido; el servidor solo lo manda cuando cambia
@@ -344,6 +374,53 @@
 
   function escapeHtml(s) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  /* ---------------------------------------------------------------- reveal de puntajes (modo infinito) */
+  var SCORE_REVEAL_STAGGER_MS = 240; // demora entre fila y fila — el efecto "máquina de escribir"
+  var SCORE_REVEAL_HOLD_MS = 1800; // cuánto queda arriba después de revelar la última fila
+  var scoreRevealTimers = [];
+
+  function clearScoreRevealTimers() {
+    scoreRevealTimers.forEach(clearTimeout);
+    scoreRevealTimers = [];
+  }
+
+  function hideScoreReveal() {
+    clearScoreRevealTimers();
+    $("scoreReveal").classList.remove("show");
+  }
+
+  function showScoreReveal() {
+    clearScoreRevealTimers();
+    var list = $("scoreRevealList");
+    list.innerHTML = "";
+    $("scoreReveal").classList.add("show");
+
+    var scores = Sim.getScores();
+    /* Sim.getRoster() es el elenco FIJO de la partida completa (no cambia si alguien se cae a
+       mitad de camino — ver dropBody en server.js), así que es la fuente correcta para que
+       cada color caiga siempre en la misma fila entre una revelación y la siguiente. Ordenado
+       por id, no por puesto: si se ordenara por puntaje, los colores saltarían de lugar cada
+       vez que cambia quién va ganando, que es justo lo que "alineados por los colores" pide
+       evitar. */
+    var ids = Sim.getRoster().slice().sort(function (a, b) { return a - b; });
+
+    ids.forEach(function (id, i) {
+      var t = setTimeout(function () {
+        var row = document.createElement("div");
+        row.className = "scoreRevealRow";
+        row.innerHTML = '<div class="dot" style="color:' + colorFor(id) + ';background:' + colorFor(id) + '"></div>' +
+          '<div class="nm">' + escapeHtml(nameFor(id)) + '</div>' +
+          '<div class="sc">' + (scores[id] || 0) + ' pts</div>';
+        list.appendChild(row);
+        AudioManager.on.uiClick();
+      }, i * SCORE_REVEAL_STAGGER_MS);
+      scoreRevealTimers.push(t);
+    });
+
+    var totalMs = ids.length * SCORE_REVEAL_STAGGER_MS + SCORE_REVEAL_HOLD_MS;
+    scoreRevealTimers.push(setTimeout(hideScoreReveal, totalMs));
   }
 
   function showFinal(ranked, scores) {
@@ -393,6 +470,7 @@
       if (frame.phase === "final" && !finalShown) {
         finalShown = true;
         rb.classList.remove("show");
+        hideScoreReveal(); // por si el anfitrión cortó la partida infinita a mitad de un reveal
         var ranked = frame.roster.slice().sort(function (a, b) {
           return (frame.scores[b] || 0) - (frame.scores[a] || 0);
         });
@@ -488,16 +566,26 @@
     var owner = Net.isOwner();
     $("ownerControls").style.display = owner ? "block" : "none";
     $("waitOwner").style.display = owner ? "none" : "block";
-    /* mode/rounds se fijan al crear la sala y no cambian más — esto es solo un resumen para
-       que todos (no solo el anfitrión) sepan a qué están por jugar. */
+    /* El modo queda fijo desde que se crea la sala, pero la CANTIDAD de rondas sí se puede
+       seguir ajustando acá mientras se espera a que se sumen amigos (setRounds). El servidor es
+       la autoridad: este texto y el picker siempre reflejan msg.rounds, nunca un valor local
+       optimista, así que un guest ve el número cambiar en vivo apenas el anfitrión lo toca. */
     $("modeSummary").textContent = msg.mode === "infinite"
       ? "♾️ Modo infinito — el marcador no se reinicia entre rondas"
       : "🎯 Por rondas — " + msg.rounds + (msg.rounds === 1 ? " ronda" : " rondas");
+
+    var roundsMode = msg.mode !== "infinite";
+    $("roomRoundsRow").style.display = roundsMode ? "flex" : "none";
+    if (roundsMode) {
+      roomRoundsPick = msg.rounds;
+      $("roomRoundsN").textContent = msg.rounds;
+    }
   });
 
   Net.on("started", function () {
     finalShown = false;
     $("finalScreen").classList.remove("show");
+    hideScoreReveal();
     Sim.resetGuest();
     stopLobbyBackground();
   });
@@ -507,6 +595,7 @@
     $("finalScreen").classList.remove("show");
     $("roundBanner").classList.remove("show");
     $("wrap").classList.remove("playing");
+    hideScoreReveal();
     Sim.resetGuest();
     startLobbyBackground();
   });
@@ -519,6 +608,10 @@
     rb.classList.add("show");
     var ft = $("fightText");
     ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
+
+    // Cada 5 rondas en modo infinito vuelve el mapa inicial — ese es el momento de mostrar
+    // el resumen de puntajes. No aplica a "por rondas" (msg.infinite siempre false ahí).
+    if (msg.infinite && msg.round % 5 === 0) showScoreReveal();
   });
 
   Net.on("snap", function (data) {
@@ -638,6 +731,16 @@
   $("modeConfirmBtn").addEventListener("click", function () {
     $("modeErr").textContent = "";
     Net.create($("nickInputMain").value.trim() || "Anfitrión", selectedMode, totalRoundsPick);
+  });
+
+  // Rondas dentro de la sala (modo "rounds"): cada click pide el cambio al servidor; el
+  // número en pantalla solo se actualiza cuando llega la confirmación ("lobby"), no acá — así
+  // el anfitrión y los invitados nunca ven valores distintos entre sí.
+  $("roomMinusBtn").addEventListener("click", function () {
+    Net.setRounds(Math.max(1, roomRoundsPick - 1));
+  });
+  $("roomPlusBtn").addEventListener("click", function () {
+    Net.setRounds(Math.min(20, roomRoundsPick + 1));
   });
 
   $("snailBtn").addEventListener("click", function () {

@@ -143,13 +143,20 @@ El modo se elige **al crear la sala**, antes de que exista — no se puede cambi
 crear una sala nueva. Queda fijo en `room.mode`/`room.rounds` y todos los que se unen lo ven
 como un resumen de solo lectura en el lobby.
 
-- **Por rondas** — el de siempre. El anfitrión elige 1–20 rondas; termina sola al llegar a la
-  última.
+- **Por rondas** — el de siempre. El anfitrión elige 1–20 rondas al crear la sala, y **puede
+  seguir ajustándolo mientras espera en el lobby** (mensaje `setRounds`, solo antes de
+  arrancar): cada cambio se sincroniza en vivo a todos los que ya están adentro, no solo al
+  dueño. Termina sola al llegar a la última ronda.
 - **Infinito** — ronda tras ronda sin límite. El puntaje **nunca se resetea**, acumula desde la
   ronda 1 hasta que el anfitrión corta la partida a mano (botón "Terminar partida", visible
   solo para el dueño de la sala mientras el modo es infinito y hay una partida en curso). Cada
   5 rondas (5, 10, 15…) vuelve al mapa inicial, igual que la ronda 1 — el resto son mapas
-  procedurales normales.
+  procedurales normales. En ese momento se muestra un panel de puntajes a la izquierda de la
+  pantalla: cada jugador aparece uno debajo del otro con demora creciente (~240 ms entre
+  fila y fila, efecto "máquina de escribir línea por línea"), siempre en el mismo orden — por
+  id de jugador, no por puesto — para que el mismo color caiga siempre en la misma fila entre
+  una revelación y la siguiente. Se esconde solo después de un rato (`showScoreReveal` en
+  `index.html`).
 - **Historia** — modo contra IA. Todavía no existe; el botón está en la UI pero deshabilitado
   ("Próximamente"). Se construye al final, como su propio bloque de trabajo.
 
