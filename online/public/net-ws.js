@@ -18,6 +18,34 @@ var Net = (function () {
   var ownerId = null;
   var queued = null; // acción pedida antes de que abriera el socket
 
+  /* --- reconexión ---
+     El servidor entrega un token al entrar; guardándolo podemos volver al MISMO slot, con el
+     puntaje y el lugar en el roster intactos, en vez de que un parpadeo de wifi te deje afuera
+     de la partida para siempre. Va en sessionStorage y no en localStorage a propósito: es por
+     pestaña, así que dos pestañas en la misma PC (que es como se prueba esto) no se pisan el
+     token entre ellas. */
+  var SESSION_KEY = "lss-session";
+  var token = null;
+  var reconnectTimer = null;
+  var reconnectTries = 0;
+  var MAX_RECONNECT_TRIES = 12;
+  var wantConnection = false; // false = cierre deliberado, no reintentar
+
+  function saveSession() {
+    try {
+      if (token && roomCode) sessionStorage.setItem(SESSION_KEY, JSON.stringify({ code: roomCode, token: token }));
+    } catch (e) { /* modo incógnito o storage bloqueado: seguimos sin reconexión */ }
+  }
+  function loadSession() {
+    try {
+      return JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null");
+    } catch (e) { return null; }
+  }
+  function clearSession() {
+    token = null;
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
+  }
+
   function emit(name, payload) {
     var fn = handlers[name];
     if (fn) fn(payload);
@@ -30,10 +58,17 @@ var Net = (function () {
 
   function open() {
     if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
+    wantConnection = true;
     ws = new WebSocket(url());
 
     ws.onopen = function () {
-      if (queued) {
+      reconnectTries = 0;
+      /* Si veníamos de una caída y tenemos token, lo primero es pedir volver a nuestro lugar.
+         Recién si el servidor lo rechaza caemos al flujo normal de lobby. */
+      var sess = loadSession();
+      if (sess && sess.token) {
+        ws.send(JSON.stringify({ t: "rejoin", code: sess.code, token: sess.token }));
+      } else if (queued) {
         ws.send(JSON.stringify(queued));
         queued = null;
       }
@@ -53,19 +88,45 @@ var Net = (function () {
         myId = msg.id;
         roomCode = msg.code;
         ownerId = msg.owner;
+        if (msg.token) { token = msg.token; saveSession(); }
       } else if (msg.t === "lobby") {
         ownerId = msg.owner;
         roomCode = msg.code;
+      } else if (msg.t === "rejoinFailed") {
+        /* La sala se cerró o ya nos soltó: limpiamos y arrancamos de cero. */
+        clearSession();
+        myId = null;
+        roomCode = null;
       }
       emit(msg.t, msg);
     };
 
     ws.onclose = function () {
       emit("close");
+      /* Solo insistimos si estábamos en una sala: si nunca entramos a ninguna, no hay nada que
+         recuperar y reintentar en loop sería ruido. */
+      if (wantConnection && token) scheduleReconnect();
     };
     ws.onerror = function () {
       /* onclose siempre viene después; alcanza con manejar ahí para no mostrar dos errores. */
     };
+  }
+
+  /* Backoff creciente con techo: reintenta rápido al principio (la mayoría de los cortes duran
+     un par de segundos) y después se espacia para no martillar un servidor que está caído. */
+  function scheduleReconnect() {
+    if (reconnectTimer) return;
+    if (reconnectTries >= MAX_RECONNECT_TRIES) {
+      emit("reconnectGaveUp");
+      return;
+    }
+    var delay = Math.min(4000, 300 * Math.pow(1.6, reconnectTries));
+    reconnectTries++;
+    emit("reconnecting", { intento: reconnectTries, de: MAX_RECONNECT_TRIES });
+    reconnectTimer = setTimeout(function () {
+      reconnectTimer = null;
+      open();
+    }, delay);
   }
 
   function send(obj) {
@@ -94,6 +155,11 @@ var Net = (function () {
     again: function () {
       send({ t: "again" });
     },
+
+    /* Sesión previa en esta pestaña, si la hay. El index la consulta al cargar para saber si
+       tiene que mostrar "reconectando" en vez del lobby. */
+    getSavedSession: loadSession,
+    forget: clearSession,
 
     getMyId: function () {
       return myId;

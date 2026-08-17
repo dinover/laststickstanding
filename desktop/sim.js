@@ -19,7 +19,18 @@ var Sim = (function () {
   var W = 960, H = 540;
   var GRAVITY_UP = 0.95, GRAVITY_DOWN = 0.7, SPEED = 4.3, JUMP_V = -20.5;
   var PW = 13, PH = 52;
-  var PUNCH_MS = 230, KICK_MS = 280, ATTACK_COOLDOWN = 380;
+  /* Tabla de ataques. Antes esto estaba desparramado en ternarios `type === "kick" ? a : b`
+     por todo stepPlayer; juntarlo acá permite que cada build ajuste el combate por su cuenta
+     via Sim.init({ attacks: {...} }) sin tocar a los demás.
+
+     Estos valores por defecto reproducen EXACTAMENTE el comportamiento histórico (piña 230 ms
+     / patada 280 ms, cooldown compartido de 380, daño 10/16, etc.), así que los builds de
+     escritorio y Steam siguen jugando igual que siempre. El build web pisa lo suyo desde el
+     servidor — ver online/server.js. */
+  var ATTACKS = {
+    punch: { dur: 230, cooldown: 380, damage: 10, reach: 34, kbX: 2.1, kbY: 0, hitStun: 180, hitStop: 35, trauma: 0.32, squash: 0.4 },
+    kick:  { dur: 280, cooldown: 380, damage: 16, reach: 44, kbX: 3.2, kbY: -2, hitStun: 180, hitStop: 55, trauma: 0.5, squash: 0.55 },
+  };
 
   var ORB_SPAWN_MS = 10000, ORB_POWER_MS = 8000, ORB_PICKUP_R = 28;
   var BURN_MS = 3000, BURN_TICK_MS = 500, BURN_DMG = 2;
@@ -240,10 +251,12 @@ var Sim = (function () {
 
     if ((p.punchEdge || p.kickEdge) && p.attackCooldown <= 0) {
       var type = p.kickEdge ? "kick" : "punch";
-      var dur = type === "kick" ? KICK_MS : PUNCH_MS;
-      p.attack = { type: type, t: dur, dur: dur, hitSet: {} };
+      var def = ATTACKS[type];
+      p.attack = { type: type, t: def.dur, dur: def.dur, hitSet: {} };
       var cdMult = (p.power && p.power.type === "aire") ? AIR_COOLDOWN_MULT : 1;
-      p.attackCooldown = ATTACK_COOLDOWN * cdMult;
+      // El cooldown es por tipo de ataque, no compartido: así una piña puede ser literalmente
+      // el doble de rápida que una patada en vez de quedar frenada por el mismo temporizador.
+      p.attackCooldown = def.cooldown * cdMult;
       AudioManager.on.swing(type);
     }
     p.punchEdge = false;
@@ -312,16 +325,17 @@ var Sim = (function () {
           if (oid === p.id) continue;
           var o = players[oid];
           if (!o || !o.alive || p.attack.hitSet[oid]) continue;
-          var reach = p.attack.type === "kick" ? 44 : 34;
+          var atk = ATTACKS[p.attack.type];
+          var reach = atk.reach;
           var dx = o.x - p.x;
           var facingOk = p.facing > 0 ? (dx > -6 && dx < reach) : (dx < 6 && dx > -reach);
           var dy = Math.abs(o.y - p.y - 10);
           if (facingOk && dy < 60) {
             p.attack.hitSet[oid] = true;
-            var dmg = p.attack.type === "kick" ? 16 : 10;
+            var dmg = atk.damage;
             if (o.power && o.power.type === "tierra") dmg = Math.round(dmg * ARMOR_MULT);
-            var kbX = p.attack.type === "kick" ? 3.2 : 2.1;
-            var kbY = p.attack.type === "kick" ? -2 : 0;
+            var kbX = atk.kbX;
+            var kbY = atk.kbY;
             o.hp -= dmg;
             if (p.power && p.power.type === "fuego") { o.burnT = BURN_MS; o.burnTickT = BURN_TICK_MS; o.burnFlashT = 220; }
             if (p.power && p.power.type === "hielo") o.slowT = SLOW_MS;
@@ -330,16 +344,15 @@ var Sim = (function () {
             if (kbY < 0) o.grounded = false;
 
             var hitX = o.x, hitY = o.y - 14;
-            var isKick = p.attack.type === "kick";
-            HitStop.trigger(isKick ? 55 : 35);
-            Camera.addTrauma(isKick ? 0.5 : 0.32);
+            HitStop.trigger(atk.hitStop);
+            Camera.addTrauma(atk.trauma);
             Camera.zoomImpulse(0.03);
             if (!snailMode) Particles.punchSparks(hitX, hitY, p.facing, colorFor(p.id));
             ScreenFX.impactStreak(hitX, hitY, p.facing);
             AudioManager.on.hit(p.attack.type);
-            o.squash = Math.max(o.squash || 0, isKick ? 0.55 : 0.4);
+            o.squash = Math.max(o.squash || 0, atk.squash);
             p.squash = Math.max(p.squash || 0, 0.2);
-            o.hitStunT = 180;
+            o.hitStunT = atk.hitStun;
             o.hitDir = p.facing;
 
             if (o.hp <= 0) eliminate(o);
@@ -401,7 +414,19 @@ var Sim = (function () {
     if (opts.colorFor) colorFor = opts.colorFor;
     if (opts.nameFor) nameFor = opts.nameFor;
     if (opts.onPhaseChange) onPhaseChange = opts.onPhaseChange;
+
+    /* Ajuste de combate por build. Merge campo por campo (no reemplazo del objeto) para que
+       quien pise solo `damage` no se lleve puesto el resto de la definición del ataque. */
+    if (opts.attacks) {
+      for (var type in opts.attacks) {
+        if (!ATTACKS[type]) continue;
+        var over = opts.attacks[type];
+        for (var k in over) if (over[k] != null) ATTACKS[type][k] = over[k];
+      }
+    }
   }
+
+  function getAttacks() { return ATTACKS; }
 
   function addPlayer(id) { ensurePlayer(id); }
   function removePlayer(id) {
@@ -593,6 +618,7 @@ var Sim = (function () {
     addPlayer: addPlayer, removePlayer: removePlayer,
     handleInput: handleInput,
     setSnailMode: setSnailMode, getSnailMode: getSnailMode,
+    getAttacks: getAttacks,
     startMatch: startMatch, resetToLobby: resetToLobby,
     step: step, draw: draw, snapshot: snapshot,
     getPhase: function () { return phase; },

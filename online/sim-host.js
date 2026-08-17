@@ -16,6 +16,7 @@
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
+const BALANCE = require("./balance");
 
 const ROOT = path.join(__dirname, "..");
 
@@ -90,8 +91,16 @@ function createSim(onPhaseChange) {
 
   /* colorFor/nameFor solo los usa el path de dibujo y los colores de partículas, que acá no
      se ven; los clientes ponen los suyos. onPhaseChange sí importa: es como el servidor se
-     entera de roundStart/final para avisarle a todos. */
-  Sim.init({ onPhaseChange: onPhaseChange || function () {} });
+     entera de roundStart/final para avisarle a todos.
+
+     `attacks` es el balance propio del build web (ver balance.js). Como cada sala tiene su
+     contexto vm, esto se aplica por sala y no puede filtrarse a otra. Los clientes no lo
+     necesitan: la duración de cada ataque les llega dentro del snapshot (attack.dur), que es
+     lo único que mira drawStickman para animar. */
+  Sim.init({
+    onPhaseChange: onPhaseChange || function () {},
+    attacks: BALANCE.attacks,
+  });
 
   return {
     sim: Sim,

@@ -13,6 +13,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 const { createSim } = require("./sim-host");
 
@@ -21,12 +22,26 @@ const ROOT = path.join(__dirname, "..");
 
 const MAX_PLAYERS = 8; // = PLAYER_COLORS.length en el cliente
 const TICK_MS = 16; // ~60 Hz de simulación (menos que esto y los jugadores atraviesan plataformas)
-const BROADCAST_MS = 40; // ~25 Hz de red, igual que el build P2P
+
+/* 33 ms (~30 Hz), no 40. Dos razones, las dos medidas contra el server real:
+
+   1. El tick real dura ~16,6 ms, así que un umbral de 40 recién se cruzaba al TERCER tick:
+      los snapshots salían cada ~50 ms (20 Hz medidos), no cada 40. Con 33 el umbral cae
+      justo en el segundo tick (16,6 x 2 = 33,2), o sea una cadencia clavada y sin deriva.
+   2. Emitir más seguido recorta la espera promedio del jugador por su propio input: pasa de
+      ~25 ms a ~16 ms. Es latencia que se elimina sin predecir nada del lado del cliente. */
+const BROADCAST_MS = 33;
 const MAX_DT = 40; // mismo clamp que hostLoop en desktop/game.html
 const ROOM_CODE_LEN = 4;
 const MAX_MSG_BYTES = 4096;
 const MAX_MSG_PER_SEC = 200; // un cliente normal manda ~20/s; esto solo frena un flood
 const EMPTY_ROOM_GRACE_MS = 60000;
+
+/* Cuánto se le guarda el lugar a alguien que se desconectó en medio de una partida.
+   Es un balance: mucho y una ronda puede quedar trabada esperando a un muñeco quieto que
+   nadie mata; poco y no llegás a recargar la página. 30 s alcanza para un F5 o para que el
+   wifi se recupere, y como el ausente no se defiende, en la práctica lo matan mucho antes. */
+const REJOIN_GRACE_MS = 30000;
 
 /* Mismo alfabeto que net.js: sin 0/O/1/I, para poder dictar el código en voz alta. */
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -183,7 +198,12 @@ function tick(room) {
 
   room.accum += dt;
   if (room.accum < BROADCAST_MS) return;
-  room.accum = 0;
+  /* Restar en vez de asignar 0: el acumulador siempre cruza el umbral con sobrante (los ticks
+     no caen exactos), y descartarlo hacía que cada broadcast llegara tarde y el error se
+     acumulara ronda tras ronda. Restando, el sobrante se arrastra al próximo y la frecuencia
+     promedio es la real. El módulo evita que un freeze del proceso dispare una ráfaga de
+     broadcasts para ponerse al día. */
+  room.accum = Math.min(room.accum - BROADCAST_MS, BROADCAST_MS);
 
   const snap = compressSnapshot(room.host.sim.snapshot(), room);
   snap.t = "snap";
@@ -196,7 +216,12 @@ function tick(room) {
      serializamos un único string para los 8. */
   const payload = JSON.stringify(snap);
   for (const p of room.players.values()) {
-    if (p.ws.readyState === 1) p.ws.send(payload);
+    if (!p.ws || p.ws.readyState !== 1) continue; // ausente esperando reconexión
+    /* Un cliente con la conexión saturada no puede frenar a los demás: si ya tiene más de un
+       segundo de snapshots encolados, se le saltea este frame. Encolar más solo aumentaría la
+       memoria del servidor para después entregarle un estado viejo que igual va a descartar. */
+    if (p.ws.bufferedAmount > payload.length * 30) continue;
+    p.ws.send(payload);
   }
 
   /* La partida terminó: paramos de simular hasta que alguien pida revancha. */
@@ -255,7 +280,7 @@ function send(ws, obj) {
 function broadcast(room, obj) {
   const payload = JSON.stringify(obj);
   for (const p of room.players.values()) {
-    if (p.ws.readyState === 1) p.ws.send(payload);
+    if (p.ws && p.ws.readyState === 1) p.ws.send(payload);
   }
 }
 
@@ -265,7 +290,11 @@ function lobbyState(room) {
     code: room.code,
     owner: room.ownerId,
     phase: room.host.sim.getPhase(),
-    players: [...room.players.values()].map((p) => ({ id: p.id, name: p.name })),
+    players: [...room.players.values()].map((p) => ({
+      id: p.id,
+      name: p.name,
+      connected: p.connected,
+    })),
   };
 }
 
@@ -288,7 +317,17 @@ function joinRoom(room, ws, nick) {
   const id = freeSlot(room);
   if (id === null) return { err: "La sala está llena (8 jugadores)." };
 
-  const player = { id, name: cleanNick(nick), ws, connected: true };
+  /* Token de reconexión: identifica a ESTE jugador si se le corta la conexión. Va al cliente
+     una sola vez y él lo guarda; no viaja en ningún otro mensaje. Sin esto, cualquiera que
+     conociera el código de sala podría robarle el lugar a otro en mitad de una partida. */
+  const player = {
+    id,
+    name: cleanNick(nick),
+    ws,
+    connected: true,
+    token: crypto.randomUUID(),
+    goneSince: null,
+  };
   room.players.set(id, player);
   room.host.sim.addPlayer(id);
   if (room.ownerId === null) room.ownerId = id;
@@ -297,9 +336,63 @@ function joinRoom(room, ws, nick) {
   ws._room = room;
   ws._playerId = id;
 
-  send(ws, { t: "joined", code: room.code, id, owner: room.ownerId });
+  send(ws, { t: "joined", code: room.code, id, owner: room.ownerId, token: player.token });
   pushLobby(room);
   return { id };
+}
+
+/* Reconexión. Devuelve al jugador a SU mismo slot, con su puntaje y su lugar en el roster.
+   Se permite incluso si el socket viejo todavía figura abierto: cuando a alguien se le corta
+   el wifi, el servidor puede tardar hasta un ciclo de heartbeat en darse cuenta, y hasta
+   entonces el jugador ya está golpeando F5. Quien presenta el token es el dueño legítimo, así
+   que se echa al socket viejo. */
+function rejoinRoom(room, ws, token) {
+  let player = null;
+  for (const p of room.players.values()) {
+    if (p.token && token && p.token === token) { player = p; break; }
+  }
+  if (!player) return { err: "Esa partida ya no te tiene registrado." };
+
+  const old = player.ws;
+  if (old && old !== ws) {
+    old._room = null;
+    old._playerId = null;
+    try { old.terminate(); } catch (e) { /* ya estaba muerto */ }
+  }
+
+  player.ws = ws;
+  player.connected = true;
+  player.goneSince = null;
+  ws._room = room;
+  ws._playerId = player.id;
+
+  /* Que vuelva sin teclas trabadas: si se desconectó con "derecha" apretada, el servidor nunca
+     recibió el keyup y el muñeco seguiría empujando solo. */
+  clearInputs(room, player.id);
+
+  send(ws, {
+    t: "joined",
+    code: room.code,
+    id: player.id,
+    owner: room.ownerId,
+    token: player.token,
+    resumed: true,
+  });
+  /* El mapa no viaja en cada snapshot (solo cuando cambia), así que el que vuelve se perdió
+     el único que lo traía: forzamos que el próximo lo incluya. */
+  room.lastMapKey = null;
+  pushLobby(room);
+  return { id: player.id };
+}
+
+function clearInputs(room, id) {
+  const p = room.host.sim.getPlayers()[id];
+  if (!p) return;
+  p.input.left = false;
+  p.input.right = false;
+  p.jumpEdge = false;
+  p.punchEdge = false;
+  p.kickEdge = false;
 }
 
 function leaveRoom(ws) {
@@ -309,25 +402,59 @@ function leaveRoom(ws) {
   const player = room.players.get(id);
   if (!player || player.ws !== ws) return;
 
-  room.players.delete(id);
-
   if (room.host.sim.getPhase() === "lobby") {
+    /* En el lobby no hay nada que preservar: si vuelve, entra como jugador nuevo. */
+    room.players.delete(id);
     room.host.sim.removePlayer(id);
   } else {
-    dropBody(room, id); // ver el comentario de dropBody
+    /* En partida NO se libera el slot todavía. El jugador queda "ausente" con su puntaje y su
+       lugar en el roster durante REJOIN_GRACE_MS. Su muñeco se queda quieto (y por lo tanto
+       es carne de cañón), pero si vuelve a tiempo retoma exactamente donde estaba. */
+    player.connected = false;
+    player.goneSince = Date.now();
+    player.ws = null;
+    clearInputs(room, id);
   }
 
-  if (room.ownerId === id) {
-    const next = room.players.keys().next();
-    room.ownerId = next.done ? null : next.value;
-  }
+  if (room.ownerId === id) reassignOwner(room);
 
-  if (room.players.size === 0) {
+  if (connectedCount(room) === 0) {
     room.emptySince = Date.now();
     stopLoop(room);
   } else {
     pushLobby(room);
   }
+}
+
+function connectedCount(room) {
+  let n = 0;
+  for (const p of room.players.values()) if (p.connected) n++;
+  return n;
+}
+
+/* El dueño de la sala tiene que ser alguien que esté efectivamente conectado, si no el botón
+   de "empezar" queda en manos de un ausente y nadie puede arrancar la partida. */
+function reassignOwner(room) {
+  room.ownerId = null;
+  for (const p of room.players.values()) {
+    if (p.connected) { room.ownerId = p.id; break; }
+  }
+}
+
+/* Barrido de ausentes: al vencer la gracia, el slot se libera de verdad. */
+function sweepAbsent(room) {
+  const now = Date.now();
+  let changed = false;
+  for (const p of [...room.players.values()]) {
+    if (p.connected || !p.goneSince) continue;
+    if (now - p.goneSince < REJOIN_GRACE_MS) continue;
+    room.players.delete(p.id);
+    if (room.host.sim.getPhase() === "lobby") room.host.sim.removePlayer(p.id);
+    else dropBody(room, p.id); // ver el comentario de dropBody
+    if (room.ownerId === p.id) reassignOwner(room);
+    changed = true;
+  }
+  if (changed) pushLobby(room);
 }
 
 function handleMessage(ws, raw) {
@@ -349,6 +476,18 @@ function handleMessage(ws, raw) {
       destroyRoom(room);
       send(ws, { t: "err", msg: res.err });
     }
+    return;
+  }
+
+  if (msg.t === "rejoin") {
+    if (ws._room) return;
+    const code = String(msg.code || "").toUpperCase().trim();
+    const room = rooms.get(code);
+    /* Los fallos de rejoin no son un error para el usuario: significan "esa partida ya no
+       existe / ya te soltó", y el cliente reacciona volviendo al lobby por su cuenta. */
+    if (!room) return send(ws, { t: "rejoinFailed" });
+    const res = rejoinRoom(room, ws, String(msg.token || ""));
+    if (res.err) send(ws, { t: "rejoinFailed" });
     return;
   }
 
@@ -427,9 +566,14 @@ wss.on("connection", (ws) => {
 });
 
 /* Un cliente que se va sin cerrar limpio (se le corta el wifi, cierra la tapa del notebook)
-   deja el socket abierto para siempre desde el lado del servidor, ocupando un slot de los 8
-   y, peor, un lugar en el roster de una partida en curso. El ping/pong lo detecta. */
-const HEARTBEAT_MS = 30000;
+   deja el socket abierto para siempre desde el lado del servidor, y su muñeco sigue parado en
+   la ronda recibiendo golpes. El ping/pong lo detecta.
+
+   10 s y no 30: hacen falta DOS ciclos para dar a alguien por muerto (uno para mandar el ping,
+   otro para constatar que no volvió), así que 30 s significaban hasta un minuto de fantasma
+   en la ronda. Con 10 s el peor caso baja a ~20 s, y recién ahí empieza a correr la gracia de
+   reconexión. El costo son 8 frames de ping cada 10 s: nada. */
+const HEARTBEAT_MS = 10000;
 setInterval(() => {
   for (const ws of wss.clients) {
     if (!ws._alive) {
@@ -445,16 +589,20 @@ setInterval(() => {
   }
 }, HEARTBEAT_MS);
 
-/* Salas vacías: se destruyen con gracia para que quien recarga la página por accidente pueda
-   volver a entrar con el mismo código. */
+/* Barrido periódico: libera los slots de los ausentes cuya gracia venció y destruye las salas
+   que quedaron sin nadie. La sala se destruye con demora para que quien recarga la página por
+   accidente pueda volver a entrar con el mismo código.
+   Corre seguido (2 s) porque de esto depende que una ronda no quede trabada esperando a un
+   jugador que ya no va a volver. */
 setInterval(() => {
   const now = Date.now();
   for (const room of [...rooms.values()]) {
-    if (room.players.size === 0 && room.emptySince && now - room.emptySince > EMPTY_ROOM_GRACE_MS) {
+    sweepAbsent(room);
+    if (connectedCount(room) === 0 && room.emptySince && now - room.emptySince > EMPTY_ROOM_GRACE_MS) {
       destroyRoom(room);
     }
   }
-}, 30000);
+}, 2000);
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log("Last Stick Standing online — escuchando en :" + PORT);

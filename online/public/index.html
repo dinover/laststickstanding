@@ -131,6 +131,27 @@
   .rosterRow { display: flex; align-items: center; gap: 8px; font-size: 13px; }
   .rosterRow .dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
   .rosterRow .tag { color: #6b7394; font-size: 11px; }
+  .rosterRow.gone { opacity: .45; }
+  .rosterRow .gonetag { color: #ffc247; font-size: 11px; }
+
+  /* Overlay de reconexión: tapa todo (incluido el canvas) porque mientras estás desconectado
+     lo que se ve en pantalla es un estado congelado y engañoso. */
+  #reconnect {
+    position: absolute; inset: 0; z-index: 40; display: none;
+    background: rgba(5,6,13,.86); backdrop-filter: blur(3px);
+    flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    color: #eaf0ff; text-align: center;
+  }
+  #reconnect.show { display: flex; }
+  #reconnect h2 { margin: 0; font-size: 22px; color: #ffc247; letter-spacing: .06em; }
+  #reconnect p { margin: 0; color: #9aa3bd; font-size: 13px; }
+  #reconnect .spinner {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 3px solid rgba(255,194,71,.2); border-top-color: #ffc247;
+    animation: spin .9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #reconnect button { margin-top: 8px; }
   .roundsRow { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 4px 0 20px; }
   .roundsRow button { padding: 7px 13px; }
   .hint { font-size: 11px; color: #6b7394; letter-spacing: .04em; margin-top: 16px; }
@@ -201,6 +222,13 @@
     <a class="back" id="backLink" href="#" style="display:none">&lsaquo; volver</a>
   </div>
 
+  <div id="reconnect">
+    <div class="spinner"></div>
+    <h2>RECONECTANDO</h2>
+    <p id="reconnectMsg">Se cort&oacute; la conexi&oacute;n. Volvemos a tu lugar en la partida&hellip;</p>
+    <button id="reconnectGiveUp" class="ghost" style="display:none">Volver al inicio</button>
+  </div>
+
   <div id="finalScreen">
     <h1 id="winnerTitle">GANADOR</h1>
     <div id="ranking"></div>
@@ -229,6 +257,7 @@
   var snailOn = false;
   var totalRoundsPick = 3;
   var finalShown = false;
+  var lastMap = null; // último mapa recibido; el servidor solo lo manda cuando cambia
 
   function $(id) { return document.getElementById(id); }
   function colorFor(id) { return PLAYER_COLORS[id % PLAYER_COLORS.length]; }
@@ -258,7 +287,9 @@
   function renderRoster(list, ownerId) {
     $("roster").innerHTML = list.map(function (p) {
       var tag = p.id === ownerId ? ' <span class="tag">(anfitri&oacute;n)</span>' : "";
-      return '<div class="rosterRow"><div class="dot" style="color:' + colorFor(p.id) + ';background:' + colorFor(p.id) + '"></div>' +
+      var gone = p.connected === false;
+      if (gone) tag += ' <span class="gonetag">(reconectando&hellip;)</span>';
+      return '<div class="rosterRow' + (gone ? " gone" : "") + '"><div class="dot" style="color:' + colorFor(p.id) + ';background:' + colorFor(p.id) + '"></div>' +
         (p.id === myId ? "Vos" : escapeHtml(p.name)) + tag + "</div>";
     }).join("");
   }
@@ -344,12 +375,54 @@
   /* ---------------------------------------------------------------- red */
   Net.on("joined", function (msg) {
     myId = msg.id;
+    $("reconnect").classList.remove("show");
     $("choiceCard").style.display = "none";
     $("joinCard").style.display = "none";
     $("roomCard").style.display = "block";
     $("backLink").style.display = "none";
     $("showCode").textContent = msg.code;
     $("roomCode").textContent = msg.code;
+
+    /* Al volver de una caída el estado local quedó viejo: los snapshots que llegan ahora no
+       tienen relación con los de antes del corte, así que interpolarlos entre sí daría un
+       salto. Reseteamos el buffer del guest y dejamos que se rearme. */
+    if (msg.resumed) {
+      Sim.resetGuest();
+      lastMap = null;
+    }
+  });
+
+  Net.on("reconnecting", function (info) {
+    $("reconnect").classList.add("show");
+    $("reconnectMsg").textContent = "Se cortó la conexión. Volviendo a tu lugar en la partida… (intento " + info.intento + " de " + info.de + ")";
+    $("reconnectGiveUp").style.display = "none";
+  });
+
+  Net.on("reconnectGaveUp", function () {
+    $("reconnectMsg").textContent = "No pudimos reconectar. El servidor puede estar caído o la partida ya terminó.";
+    $("reconnectGiveUp").style.display = "inline-block";
+  });
+
+  Net.on("rejoinFailed", function () {
+    /* La sala ya no nos tiene: no tiene sentido seguir mostrando "reconectando". */
+    $("reconnect").classList.remove("show");
+    $("wrap").classList.remove("playing");
+    $("finalScreen").classList.remove("show");
+    $("roundBanner").classList.remove("show");
+    $("roomCard").style.display = "none";
+    $("joinCard").style.display = "none";
+    $("choiceCard").style.display = "block";
+    $("mainErr").textContent = "La partida anterior ya no está disponible.";
+    myId = null;
+    finalShown = false;
+    Sim.resetGuest();
+    lastMap = null;
+    startLobbyBackground();
+  });
+
+  $("reconnectGiveUp").addEventListener("click", function () {
+    Net.forget();
+    location.reload();
   });
 
   Net.on("lobby", function (msg) {
@@ -385,7 +458,6 @@
     ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
   });
 
-  var lastMap = null;
   Net.on("snap", function (data) {
     /* El servidor omite `map` mientras no cambia (es estático durante toda la ronda y era
        el 24% del payload). Lo reponemos acá para que Sim.guestFrame reciba el snapshot
@@ -416,6 +488,10 @@
   });
 
   Net.on("close", function () {
+    /* Si hay sesión guardada, Net ya está reintentando y el overlay de "reconectando" cuenta la
+       historia: mostrar además un error rojo sería alarmismo. Solo avisamos cuando de verdad
+       no hay nada que recuperar. */
+    if (Net.getSavedSession()) return;
     $("roomErr").textContent = "Se perdió la conexión con el servidor. Recargá la página.";
     $("mainErr").textContent = "Sin conexión con el servidor.";
   });
@@ -506,6 +582,14 @@
       muteBtn.classList.toggle("active", muted);
     });
   })();
+
+  /* Si esta pestaña ya estaba en una partida (F5 accidental, o el navegador que recarga solo),
+     no mostramos el lobby: mostramos "reconectando" mientras Net intenta volver al slot. Si el
+     servidor dice que no, rejoinFailed nos devuelve al lobby limpio. */
+  if (Net.getSavedSession()) {
+    $("reconnect").classList.add("show");
+    $("reconnectMsg").textContent = "Volviendo a tu partida…";
+  }
 
   Net.connect();
   startLobbyBackground();
