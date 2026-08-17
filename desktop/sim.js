@@ -70,6 +70,10 @@ var Sim = (function () {
   var eliminationOrder = [];
   var phaseTimer = 0;
   var snailMode = false;
+  /* "fixed" reproduce el comportamiento histórico (termina al llegar a totalRounds), y es lo
+     único que usan los builds de escritorio y Steam. "infinite" es exclusivo del build web —
+     ver online/server.js — y solo se activa pasando opts.mode a startMatch(). */
+  var roundsMode = "fixed"; // "fixed" | "infinite"
   var orb = null, orbTimer = ORB_SPAWN_MS;
 
   function newPlayer(id) {
@@ -109,14 +113,29 @@ var Sim = (function () {
 
   function nextRound() {
     currentRound++;
-    if (currentRound > totalRounds) { endMatch(); return; }
-    currentMap = currentRound === 1 ? MAP0 : genMap(1000 + currentRound * 37 + Math.floor(Math.random() * 900));
+    if (roundsMode !== "infinite" && currentRound > totalRounds) { endMatch(); return; }
+    /* Modo infinito: cada 5 rondas (5, 10, 15…) vuelve al mapa inicial, igual que la ronda 1.
+       El puntaje NUNCA se resetea acá — sigue acumulando desde la ronda 1 hasta que el
+       anfitrión corta la partida con forceEndMatch(). */
+    var useStartMap = currentRound === 1 || (roundsMode === "infinite" && currentRound % 5 === 0);
+    currentMap = useStartMap ? MAP0 : genMap(1000 + currentRound * 37 + Math.floor(Math.random() * 900));
     eliminationOrder = [];
     spawnRoundPlayers(currentMap);
     phase = "fightIntro";
     phaseTimer = 1100;
-    onPhaseChange({ t: "roundStart", round: currentRound, totalRounds: totalRounds, mapName: currentMap.name });
+    onPhaseChange({
+      t: "roundStart", round: currentRound, totalRounds: totalRounds, mapName: currentMap.name,
+      infinite: roundsMode === "infinite",
+    });
     AudioManager.on.roundStart(currentMap.biome);
+  }
+
+  /* Corta una partida infinita ya mismo, usando el puntaje acumulado hasta la última ronda
+     completa (la ronda en curso, si había una, no llega a sumar). No existe en el flujo
+     "fixed": ahí el propio nextRound() ya llama a endMatch() al llegar a totalRounds. */
+  function forceEndMatch() {
+    if (phase === "lobby" || phase === "final") return;
+    endMatch();
   }
 
   function eliminate(p) {
@@ -446,8 +465,13 @@ var Sim = (function () {
   function setSnailMode(on) { snailMode = !!on; }
   function getSnailMode() { return snailMode; }
 
-  function startMatch(rounds, snail) {
-    totalRounds = Math.max(1, Math.min(20, rounds || 3));
+  /* opts es nuevo y opcional: sin él (como llaman desktop/game.html y steam/game.html, con
+     solo 2 argumentos) el comportamiento es EXACTAMENTE el de siempre — modo "fixed", 1..20
+     rondas clampeadas. Solo el build web pasa { mode: "infinite" }. */
+  function startMatch(rounds, snail, opts) {
+    opts = opts || {};
+    roundsMode = opts.mode === "infinite" ? "infinite" : "fixed";
+    totalRounds = roundsMode === "infinite" ? Infinity : Math.max(1, Math.min(20, rounds || 3));
     snailMode = !!snail;
     roster = Object.keys(players).map(Number);
     scores = {};
@@ -458,6 +482,7 @@ var Sim = (function () {
 
   function resetToLobby() {
     phase = "lobby";
+    roundsMode = "fixed";
     players = {};
     roster = [];
     scores = {};
@@ -619,7 +644,7 @@ var Sim = (function () {
     handleInput: handleInput,
     setSnailMode: setSnailMode, getSnailMode: getSnailMode,
     getAttacks: getAttacks,
-    startMatch: startMatch, resetToLobby: resetToLobby,
+    startMatch: startMatch, resetToLobby: resetToLobby, forceEndMatch: forceEndMatch,
     step: step, draw: draw, snapshot: snapshot,
     getPhase: function () { return phase; },
     getRoster: function () { return roster; },

@@ -16,6 +16,8 @@ var Net = (function () {
   var myId = null;
   var roomCode = null;
   var ownerId = null;
+  var roomMode = null; // "rounds" | "infinite", conocido recién tras "joined"/"lobby"
+  var roomRounds = null;
   var queued = null; // acción pedida antes de que abriera el socket
 
   /* --- reconexión ---
@@ -92,11 +94,15 @@ var Net = (function () {
       } else if (msg.t === "lobby") {
         ownerId = msg.owner;
         roomCode = msg.code;
+        roomMode = msg.mode;
+        roomRounds = msg.rounds;
       } else if (msg.t === "rejoinFailed") {
         /* La sala se cerró o ya nos soltó: limpiamos y arrancamos de cero. */
         clearSession();
         myId = null;
         roomCode = null;
+        roomMode = null;
+        roomRounds = null;
       }
       emit(msg.t, msg);
     };
@@ -137,9 +143,11 @@ var Net = (function () {
   return {
     connect: open,
 
-    create: function (nick) {
+    /* mode y rounds quedan fijos para toda la vida de la sala — se deciden acá, antes de que
+       exista, no dentro del lobby. Ver el comentario en server.js sobre por qué. */
+    create: function (nick, mode, rounds) {
       open();
-      send({ t: "create", nick: nick });
+      send({ t: "create", nick: nick, mode: mode, rounds: rounds });
     },
     join: function (code, nick) {
       open();
@@ -149,11 +157,16 @@ var Net = (function () {
     sendInput: function (action, down) {
       send({ t: "input", k: action, d: down });
     },
-    start: function (rounds, snail) {
-      send({ t: "start", rounds: rounds, snail: snail });
+    start: function (snail) {
+      send({ t: "start", snail: snail });
     },
     again: function () {
       send({ t: "again" });
+    },
+    /* Corte manual de una partida en modo infinito. El servidor la rechaza si no sos el
+       anfitrión o si la sala no está en modo infinito. */
+    endMatch: function () {
+      send({ t: "endMatch" });
     },
 
     /* Sesión previa en esta pestaña, si la hay. El index la consulta al cargar para saber si
@@ -166,6 +179,12 @@ var Net = (function () {
     },
     getCode: function () {
       return roomCode;
+    },
+    getMode: function () {
+      return roomMode;
+    },
+    getRounds: function () {
+      return roomRounds;
     },
     isOwner: function () {
       return myId !== null && myId === ownerId;

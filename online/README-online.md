@@ -137,6 +137,34 @@ Detalles que importan:
 - El heartbeat es de 10 s (antes 30). Hacen falta dos ciclos para dar a alguien por muerto, así
   que el peor caso bajó de ~60 s a ~20 s de fantasma en la ronda.
 
+## Modos de juego (solo web)
+
+El modo se elige **al crear la sala**, antes de que exista — no se puede cambiar después sin
+crear una sala nueva. Queda fijo en `room.mode`/`room.rounds` y todos los que se unen lo ven
+como un resumen de solo lectura en el lobby.
+
+- **Por rondas** — el de siempre. El anfitrión elige 1–20 rondas; termina sola al llegar a la
+  última.
+- **Infinito** — ronda tras ronda sin límite. El puntaje **nunca se resetea**, acumula desde la
+  ronda 1 hasta que el anfitrión corta la partida a mano (botón "Terminar partida", visible
+  solo para el dueño de la sala mientras el modo es infinito y hay una partida en curso). Cada
+  5 rondas (5, 10, 15…) vuelve al mapa inicial, igual que la ronda 1 — el resto son mapas
+  procedurales normales.
+- **Historia** — modo contra IA. Todavía no existe; el botón está en la UI pero deshabilitado
+  ("Próximamente"). Se construye al final, como su propio bloque de trabajo.
+
+Implementación: `desktop/sim.js` gana un tercer parámetro opcional en `startMatch(rounds, snail,
+opts)` — `opts.mode: "infinite"` activa el modo sin límite. Sin ese parámetro (como llaman
+`desktop/game.html` y `steam/game.html`, con solo 2 argumentos) el comportamiento es
+**exactamente** el de siempre; los builds de escritorio y Steam no tienen ni pueden tener modo
+infinito. `Sim.forceEndMatch()` es el nuevo método que corta una partida infinita ya mismo, con
+el puntaje acumulado hasta la última ronda completa — el servidor lo expone solo al dueño de la
+sala y solo en modo infinito (`endMatch` en `server.js`).
+
+Un detalle de transporte: `totalRounds` viaja como `Infinity` dentro del proceso, pero
+`JSON.stringify(Infinity)` da `null` — así llega al cliente, que lo interpreta como "∞" en el
+cartel de ronda.
+
 ## Balance de combate (solo web)
 
 `balance.js` ajusta el combate **únicamente de este build**. Se aplica con

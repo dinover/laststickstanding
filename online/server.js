@@ -108,7 +108,17 @@ function freeCode() {
   return null;
 }
 
-function createRoom() {
+/* "rounds" reproduce el único modo que existía: el anfitrión elige cuántas rondas. "infinite"
+   es nuevo: se juega ronda a ronda sin límite, con el puntaje acumulando desde la ronda 1;
+   cada 5 rondas vuelve al mapa inicial (ver nextRound() en desktop/sim.js). "Historia" (modo
+   contra IA) todavía no existe — el cliente ni lo ofrece — así que cualquier valor que no sea
+   "infinite" cae en "rounds" por default, no solo por si alguien manda basura sino porque es
+   el modo que ya estaba andando en producción. */
+function normalizeMode(raw) {
+  return raw === "infinite" ? "infinite" : "rounds";
+}
+
+function createRoom(mode, rounds) {
   const code = freeCode();
   if (!code) return null;
 
@@ -117,6 +127,8 @@ function createRoom() {
     players: new Map(), // id -> { id, name, ws, alive: bool (conectado) }
     ownerId: null,
     host: null, // { sim, takeSfx }
+    mode: normalizeMode(mode),
+    rounds: Math.max(1, Math.min(20, Number(rounds) || 3)), // solo se usa si mode === "rounds"
     timer: null,
     last: 0,
     accum: 0,
@@ -165,14 +177,23 @@ function onPhaseChange(room, evt) {
     dropGhosts(room);
     /* En el build P2P solo el host veía el cartel de ronda y la animación FIGHT!, porque
        salían de este callback y los guests no corrían la simulación. Ahora lo recibe todo
-       el mundo. */
+       el mundo.
+
+       totalRounds llega en Infinity cuando el modo es infinito. JSON.stringify ya lo
+       convierte solo a null (Infinity no es representable en JSON), pero eso queda implícito
+       y frágil si algún día cambia el serializador — se hace explícito acá. */
     broadcast(room, {
       t: "round",
       round: evt.round,
-      totalRounds: evt.totalRounds,
+      totalRounds: Number.isFinite(evt.totalRounds) ? evt.totalRounds : null,
       mapName: evt.mapName,
+      infinite: !!evt.infinite,
     });
   }
+  /* No hace falta reaccionar acá a evt.t === "final": el próximo snapshot (a lo sumo 33 ms
+     después) ya trae phase:"final", que es lo que el cliente mira para mostrar la pantalla de
+     resultados — tanto si la partida terminó sola (modo rounds) como si el anfitrión la cortó
+     a mano (forceEndMatch, modo infinito). */
 }
 
 /* ------------------------------------------------------------------ loop de simulación */
@@ -290,6 +311,8 @@ function lobbyState(room) {
     code: room.code,
     owner: room.ownerId,
     phase: room.host.sim.getPhase(),
+    mode: room.mode,
+    rounds: room.rounds, // solo tiene sentido si mode === "rounds"; el cliente lo ignora si no
     players: [...room.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
@@ -469,7 +492,11 @@ function handleMessage(ws, raw) {
   /* --- fuera de sala --- */
   if (msg.t === "create") {
     if (ws._room) return;
-    const room = createRoom();
+    /* El modo y la cantidad de rondas se deciden ACÁ, antes de crear la sala — no se pueden
+       cambiar después. Es una decisión de producto: simplifica la sala (nada de reconciliar
+       un cambio de modo con gente ya conectada) y hace que "Crear sala" sea, en los hechos, el
+       mismo paso donde antes el anfitrión elegía las rondas dentro del lobby. */
+    const room = createRoom(msg.mode, msg.rounds);
     if (!room) return send(ws, { t: "err", msg: "No hay códigos de sala libres, probá de nuevo." });
     const res = joinRoom(room, ws, msg.nick);
     if (res.err) {
@@ -516,11 +543,23 @@ function handleMessage(ws, raw) {
   if (msg.t === "start") {
     if (room.ownerId !== id) return;
     if (room.host.sim.getPhase() !== "lobby") return;
-    const rounds = Math.max(1, Math.min(20, Number(msg.rounds) || 3));
     room.lastMapKey = null; // fuerza que el primer snapshot lleve el mapa entero
-    room.host.sim.startMatch(rounds, !!msg.snail);
+    // room.mode/room.rounds ya están fijados desde "create" — ver el comentario de ahí.
+    room.host.sim.startMatch(room.rounds, !!msg.snail, { mode: room.mode });
     broadcast(room, { t: "started" });
     startLoop(room);
+    return;
+  }
+
+  if (msg.t === "endMatch") {
+    /* Corte manual, exclusivo del modo infinito: ahí ninguna ronda dispara el final sola. El
+       cliente solo ofrece este botón en ese modo, pero igual se valida acá — nada le impide a
+       alguien mandar el mensaje a mano. En "rounds" no pasa nada raro si se admitiera (la
+       partida terminaría antes con el puntaje ya acumulado), pero no hay ningún caso de uso
+       real para eso y admitirlo sin querer sería confuso, así que se lo restringe a infinito. */
+    if (room.ownerId !== id) return;
+    if (room.mode !== "infinite") return;
+    room.host.sim.forceEndMatch();
     return;
   }
 

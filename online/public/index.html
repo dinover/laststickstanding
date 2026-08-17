@@ -49,6 +49,15 @@
   .avatar .x { position: absolute; inset: -4px; display: none; align-items: center; justify-content: center; font-weight: 900; font-size: 30px; color: #ff2e88; text-shadow: 0 0 10px #ff2e88, 0 0 2px #000; }
   .avatar.out .x { display: flex; }
 
+  /* Solo aparece en modo infinito, solo para el anfitrión, solo mientras la partida corre — el
+     único modo que no termina solo, así que necesita una salida manual. */
+  #endMatchBtn {
+    position: absolute; top: 14px; right: 64px; z-index: 6; display: none;
+    padding: 8px 14px; font-size: 11px; letter-spacing: .04em;
+    background: transparent; color: #ff8a9a; border: 1px solid #4a2432; box-shadow: none;
+  }
+  #endMatchBtn.show { display: block; }
+
   #audioPanel { position: absolute; top: 14px; right: 18px; z-index: 6; }
   #audioToggle {
     width: 34px; height: 34px; border-radius: 50%; border: 1px solid #2a3050; background: rgba(10,12,24,.6);
@@ -115,6 +124,20 @@
   .card { background: rgba(10,12,24,.55); backdrop-filter: blur(6px); border: 1px solid #2a3050; border-radius: 12px; padding: 26px 24px; width: 100%; box-sizing: border-box; }
   .rolePick { display: flex; gap: 12px; width: 100%; margin-top: 4px; }
   .rolePick button { flex: 1; }
+
+  /* Selector de modo: cada opción es un botón grande con título + descripción, no un simple
+     toggle — con 3 modos y uno de ellos ("Infinito") con una regla no obvia (mapa cada 5
+     rondas), hace falta espacio para explicarlo antes de que alguien lo elija. */
+  .modeOption {
+    display: block; width: 100%; text-align: left; margin-bottom: 10px;
+    background: #12162a; border: 1px solid #2a3050; color: #eaf0ff;
+    box-shadow: none; font-weight: 400; padding: 14px 16px;
+  }
+  .modeOption strong { display: block; font-size: 14px; color: #eaf0ff; margin-bottom: 3px; }
+  .modeOption .desc { display: block; font-size: 11px; color: #6b7394; line-height: 1.4; }
+  .modeOption.selected { border-color: #35f0e0; box-shadow: 0 0 0 1px #35f0e0 inset; }
+  .modeOption.selected strong { color: #35f0e0; }
+  .modeOption .soon { font-size: 10px; color: #ffc247; margin-left: 6px; letter-spacing: .04em; }
   button, input {
     font-family: inherit; font-size: 14px; border-radius: 8px; border: 1px solid #2a3050;
     background: #12162a; color: #eaf0ff; padding: 13px 16px;
@@ -163,6 +186,7 @@
 <div id="wrap">
   <canvas id="c" width="960" height="540"></canvas>
   <div id="room">SALA <b id="roomCode">----</b></div>
+  <button id="endMatchBtn">Terminar partida</button>
   <div id="audioPanel">
     <button id="audioToggle" title="Audio">&#9834;</button>
     <div id="audioMenu">
@@ -199,17 +223,40 @@
       <div class="err" id="joinErr"></div>
     </div>
 
+    <div class="card" id="modeCard" style="display:none">
+      <p class="sub">Eleg&iacute; el modo de juego:</p>
+
+      <button type="button" class="modeOption selected" id="modeRoundsBtn">
+        <strong>Por rondas</strong>
+        <span class="desc">Vos eleg&iacute;s cu&aacute;ntas rondas se juegan. Termina sola al llegar a la &uacute;ltima.</span>
+      </button>
+      <div class="roundsRow" id="roundsPickRow">
+        <button class="ghost" id="minusBtn" type="button">&minus;</button>
+        <span id="roundsN">3</span> rondas
+        <button class="ghost" id="plusBtn" type="button">+</button>
+      </div>
+
+      <button type="button" class="modeOption" id="modeInfiniteBtn">
+        <strong>Infinito</strong>
+        <span class="desc">Ronda tras ronda sin l&iacute;mite. El marcador acumula desde la primera ronda; cada 5 rondas vuelve al mapa inicial. El anfitri&oacute;n la corta cuando quiere.</span>
+      </button>
+
+      <button type="button" class="modeOption" disabled>
+        <strong>Historia <span class="soon">PR&Oacute;XIMAMENTE</span></strong>
+        <span class="desc">Un jugador contra la IA.</span>
+      </button>
+
+      <button id="modeConfirmBtn" style="width:100%; margin-top: 4px;">Crear sala</button>
+      <div class="err" id="modeErr"></div>
+    </div>
+
     <div class="card" id="roomCard" style="display:none">
       <p class="sub">Compart&iacute; este c&oacute;digo con tus amigos:</p>
       <div class="codeShow" id="showCode">----</div>
       <div class="rosterList" id="roster"></div>
+      <p class="sub" id="modeSummary" style="margin:0 0 16px"></p>
 
       <div id="ownerControls" style="display:none">
-        <div class="roundsRow">
-          <button class="ghost" id="minusBtn">&minus;</button>
-          <span id="roundsN">3</span> rondas
-          <button class="ghost" id="plusBtn">+</button>
-        </div>
         <button class="snail" id="snailBtn" role="switch" aria-checked="false">&#128012; Modo caracol (PCs lentas)</button>
         <button id="startBtn" style="width:100%; margin-top: 10px;">Empezar partida</button>
       </div>
@@ -256,6 +303,7 @@
   var myId = null;
   var snailOn = false;
   var totalRoundsPick = 3;
+  var selectedMode = "rounds"; // "rounds" | "infinite" — elegido antes de crear la sala
   var finalShown = false;
   var lastMap = null; // último mapa recibido; el servidor solo lo manda cuando cambia
 
@@ -334,6 +382,12 @@
       var rb = $("roundBanner");
       if (frame.phase === "lobby") rb.classList.remove("show");
 
+      /* El modo infinito es el único que no termina solo: mientras se está jugando, el
+         anfitrión necesita una forma de cortarlo. Fuera de eso (lobby, final, o cualquier
+         invitado) el botón ni se muestra. */
+      var showEndMatch = isPlaying && frame.phase !== "final" && Net.getMode() === "infinite" && Net.isOwner();
+      $("endMatchBtn").classList.toggle("show", showEndMatch);
+
       renderTopbar();
 
       if (frame.phase === "final" && !finalShown) {
@@ -378,6 +432,7 @@
     $("reconnect").classList.remove("show");
     $("choiceCard").style.display = "none";
     $("joinCard").style.display = "none";
+    $("modeCard").style.display = "none";
     $("roomCard").style.display = "block";
     $("backLink").style.display = "none";
     $("showCode").textContent = msg.code;
@@ -411,6 +466,7 @@
     $("roundBanner").classList.remove("show");
     $("roomCard").style.display = "none";
     $("joinCard").style.display = "none";
+    $("modeCard").style.display = "none";
     $("choiceCard").style.display = "block";
     $("mainErr").textContent = "La partida anterior ya no está disponible.";
     myId = null;
@@ -432,6 +488,11 @@
     var owner = Net.isOwner();
     $("ownerControls").style.display = owner ? "block" : "none";
     $("waitOwner").style.display = owner ? "none" : "block";
+    /* mode/rounds se fijan al crear la sala y no cambian más — esto es solo un resumen para
+       que todos (no solo el anfitrión) sepan a qué están por jugar. */
+    $("modeSummary").textContent = msg.mode === "infinite"
+      ? "♾️ Modo infinito — el marcador no se reinicia entre rondas"
+      : "🎯 Por rondas — " + msg.rounds + (msg.rounds === 1 ? " ronda" : " rondas");
   });
 
   Net.on("started", function () {
@@ -452,7 +513,9 @@
 
   Net.on("round", function (msg) {
     var rb = $("roundBanner");
-    rb.textContent = "RONDA " + msg.round + " / " + msg.totalRounds + " — " + msg.mapName;
+    // totalRounds llega null cuando el modo es infinito (ver onPhaseChange en server.js).
+    var totalTxt = msg.totalRounds == null ? "∞" : msg.totalRounds;
+    rb.textContent = "RONDA " + msg.round + " / " + totalTxt + " — " + msg.mapName;
     rb.classList.add("show");
     var ft = $("fightText");
     ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
@@ -483,7 +546,9 @@
   });
 
   Net.on("err", function (msg) {
-    var target = $("joinCard").style.display === "block" ? "joinErr" : "mainErr";
+    var target = "mainErr";
+    if ($("joinCard").style.display === "block") target = "joinErr";
+    else if ($("modeCard").style.display === "block") target = "modeErr";
     $(target).textContent = msg.msg || "Error.";
   });
 
@@ -520,7 +585,9 @@
   /* ---------------------------------------------------------------- wiring del lobby */
   $("createBtn").addEventListener("click", function () {
     $("mainErr").textContent = "";
-    Net.create($("nickInputMain").value.trim() || "Anfitrión");
+    $("choiceCard").style.display = "none";
+    $("modeCard").style.display = "block";
+    $("backLink").style.display = "inline";
   });
 
   $("joinShowBtn").addEventListener("click", function () {
@@ -529,9 +596,11 @@
     $("backLink").style.display = "inline";
   });
 
+  // Un solo back link para las dos ramas (crear / unirse): ocultar la que no esté no molesta.
   $("backLink").addEventListener("click", function (e) {
     e.preventDefault();
     $("joinCard").style.display = "none";
+    $("modeCard").style.display = "none";
     $("choiceCard").style.display = "block";
     $("backLink").style.display = "none";
   });
@@ -546,6 +615,17 @@
     Net.join(code, $("nickInputMain").value.trim() || "Jugador");
   });
 
+  /* ---- selección de modo (antes de crear la sala) ---- */
+  function selectMode(mode) {
+    selectedMode = mode;
+    $("modeRoundsBtn").classList.toggle("selected", mode === "rounds");
+    $("modeInfiniteBtn").classList.toggle("selected", mode === "infinite");
+    $("roundsPickRow").style.display = mode === "rounds" ? "flex" : "none";
+  }
+  $("modeRoundsBtn").addEventListener("click", function () { selectMode("rounds"); });
+  $("modeInfiniteBtn").addEventListener("click", function () { selectMode("infinite"); });
+  selectMode("rounds"); // sincroniza selectedMode con el estado inicial que ya muestra el HTML
+
   $("minusBtn").addEventListener("click", function () {
     totalRoundsPick = Math.max(1, totalRoundsPick - 1);
     $("roundsN").textContent = totalRoundsPick;
@@ -554,12 +634,19 @@
     totalRoundsPick = Math.min(20, totalRoundsPick + 1);
     $("roundsN").textContent = totalRoundsPick;
   });
+
+  $("modeConfirmBtn").addEventListener("click", function () {
+    $("modeErr").textContent = "";
+    Net.create($("nickInputMain").value.trim() || "Anfitrión", selectedMode, totalRoundsPick);
+  });
+
   $("snailBtn").addEventListener("click", function () {
     snailOn = !snailOn;
     this.classList.toggle("on", snailOn);
     this.setAttribute("aria-checked", String(snailOn));
   });
-  $("startBtn").addEventListener("click", function () { Net.start(totalRoundsPick, snailOn); });
+  $("startBtn").addEventListener("click", function () { Net.start(snailOn); });
+  $("endMatchBtn").addEventListener("click", function () { Net.endMatch(); });
   $("playAgainBtn").addEventListener("click", function () { Net.again(); });
 
   /* ---------------------------------------------------------------- panel de audio */
