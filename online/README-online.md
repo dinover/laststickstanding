@@ -1,7 +1,13 @@
-# Last Stick Standing — build online (servidor autoritativo en Fly.io)
+# Last Stick Standing — build online (servidor autoritativo en Oracle Cloud)
 
-Versión web con **servidor dedicado**: el juego se simula en Fly.io (São Paulo) y los jugadores
-solo entran con un link. Nadie instala nada y nadie hostea.
+Versión web con **servidor dedicado**: el juego se simula en una VM del Always Free tier de
+Oracle Cloud (región São Paulo) y los jugadores solo entran con un link. Nadie instala nada y
+nadie hostea. Ver [`oracle/README-oracle.md`](../oracle/README-oracle.md) para el deploy completo
+(creación de la VM, firewall, TLS).
+
+Historial: corrió antes en Fly.io (`gru`, misma latencia que Oracle ahora) y brevemente en Render
+(free tier, pero sin región en Sudamérica — ver el comentario que queda más abajo en la sección
+vieja de deploy, dejado como referencia).
 
 Es la tercera forma de jugar online, al lado de las que ya existen:
 
@@ -49,36 +55,44 @@ npm start
 Abrí `http://localhost:8080` en dos pestañas: en una "Crear sala", en la otra "Unirme" con ese
 código. Andá a `http://localhost:8080/health` para ver salas y jugadores conectados.
 
-## Deploy en Fly.io
+## Deploy en Render (histórico — se migró a Oracle Cloud, ver arriba)
 
-`fly.toml` y `Dockerfile` viven en la **raíz del repo** (no acá), porque el servidor necesita
-`stickman.js`, `fx.js`, `world.js` y `desktop/sim.js`, que están un nivel más arriba.
+`render.yaml` y `Dockerfile` viven en la **raíz del repo** (no acá), porque el servidor necesita
+`stickman.js`, `fx.js`, `world.js` y `desktop/sim.js`, que están un nivel más arriba. Render lee
+el mismo `Dockerfile` que se usaba para Fly sin cambios: el server ya escucha en
+`process.env.PORT` sobre `0.0.0.0`, que es lo único que Render exige.
 
-```bash
-fly deploy
-```
+Pasos (Blueprint, usa el `render.yaml` del repo):
 
-### Dos cosas que no se pueden tocar
+1. En el dashboard de Render: **New → Blueprint**, conectá el repo `dinover/laststickstanding`.
+2. Render detecta `render.yaml` solo. Confirmá el plan **Free** y creá el servicio.
+3. Cuando termina el build, la URL queda tipo `https://laststickstanding.onrender.com`.
+4. Verificá `/<url>/health` para ver salas y jugadores conectados, igual que en local.
 
-1. **`primary_region = "gru"`** (São Paulo). Es la región más cercana a Argentina que tiene Fly:
-   ~25-40 ms desde Buenos Aires contra ~120-150 ms de cualquier región de EE.UU. En un juego de
-   pelea esa diferencia decide partidas. Render no sirve para esto: no tiene región en Sudamérica.
+**Advertencia de latencia (importante, decisión consciente):** Render no tiene región en
+Sudamérica. La más cercana es Ohio (`us-east`), ~120-150 ms desde Buenos Aires contra los ~30 ms
+que daba Fly en `gru` (São Paulo). En un juego de pelea con cooldowns de 190-380 ms esa diferencia
+se siente. Se eligió Render igual por el free tier; si en algún momento la latencia molesta más
+que el costo, la salida es volver a Fly con un plan pago mínimo (`shared-cpu-1x` sale unos pocos
+dólares/mes sin el free tier) o probar Koyeb/otro proveedor con región en Sudamérica.
 
-2. **Una sola máquina.** Las salas viven en la memoria del proceso. Si Fly levanta una segunda,
-   dos jugadores con el mismo código pueden caer en máquinas distintas y no verse nunca.
+### Una sola instancia (no hay que forzarlo)
 
-   ```bash
-   fly scale count 1
-   ```
+Las salas viven en la memoria del proceso: si hubiera dos instancias corriendo, dos jugadores con
+el mismo código de sala podrían caer en máquinas distintas y no verse nunca. En Fly había que
+acordarse de `fly scale count 1`; en Render el plan **Free** no escala instancias, así que esto ya
+viene garantizado sin tocar nada. Si en el futuro se pasa a un plan pago con autoscaling, hay que
+fijar el número de instancias en 1 a mano (o mover el estado de salas a Redis con sticky sessions,
+que no vale la pena para partidas de pocos amigos).
 
-   Para repartir en varias máquinas haría falta mover el estado de salas a Redis y usar sticky
-   sessions — no vale la pena para 8 amigos.
+### Arranque en frío (peor que Fly)
 
-### Arranque en frío
-
-`auto_stop_machines = "suspend"` con `min_machines_running = 0`: la máquina se congela cuando no
-hay nadie y despierta en ~1 s. Si preferís cero espera para el primero que entra, poné
-`min_machines_running = 1` (pasa a facturar 24/7).
+El plan Free de Render apaga la instancia tras **15 minutos sin tráfico HTTP entrante** y tarda
+entre **30 y 60 segundos** en volver a arrancar con el próximo pedido — mucho más lento que el
+`suspend` de Fly (~1 s). El primer jugador que entra después de un rato de inactividad ve una
+pantalla en blanco/cargando durante ese arranque; conviene avisar en la UI o poner un mensaje de
+"despertando servidor..." si esto genera confusión. No hay forma de evitarlo en el plan Free sin
+pagar (el plan Starter, ~7 USD/mes, no duerme).
 
 ## Números medidos
 
