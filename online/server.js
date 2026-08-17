@@ -182,12 +182,19 @@ function onPhaseChange(room, evt) {
        totalRounds llega en Infinity cuando el modo es infinito. JSON.stringify ya lo
        convierte solo a null (Infinity no es representable en JSON), pero eso queda implícito
        y frágil si algún día cambia el serializador — se hace explícito acá. */
+    /* stats: patadas/piñas tiradas, caídas, golpes dados/recibidos — acumulado desde el
+       inicio de la partida (ver matchStats en desktop/sim.js). Va acá y no en cada snapshot
+       (que sale ~30 veces por segundo) porque solo se usa una vez por ronda, en el reveal del
+       modo infinito; mandarlo a cada tick sería puro desperdicio de ancho de banda. Se manda
+       igual en modo "rounds" — es chico y así no hace falta una rama especial — pero el
+       cliente solo lo usa cuando infinite es true. */
     broadcast(room, {
       t: "round",
       round: evt.round,
       totalRounds: Number.isFinite(evt.totalRounds) ? evt.totalRounds : null,
       mapName: evt.mapName,
       infinite: !!evt.infinite,
+      stats: room.host.sim.getMatchStats(),
     });
   }
   /* No hace falta reaccionar acá a evt.t === "final": el próximo snapshot (a lo sumo 33 ms

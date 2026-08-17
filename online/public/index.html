@@ -80,28 +80,43 @@
   }
   #roundBanner.show { display: block; }
 
-  /* Reveal de puntajes del modo infinito: cada 5 rondas, cuando vuelve el mapa inicial. A la
-     izquierda para no pisar el "FIGHT!" centrado ni el cartel de ronda. Cada fila se inserta
-     al DOM con demora creciente (ver showScoreReveal) — es eso lo que da el efecto "máquina de
-     escribir línea por línea", no una animación CSS con delays fijos. */
+  /* Reveal de puntajes del modo infinito: cada 5 rondas, cuando vuelve el mapa inicial. Ticker
+     integrado al HUD (arriba, debajo del cartel de ronda) en vez de una tarjeta aparte — fondo
+     traslucido en degradé, sin borde duro, para que lea como parte de la pantalla de juego y
+     no como un panel flotando encima. El tipeo caracter por caracter es real (ver
+     scheduleTypeSegment): cada letra se agrega al DOM con su propio setTimeout, no es una
+     animación CSS con delays — por eso corta en cualquier punto si hideScoreReveal() se llama
+     antes de tiempo. */
+  /* #wrap centra el canvas (960x540 fijo) con flexbox en un contenedor de 100vw/100vh, así que
+     "top: Npx" (lo que usa #roundBanner) solo cae DENTRO del canvas cuando el viewport mide
+     cerca de 960x540 — en cualquier ventana más alta, ese offset flota en el espacio vacío
+     arriba del canvas, no sobre la escena. Ancla real al canvas: top:50% (el centro de #wrap
+     coincide con el centro del canvas) + un corrimiento fijo de -230px (270 = mitad de los 540
+     de alto, menos 40px desde el borde superior) para que quede pegado a la pantalla de juego
+     sin importar el tamaño de la ventana. */
   #scoreReveal {
-    position: absolute; z-index: 12; top: 50%; left: 22px; transform: translateY(-50%);
-    display: none; flex-direction: column; gap: 9px;
-    background: rgba(10,12,24,.85); backdrop-filter: blur(4px);
-    border: 1px solid #2a3050; border-radius: 12px; padding: 16px 18px;
-    min-width: 168px; pointer-events: none;
+    position: absolute; z-index: 8; top: 50%; left: 50%; transform: translate(-50%, -230px);
+    display: none; flex-direction: column; align-items: center; gap: 2px;
+    background: linear-gradient(180deg, rgba(10,12,24,.68), rgba(10,12,24,.2));
+    padding: 14px 32px; border-radius: 16px; text-align: center;
+    pointer-events: none;
   }
   #scoreReveal.show { display: flex; }
-  #scoreReveal h3 { margin: 0 0 2px; font-size: 11px; color: #6b7394; letter-spacing: .16em; }
-  .scoreRevealRow {
-    display: flex; align-items: center; gap: 10px; font-size: 15px; color: #eaf0ff;
-    opacity: 0; transform: translateX(-6px);
-    animation: scoreRowIn .3s ease forwards;
+  #scoreReveal .label { color: #6b7394; font-size: 11px; letter-spacing: .22em; margin-bottom: 3px; }
+  /* Grande y notorio a propósito — es un momento de "titular", no un dato de esquina. Cada
+     span de jugador lleva su color con glow (text-shadow: currentColor), así el nombre destaca
+     igual que el resto del HUD con acento. */
+  .revealLine {
+    font-family: 'Chakra Petch', monospace; font-size: 26px; font-weight: 700;
+    letter-spacing: .01em; color: #eaf0ff; white-space: nowrap; line-height: 1.35;
   }
-  .scoreRevealRow .dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 8px currentColor; flex-shrink: 0; }
-  .scoreRevealRow .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
-  .scoreRevealRow .sc { color: #35f0e0; font-weight: 700; font-variant-numeric: tabular-nums; }
-  @keyframes scoreRowIn { to { opacity: 1; transform: translateX(0); } }
+  .revealLine span { text-shadow: 0 0 14px currentColor; }
+  #scoreReveal .cursor {
+    display: inline-block; width: 3px; height: 22px; background: #35f0e0;
+    vertical-align: text-bottom; margin-left: 2px;
+    animation: cursorBlink .9s steps(1) infinite;
+  }
+  @keyframes cursorBlink { 50% { opacity: 0; } }
 
   #overlay { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: flex; align-items: center; justify-content: center; flex-direction: column; }
   #fightText {
@@ -221,7 +236,12 @@
   </div>
   <div id="topbar"></div>
   <div id="roundBanner"></div>
-  <div id="scoreReveal"><h3>PUNTAJES</h3><div id="scoreRevealList"></div></div>
+  <div id="scoreReveal">
+    <span class="label">PUNTAJES</span>
+    <div id="scoreRevealLine1" class="revealLine"></div>
+    <div id="scoreRevealLine2" class="revealLine"></div>
+    <span class="cursor" id="scoreRevealCursor"></span>
+  </div>
   <div id="overlay"><div id="fightText">FIGHT!</div></div>
 
   <canvas id="lobbyBg" width="1280" height="720"></canvas>
@@ -377,8 +397,38 @@
   }
 
   /* ---------------------------------------------------------------- reveal de puntajes (modo infinito) */
-  var SCORE_REVEAL_STAGGER_MS = 240; // demora entre fila y fila — el efecto "máquina de escribir"
-  var SCORE_REVEAL_HOLD_MS = 1800; // cuánto queda arriba después de revelar la última fila
+  var TYPE_CHAR_MS = 42; // milisegundos por letra
+  var TYPE_PAUSE_MS = 300; // pausa entre segmentos (jugador→separador, línea 1→línea 2)
+  var SCORE_REVEAL_HOLD_MS = 2000; // cuánto queda arriba después de terminar de tipear
+
+  /* Categorías del dato random del final ("para darle más color al juego"). Cada ronda-5 se
+     sortea UNA, entre las que tengan algún valor mayor a 0 — así no sale siempre la misma y
+     nunca dice "Fulano hizo 0 patadas" cuando recién arranca la partida. */
+  var STAT_CATEGORIES = [
+    { key: "kicks", label: function (n, v) { return n + " tiró más patadas (" + v + ")"; } },
+    { key: "punches", label: function (n, v) { return n + " tiró más piñas (" + v + ")"; } },
+    { key: "falls", label: function (n, v) { return n + " se cayó más veces (" + v + ")"; } },
+    { key: "hitsLanded", label: function (n, v) { return n + " conectó más golpes (" + v + ")"; } },
+    { key: "hitsTaken", label: function (n, v) { return n + " recibió más golpes (" + v + ")"; } },
+  ];
+
+  function pickRandomStat(stats, ids) {
+    var order = STAT_CATEGORIES.slice();
+    for (var i = order.length - 1; i > 0; i--) { // barajado simple, para no probar siempre en el mismo orden
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+    }
+    for (var c = 0; c < order.length; c++) {
+      var cat = order[c], bestId = null, bestN = 0;
+      ids.forEach(function (id) {
+        var n = (stats && stats[id] && stats[id][cat.key]) || 0;
+        if (n > bestN) { bestN = n; bestId = id; }
+      });
+      if (bestId !== null) return { text: cat.label(nameFor(bestId), bestN), color: colorFor(bestId) };
+    }
+    return null; // nadie hizo nada todavía (ronda 5 con muy poca acción) — no forzamos una línea vacía
+  }
+
   var scoreRevealTimers = [];
 
   function clearScoreRevealTimers() {
@@ -389,38 +439,71 @@
   function hideScoreReveal() {
     clearScoreRevealTimers();
     $("scoreReveal").classList.remove("show");
+    $("scoreRevealLine1").textContent = "";
+    $("scoreRevealLine2").textContent = "";
   }
 
-  function showScoreReveal() {
+  /* Tipea `text` letra por letra dentro de un <span> nuevo (con color opcional) dentro de
+     `container`, empezando a los `startDelay` ms de ahora. Un setTimeout por caracter, no una
+     animación CSS — así el texto es real (seleccionable/inspeccionable) y hideScoreReveal()
+     puede cortarlo en cualquier punto sin dejar timers sueltos. Reubica el cursor compartido al
+     final de `container` en cada letra, así siempre se lo ve pegado a lo que se está tipeando
+     ahora mismo, sea la línea 1 o la línea 2. Devuelve el momento en que termina, para
+     encadenar el siguiente segmento. */
+  function scheduleTypeSegment(container, text, startDelay, color) {
+    var span = null; // compartido por los N closures de abajo: una sola instancia por segmento
+    var cursor = $("scoreRevealCursor");
+    for (var i = 0; i < text.length; i++) {
+      var t = setTimeout((function (ch) {
+        return function () {
+          if (!span) {
+            span = document.createElement("span");
+            if (color) span.style.color = color;
+            container.appendChild(span);
+          }
+          span.textContent += ch;
+          container.appendChild(cursor);
+        };
+      })(text[i]), startDelay + i * TYPE_CHAR_MS);
+      scoreRevealTimers.push(t);
+    }
+    return startDelay + text.length * TYPE_CHAR_MS;
+  }
+
+  function showScoreReveal(stats) {
     clearScoreRevealTimers();
-    var list = $("scoreRevealList");
-    list.innerHTML = "";
+    var line1 = $("scoreRevealLine1"), line2 = $("scoreRevealLine2");
+    line1.textContent = ""; line2.textContent = "";
     $("scoreReveal").classList.add("show");
 
     var scores = Sim.getScores();
     /* Sim.getRoster() es el elenco FIJO de la partida completa (no cambia si alguien se cae a
        mitad de camino — ver dropBody en server.js), así que es la fuente correcta para que
-       cada color caiga siempre en la misma fila entre una revelación y la siguiente. Ordenado
-       por id, no por puesto: si se ordenara por puntaje, los colores saltarían de lugar cada
-       vez que cambia quién va ganando, que es justo lo que "alineados por los colores" pide
-       evitar. */
+       cada color caiga siempre en el mismo lugar entre una revelación y la siguiente. Ordenado
+       por id, no por puesto: si se ordenara por puntaje, los colores saltarían de posición
+       cada vez que cambia quién va ganando. */
     var ids = Sim.getRoster().slice().sort(function (a, b) { return a - b; });
 
+    var t = 0;
     ids.forEach(function (id, i) {
-      var t = setTimeout(function () {
-        var row = document.createElement("div");
-        row.className = "scoreRevealRow";
-        row.innerHTML = '<div class="dot" style="color:' + colorFor(id) + ';background:' + colorFor(id) + '"></div>' +
-          '<div class="nm">' + escapeHtml(nameFor(id)) + '</div>' +
-          '<div class="sc">' + (scores[id] || 0) + ' pts</div>';
-        list.appendChild(row);
-        AudioManager.on.uiClick();
-      }, i * SCORE_REVEAL_STAGGER_MS);
-      scoreRevealTimers.push(t);
+      if (i > 0) t = scheduleTypeSegment(line1, "   ·   ", t, null);
+      var startsAt = t;
+      t = scheduleTypeSegment(line1, nameFor(id) + " " + (scores[id] || 0), t, colorFor(id));
+      // Un solo "tick" al arrancar cada nombre — un click por letra sonaría a ametralladora.
+      scoreRevealTimers.push(setTimeout(function () { AudioManager.on.uiClick(); }, startsAt));
+      t += TYPE_PAUSE_MS;
     });
 
-    var totalMs = ids.length * SCORE_REVEAL_STAGGER_MS + SCORE_REVEAL_HOLD_MS;
-    scoreRevealTimers.push(setTimeout(hideScoreReveal, totalMs));
+    // Dato random al terminar, en una segunda línea — llega en msg.stats, NO desde
+    // Sim.getMatchStats() (eso leería los contadores del Sim LOCAL del cliente, que nunca
+    // simula nada y siempre da cero; los reales vienen del servidor en el broadcast "round").
+    var stat = pickRandomStat(stats, ids);
+    if (stat) {
+      t += TYPE_PAUSE_MS;
+      t = scheduleTypeSegment(line2, stat.text, t, stat.color);
+    }
+
+    scoreRevealTimers.push(setTimeout(hideScoreReveal, t + SCORE_REVEAL_HOLD_MS));
   }
 
   function showFinal(ranked, scores) {
@@ -611,7 +694,7 @@
 
     // Cada 5 rondas en modo infinito vuelve el mapa inicial — ese es el momento de mostrar
     // el resumen de puntajes. No aplica a "por rondas" (msg.infinite siempre false ahí).
-    if (msg.infinite && msg.round % 5 === 0) showScoreReveal();
+    if (msg.infinite && msg.round % 5 === 0) showScoreReveal(msg.stats);
   });
 
   Net.on("snap", function (data) {

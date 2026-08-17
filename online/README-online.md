@@ -151,12 +151,30 @@ como un resumen de solo lectura en el lobby.
   ronda 1 hasta que el anfitrión corta la partida a mano (botón "Terminar partida", visible
   solo para el dueño de la sala mientras el modo es infinito y hay una partida en curso). Cada
   5 rondas (5, 10, 15…) vuelve al mapa inicial, igual que la ronda 1 — el resto son mapas
-  procedurales normales. En ese momento se muestra un panel de puntajes a la izquierda de la
-  pantalla: cada jugador aparece uno debajo del otro con demora creciente (~240 ms entre
-  fila y fila, efecto "máquina de escribir línea por línea"), siempre en el mismo orden — por
-  id de jugador, no por puesto — para que el mismo color caiga siempre en la misma fila entre
-  una revelación y la siguiente. Se esconde solo después de un rato (`showScoreReveal` en
-  `index.html`).
+  procedurales normales. En ese momento aparece un ticker grande, integrado arriba de la
+  pantalla de juego (anclado al canvas, no al viewport — ver nota de posicionamiento más
+  abajo): los puntajes se tipean letra por letra, jugador por jugador, cada uno con su color y
+  un glow a juego (`text-shadow: currentColor`). Siempre en el mismo orden — por id de
+  jugador, no por puesto — para que el mismo color caiga siempre en el mismo lugar entre una
+  revelación y la siguiente. Al terminar, tipea una segunda línea con un dato random ("Amigo
+  tiró más patadas (12)", "Vos te caíste más veces (4)"...) sorteado entre patadas/piñas
+  tiradas, caídas, y golpes dados/recibidos — con eso solo, se salta si nadie hizo nada
+  todavía. Todo el tipeo es real (un `setTimeout` por caracter, no una animación CSS), así que
+  `hideScoreReveal()` puede cortarlo en cualquier punto sin dejar timers sueltos.
+
+  Los contadores (`matchStats`) viven en `desktop/sim.js`, mismo patrón aditivo que `ATTACKS`:
+  se incrementan en los mismos puntos donde ya pasan las cosas que cuentan (tirar un ataque,
+  conectarlo, `eliminate()`), sin rama especial, así que escritorio y Steam los llevan también
+  aunque no los usen para nada. Viajan en el broadcast `"round"` (una vez por ronda, no en cada
+  snapshot) — el cliente NO puede leerlos de `Sim.getMatchStats()` local, porque ese Sim del
+  navegador nunca simula nada y siempre da cero; tienen que llegar por red desde el servidor.
+
+  **Nota de posicionamiento:** `#wrap` centra el canvas (960×540 fijo) con flexbox en un
+  contenedor de 100vw/100vh. Un `top: Npx` viewport-relative (lo que ya usaba `#roundBanner`)
+  solo cae dentro del canvas cuando la ventana mide cerca de 960×540 — en cualquier ventana más
+  alta flota en el espacio vacío arriba del canvas, no sobre la escena. `#scoreReveal` usa
+  `top:50%` + `transform: translateY(-230px)` en cambio, anclado al centro real del canvas, así
+  que queda "sobre la pantalla de juego" sin importar el tamaño de ventana.
 - **Historia** — modo contra IA. Todavía no existe; el botón está en la UI pero deshabilitado
   ("Próximamente"). Se construye al final, como su propio bloque de trabajo.
 

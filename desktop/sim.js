@@ -66,6 +66,11 @@ var Sim = (function () {
   var currentRound = 0, totalRounds = 3;
   var roster = []; // ids fixed for the whole match
   var scores = {};
+  /* Contadores acumulados por partida, para el reveal de estadísticas del build web (ver
+     online: "tal color tiró más patadas"). Nadie más los lee — desktop/steam no muestran
+     nada con esto, pero se llevan igual porque es más simple que ramificar el hot path de
+     stepPlayer() según el build. Mismo ciclo de vida que scores: se reinicia en startMatch(). */
+  var matchStats = {};
   var players = {};
   var eliminationOrder = [];
   var phaseTimer = 0;
@@ -143,6 +148,7 @@ var Sim = (function () {
     p.alive = false;
     p.deathFadeT = 420;
     eliminationOrder.push(p.id);
+    if (matchStats[p.id]) matchStats[p.id].falls++;
     HitStop.trigger(55);
     Camera.addTrauma(0.85);
     Camera.zoomImpulse(0.05);
@@ -276,6 +282,7 @@ var Sim = (function () {
       // El cooldown es por tipo de ataque, no compartido: así una piña puede ser literalmente
       // el doble de rápida que una patada en vez de quedar frenada por el mismo temporizador.
       p.attackCooldown = def.cooldown * cdMult;
+      if (matchStats[p.id]) matchStats[p.id][type === "kick" ? "kicks" : "punches"]++;
       AudioManager.on.swing(type);
     }
     p.punchEdge = false;
@@ -356,6 +363,8 @@ var Sim = (function () {
             var kbX = atk.kbX;
             var kbY = atk.kbY;
             o.hp -= dmg;
+            if (matchStats[p.id]) matchStats[p.id].hitsLanded++;
+            if (matchStats[oid]) matchStats[oid].hitsTaken++;
             if (p.power && p.power.type === "fuego") { o.burnT = BURN_MS; o.burnTickT = BURN_TICK_MS; o.burnFlashT = 220; }
             if (p.power && p.power.type === "hielo") o.slowT = SLOW_MS;
             o.kbx = (o.kbx || 0) + p.facing * kbX;
@@ -475,7 +484,11 @@ var Sim = (function () {
     snailMode = !!snail;
     roster = Object.keys(players).map(Number);
     scores = {};
-    roster.forEach(function (id) { scores[id] = 0; });
+    matchStats = {};
+    roster.forEach(function (id) {
+      scores[id] = 0;
+      matchStats[id] = { kicks: 0, punches: 0, falls: 0, hitsLanded: 0, hitsTaken: 0 };
+    });
     currentRound = 0;
     nextRound();
   }
@@ -649,6 +662,7 @@ var Sim = (function () {
     getPhase: function () { return phase; },
     getRoster: function () { return roster; },
     getScores: function () { return scores; },
+    getMatchStats: function () { return matchStats; },
     getPlayers: function () { return players; },
     getCurrentMap: function () { return currentMap; },
     getCurrentRound: function () { return currentRound; },
