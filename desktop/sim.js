@@ -433,14 +433,6 @@ var Sim = (function () {
       ctx.fillRect(p.x - bw / 2, headY - 24, bw * Math.max(0, p.hp) / 100, 5);
     }
 
-    if (p.power) {
-      var pdef = POWER_COLORS[p.power.type];
-      ctx.fillStyle = pdef;
-      if (!snailMode) { ctx.shadowColor = pdef; ctx.shadowBlur = 8; }
-      ctx.beginPath(); ctx.arc(p.x, headY - 32, 4, 0, Math.PI * 2); ctx.fill();
-      if (!snailMode) ctx.shadowBlur = 0;
-    }
-
     if (!snailMode) {
       ctx.fillStyle = "rgba(255,255,255,.7)";
       ctx.font = "10px Chakra Petch, sans-serif";
