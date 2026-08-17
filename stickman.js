@@ -241,11 +241,14 @@ function drawOrbitAura(ctx, cx, midY, halfW, halfH, t, color) {
 var CURRENT_AURA = null;
 function beginPowerAura(p) {
   if (p.power) CURRENT_AURA = { type: p.power.type, t: p.idleT || 0 };
-  // Una víctima quemándose (burnT, infligido por OTRO jugador con fuego) no tiene p.power
-  // propio, así que antes se quedaba sin este aura y dependía solo del flash plano de abajo.
-  // Reusa el mismo tratamiento de "fuego" ronda por hueso — es lo que hace que arda de verdad
-  // en vez de solo tener un blob encima.
+  // Una VÍCTIMA quemándose (burnT) o congelada (slowT) — infligido por OTRO jugador con ese
+  // poder — no tiene p.power propio, así que antes se quedaba sin este aura y dependía solo
+  // del recolor+glow (fuego) o de nada en absoluto (hielo no tenía ni eso: el aura de cristales
+  // por hueso solo salía para quien sostenía el orbe). Reusa el mismo tratamiento ronda por
+  // hueso que ya existía — es lo que hace que arda/congele de verdad en vez de ser un blob o
+  // un simple cambio de color plano.
   else if (p.burnT > 0) CURRENT_AURA = { type: "fuego", t: p.idleT || 0 };
+  else if (p.slowT > 0) CURRENT_AURA = { type: "hielo", t: p.idleT || 0 };
   else CURRENT_AURA = null;
 }
 
@@ -281,20 +284,23 @@ function auraSegment(ctx, x1, y1, x2, y2, aura) {
       ctx.fill();
     }
   } else if (aura.type === "hielo") {
-    // small crystal shards perched perpendicular to the bone, shimmering slowly — deliberately
-    // slower and dimmer than fire's flicker, per spec ("less glow").
-    var n2 = 3;
+    // Crystal shards perched perpendicular to the bone, shimmering slowly — still deliberately
+    // calmer than fire's flicker (per spec, "less glow"), but bumped from 3 shards on a single
+    // side to 4 alternating sides + bigger/brighter, since at the original size this read as
+    // "apenas se nota" even on the orb holder, let alone on a victim who now also gets it.
+    var n2 = 4;
     for (var j = 0; j < n2; j++) {
       var u2 = (j + 0.5) / n2;
       var px2 = x1 + dx * u2, py2 = y1 + dy * u2;
-      var shimmer = 0.35 + 0.3 * Math.sin(t * 2.4 + j * 1.7 + u2 * 4);
-      var sx = px2 + nx * 3.5, sy = py2 + ny * 3.5;
+      var shimmer = 0.42 + 0.32 * Math.sin(t * 2.4 + j * 1.7 + u2 * 4);
+      var side = j % 2 === 0 ? 1 : -1;
+      var sx = px2 + nx * 3.8 * side, sy = py2 + ny * 3.8 * side;
       ctx.fillStyle = "rgba(170,230,255," + shimmer.toFixed(2) + ")";
       ctx.beginPath();
-      ctx.moveTo(sx, sy - 3);
-      ctx.lineTo(sx + 1.6, sy);
-      ctx.lineTo(sx, sy + 3);
-      ctx.lineTo(sx - 1.6, sy);
+      ctx.moveTo(sx, sy - 3.8);
+      ctx.lineTo(sx + 2, sy);
+      ctx.lineTo(sx, sy + 3.8);
+      ctx.lineTo(sx - 2, sy);
       ctx.closePath();
       ctx.fill();
     }

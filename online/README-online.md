@@ -220,10 +220,43 @@ son mejoras puramente cosméticas, sin ningún cambio de comportamiento de juego
   llevar dos canales de fantasmas independientes por jugador sin pisarse (golpe vs. velocidad).
   Mientras el orbe de aire está activo, deja una estela bastante más exagerada que la de golpe —
   el doble de fantasmas, capturados el doble de seguido, mucho más visibles.
+- **Aura de hielo.** Mismo problema que el fuego: solo salía para quien sostenía el orbe, nunca
+  para la víctima ralentizada (`slowT`). Ahora `beginPowerAura` también la activa con `slowT > 0`.
+  De paso, de 3 cristales a 4 (alternando de lado, no todos apilados en el mismo borde del hueso)
+  y un poco más brillantes — a la intensidad original ("deliberately dimmer than fire") ni
+  siquiera el que tenía el orbe lo notaba bien.
 
 Prototipados y comparados lado a lado (actual vs. propuesta) con el código real —no un mockup—
-en un harness aislado antes de aplicarlos acá, verificados después contra 22+ rondas de partida
+en un harness aislado antes de aplicarlos, y verificados después contra 22+ rondas de partida
 real sin errores de consola.
+
+**Por qué no se veían en el juego real pese a esa verificación:** dos bugs de sincronización de
+red que el harness aislado (jugadores creados a mano, sin pasar por el servidor) no podía
+detectar.
+
+1. `Sim.snapshot()` nunca incluía `burnT` — solo `burnFlashT`. El aura de fuego para víctimas
+   que acabo de agregar depende de `p.burnT > 0`, así que nunca se activaba en una partida real:
+   el dato ni siquiera viajaba del servidor al cliente. Agregado a `snapshot()` y a
+   `resyncGuestPlayer()`.
+2. **El bug más importante, y preexistente** (no lo introduje yo, solo lo hizo evidente): en
+   `guestFrame()`, `players[id]` se reconstruye con `Object.assign({}, lp, {x,y})` en **cada
+   frame** — necesario para poder interpolar posición sin mutar el estado persistente. Pero
+   `Trails.push()`/`clear()` escriben el array de fantasmas sobre el objeto que reciben, y como
+   ese objeto es nuevo cada frame, el array creado ahí se perdía apenas terminaba el frame:
+   nunca acumulaba más de un fantasma. Esto ya afectaba en silencio al trail de golpe original
+   (sutil, 3 fantasmas, nadie lo notó); mi estela de aire, pensada para ser bien visible, lo
+   hizo evidente de inmediato. Los builds de escritorio/Steam nunca tuvieron este problema
+   porque ahí el host simula localmente y `players` nunca se reconstruye — es el mismo objeto
+   mutado en el tiempo, no uno nuevo por frame.
+
+   Arreglado sembrando los arrays (`lp._trail`/`lp._airTrail`) sobre `lp` (el objeto
+   *persistente* en `guestLocal`, no la copia efímera) antes del `Object.assign` — así la copia
+   de cada frame hereda la MISMA referencia de array, y los `push()` de frames sucesivos sí se
+   acumulan en el array real.
+
+Verificado con un test que reproduce el viaje completo servidor→red (JSON real, no paso por
+referencia)→cliente→múltiples frames: falla sin el fix (`_airTrail` nunca pasa de largo 1),
+pasa con el fix (llega al tope de 6 fantasmas tras 15 frames a 50fps).
 
 ## Balance de combate (solo web)
 

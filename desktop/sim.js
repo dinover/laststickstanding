@@ -578,7 +578,7 @@ var Sim = (function () {
         x: p.x, y: p.y, facing: p.facing, alive: p.alive, hp: p.hp, grounded: p.grounded,
         walkCycle: p.walkCycle, idleT: p.idleT, squash: p.squash, hitStunT: p.hitStunT, hitDir: p.hitDir,
         jumpAnticT: p.jumpAnticT, deathFadeT: p.deathFadeT, power: p.power,
-        burnFlashT: p.burnFlashT, slowT: p.slowT,
+        burnT: p.burnT, burnFlashT: p.burnFlashT, slowT: p.slowT,
         attack: p.attack ? { type: p.attack.type, t: p.attack.t, dur: p.attack.dur } : null,
         vx: p.vx, vy: p.vy,
       };
@@ -605,7 +605,7 @@ var Sim = (function () {
     lp.vx = pd.vx; lp.vy = pd.vy; lp.hitDir = pd.hitDir; lp.power = pd.power;
     lp.walkCycle = pd.walkCycle; lp.idleT = pd.idleT; lp.squash = pd.squash;
     lp.hitStunT = pd.hitStunT; lp.jumpAnticT = pd.jumpAnticT; lp.deathFadeT = pd.deathFadeT;
-    lp.burnFlashT = pd.burnFlashT; lp.slowT = pd.slowT;
+    lp.burnT = pd.burnT; lp.burnFlashT = pd.burnFlashT; lp.slowT = pd.slowT;
     lp.attack = pd.attack ? { type: pd.attack.type, t: pd.attack.t, dur: pd.attack.dur } : null;
     return lp;
   }
@@ -652,6 +652,17 @@ var Sim = (function () {
         x = lerp(prevPd.x, pd.x, t);
         y = lerp(prevPd.y, pd.y, t);
       }
+      /* Trails.push()/clear() (fx.js) escriben el array de fantasmas SOBRE el objeto que
+         reciben. players[id] de abajo es un objeto NUEVO cada frame — necesario para poder
+         interpolar x/y sin mutar el estado persistente — así que un array creado ahí se pierde
+         apenas termina el frame y nunca llega a acumular más de un fantasma: la estela de
+         golpe y la de aire quedaban invisibles en el build online (el host de los builds P2P
+         no tiene este problema porque ahí `players` nunca se reconstruye, es el mismo objeto
+         mutado en el tiempo). Sembrar el array acá, sobre `lp` (el objeto persistente), hace
+         que el Object.assign de abajo copie la MISMA referencia — así los push() de otros
+         frames sí se acumulan en el array real. */
+      if (!lp._trail) lp._trail = [];
+      if (!lp._airTrail) lp._airTrail = [];
       players[id] = Object.assign({}, lp, { x: x, y: y });
     });
     return { phase: phase, round: currentRound, totalRounds: totalRounds, roster: roster, scores: scores };
