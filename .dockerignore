@@ -17,6 +17,11 @@ desktop/_two-tab-test.html
 # Rutas con / adelante = solo la raíz del contexto, para que no se lleven puesto
 # online/public/index.html.
 *.png
+# Excepción: favicon + imagen de preview al compartir el link (server.js las sirve en
+# /favicon.png y /og-image.png). Sin el "!" de más abajo, *.png de arriba se las come antes
+# de que lleguen siquiera al Dockerfile, aunque el Dockerfile las pida por nombre explícito.
+!/LSS icon.png
+!/Last Stick Standing.png
 /anim-editor.html
 /music-lab.html
 /controller.html

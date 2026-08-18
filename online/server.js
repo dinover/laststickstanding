@@ -57,6 +57,10 @@ const STATIC = {
   "/audio.js": ["../audio.js", "text/javascript; charset=utf-8"],
   "/sim.js": ["../desktop/sim.js", "text/javascript; charset=utf-8"],
   "/balance.js": ["balance.js", "text/javascript; charset=utf-8"],
+  // Favicon + imagen de preview al compartir el link (WhatsApp/Twitter/Discord leen esto vía
+  // las meta og:image de public/index.html, no adivinan una captura sola).
+  "/favicon.png": ["../LSS icon.png", "image/png"],
+  "/og-image.png": ["../Last Stick Standing.png", "image/png"],
 };
 
 const server = http.createServer((req, res) => {

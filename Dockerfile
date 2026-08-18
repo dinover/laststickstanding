@@ -15,6 +15,9 @@ RUN cd online && npm install --omit=dev
 # y que además sirve al navegador. audio.js es solo para el cliente.
 COPY stickman.js fx.js world.js audio.js ./
 COPY desktop/sim.js ./desktop/
+# Favicon + imagen de preview al compartir el link (server.js las sirve en /favicon.png y
+# /og-image.png — ver la excepción correspondiente en .dockerignore, que si no se las come).
+COPY "LSS icon.png" "Last Stick Standing.png" ./
 
 COPY online/ ./online/
 
