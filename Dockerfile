@@ -17,7 +17,9 @@ COPY stickman.js fx.js world.js audio.js ./
 COPY desktop/sim.js ./desktop/
 # Favicon + imagen de preview al compartir el link (server.js las sirve en /favicon.png y
 # /og-image.png — ver la excepción correspondiente en .dockerignore, que si no se las come).
-COPY "LSS icon.png" "Last Stick Standing.png" ./
+# Forma JSON (no shell-form): el parser de Dockerfile no banca comillas shell-style para
+# separar varios argumentos con espacios en la misma instrucción COPY.
+COPY ["LSS icon.png", "Last Stick Standing.png", "./"]
 
 COPY online/ ./online/
 
