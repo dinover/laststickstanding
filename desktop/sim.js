@@ -237,6 +237,12 @@ var Sim = (function () {
 
   /* ---------------------------------------------------------------- player-vs-player collision */
   var COLLIDE_HW = PW + 4;
+  // Antes esto resolvía el solapamiento COMPLETO en un solo frame: caminar contra alguien
+  // quieto lo arrastraba a tu propia velocidad, como si fuera parte de tu cuerpo. Con este
+  // factor solo se corrige una fracción por frame — a 60 fps sigue separando los cuerpos en
+  // un puñado de frames (nada de traspasarse), pero cada empujón individual es mucho más
+  // suave: apenas lo mueve, no lo arrastra de una.
+  var COLLIDE_PUSH = 0.18;
   function resolvePlayerCollisions(ids) {
     for (var pass = 0; pass < 2; pass++) {
       for (var i = 0; i < ids.length; i++) {
@@ -252,7 +258,7 @@ var Sim = (function () {
           if (xOverlap <= 0 || yOverlap <= 0) continue;
           if (dx === 0) dx = ids[i] < ids[j] ? -0.01 : 0.01;
           var dir = dx > 0 ? 1 : -1;
-          var half = xOverlap / 2;
+          var half = (xOverlap / 2) * COLLIDE_PUSH;
           a.x -= dir * half;
           b.x += dir * half;
           a.x = clamp(a.x, 14, W - 14);

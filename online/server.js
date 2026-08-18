@@ -56,6 +56,7 @@ const STATIC = {
   "/world.js": ["../world.js", "text/javascript; charset=utf-8"],
   "/audio.js": ["../audio.js", "text/javascript; charset=utf-8"],
   "/sim.js": ["../desktop/sim.js", "text/javascript; charset=utf-8"],
+  "/balance.js": ["balance.js", "text/javascript; charset=utf-8"],
 };
 
 const server = http.createServer((req, res) => {

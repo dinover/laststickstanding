@@ -356,7 +356,7 @@
       </div>
       <p class="sub" id="waitOwner" style="display:none; margin:0">Esperando a que el anfitri&oacute;n empiece&hellip;</p>
 
-      <div class="hint">A/D mover &middot; ESPACIO saltar &middot; J pi&ntilde;a &middot; K patada</div>
+      <div class="hint">A/D mover &middot; ESPACIO/W saltar &middot; J/clic izq. pi&ntilde;a &middot; K/clic der. patada</div>
       <div class="err" id="roomErr"></div>
     </div>
 
@@ -382,6 +382,7 @@
 <script src="/fx.js"></script>
 <script src="/world.js"></script>
 <script src="/audio.js"></script>
+<script src="/balance.js"></script>
 <script src="/sim.js"></script>
 <script src="/net-ws.js"></script>
 <script>
@@ -413,6 +414,11 @@
      enterarse por un mensaje "round" del servidor como en el resto de este archivo. */
   Sim.init({
     colorFor: colorFor, nameFor: nameFor,
+    // Sin efecto en modo online real (el servidor tiene su propia copia de este mismo
+    // balance.js — ver online/sim-host.js). Acá importa solo para Práctica Libre, que sí hace
+    // correr este Sim de verdad en el navegador: antes usaba los valores por defecto de
+    // desktop/sim.js sin querer, así que el combate no se sentía igual que en una sala real.
+    attacks: BALANCE.attacks,
     onPhaseChange: function (info) {
       if (!practiceActive || info.t !== "roundStart") return;
       var rb = $("roundBanner");
@@ -1010,10 +1016,19 @@
   });
 
   /* ---------------------------------------------------------------- input */
-  var KEYS = { a: "left", d: "right", " ": "jump", j: "punch", k: "kick" };
+  /* Dos esquemas de control, ACTIVOS A LA VEZ (no hay que elegir uno): el clásico A/D + ESPACIO
+     + J/K, y uno nuevo A/D + W + clic izquierdo/derecho. Cada jugador usa el que le resulte
+     más cómodo; ambos mandan exactamente las mismas acciones ("left"/"right"/"jump"/"punch"/
+     "kick"), así que no hace falta ninguna lógica extra para que convivan. */
+  var KEYS = { a: "left", d: "right", " ": "jump", w: "jump", j: "punch", k: "kick" };
   function isTyping() {
     var a = document.activeElement;
     return a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA");
+  }
+  function sendAction(action, down) {
+    // Práctica libre no tiene servidor: el input maneja Sim directo en vez de viajar por Net.
+    if (practiceActive) Sim.handleInput(PRACTICE_ME, action, down);
+    else Net.sendInput(action, down);
   }
   window.addEventListener("keydown", function (e) {
     if (isTyping()) return;
@@ -1021,16 +1036,25 @@
     if (!action) return;
     e.preventDefault();
     if (e.repeat && action !== "left" && action !== "right") return;
-    // Práctica libre no tiene servidor: el input maneja Sim directo en vez de viajar por Net.
-    if (practiceActive) Sim.handleInput(PRACTICE_ME, action, true);
-    else Net.sendInput(action, true);
+    sendAction(action, true);
   });
   window.addEventListener("keyup", function (e) {
     if (isTyping()) return;
     var action = KEYS[e.key.toLowerCase()];
     if (action !== "left" && action !== "right") return;
-    if (practiceActive) Sim.handleInput(PRACTICE_ME, action, false);
-    else Net.sendInput(action, false);
+    sendAction(action, false);
+  });
+
+  // Clic izquierdo = piña, clic derecho = patada — solo mientras hay una partida en pantalla,
+  // para no robarle el clic derecho (menú contextual) a la pantalla de lobby/menús.
+  function isPlayingNow() { return $("wrap").classList.contains("playing"); }
+  window.addEventListener("contextmenu", function (e) {
+    if (isPlayingNow()) e.preventDefault();
+  });
+  window.addEventListener("mousedown", function (e) {
+    if (!isPlayingNow() || isTyping()) return;
+    if (e.button !== 0 && e.button !== 2) return; // solo izquierdo/derecho, ignorar el del medio
+    sendAction(e.button === 0 ? "punch" : "kick", true);
   });
 
   /* ---------------------------------------------------------------- wiring del lobby */
