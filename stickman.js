@@ -6,6 +6,12 @@ var DEG = Math.PI / 180;
 
 /* ---- easing / table sampling ---- */
 function smoothstep(u) { return u * u * (3 - 2 * u); }
+// Fast-out easing (no overshoot) for one-shot strikes: arranca más brusco y se asienta suave,
+// en vez del mismo ease-in-out simétrico que corre/idle usan para todo. Antes CADA transición
+// del rig pasaba por smoothstep sin importar qué se estaba animando — todo tenía la misma
+// "textura" de movimiento aunque las poses fueran distintas, y eso es buena parte de por qué
+// se sentía mecánico pese al detalle del rig.
+function easeOutQuad(u) { return 1 - (1 - u) * (1 - u); }
 function lerp(a, b, t) { return a + (b - a) * t; }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -24,12 +30,15 @@ function sampleTable(table, phase) {
 
 // Doesn't loop: t clamps to [0,1], for one-shot animations like a punch or kick, where
 // t=1 (the end of the strike) must stay the end pose rather than wrapping to the start.
-function sampleTableOnce(table, phase) {
+// easeFn opcional (default smoothstep, lo que ya usaban saltos) — punch/kick pasan
+// easeOutQuad para que el golpe salga con más filo que un salto.
+function sampleTableOnce(table, phase, easeFn) {
+  var ease = easeFn || smoothstep;
   var t = clamp(phase, 0, 1);
   for (var i = 0; i < table.length - 1; i++) {
     var k0 = table[i], k1 = table[i + 1];
     if (t >= k0.t && t <= k1.t) {
-      var u = k1.t === k0.t ? 0 : smoothstep((t - k0.t) / (k1.t - k0.t));
+      var u = k1.t === k0.t ? 0 : ease((t - k0.t) / (k1.t - k0.t));
       return { a: lerp(k0.a, k1.a, u), b: lerp(k0.b, k1.b, u) };
     }
   }
@@ -60,9 +69,16 @@ var ARM_KEYS = [
 /* One-shot strikes, keyframed the same way as the run cycle but sampled with
    sampleTableOnce() over the attack's 0..1 progress (t=0 is the moment the attack button
    was pressed, t=1 is fully recovered) instead of looping. Follow-through overshoot (the limb
-   drifting past its resting angle before easing back) is baked in as the last two keyframes. */
+   drifting past its resting angle before easing back) is baked in as the last two keyframes.
+
+   El keyframe en t=0.06/0.05 es la anticipación: un pull-back BREVE y sutil, más retraído que
+   la propia pose de t=0, antes de que el resto de la tabla dispare hacia adelante. No se puede
+   agregar tiempo extra antes de t=0 (el hitbox real empieza a contar ahí), así que el "coil"
+   vive dentro de la ventana existente — apenas perceptible sola, pero es lo que separa un golpe
+   que "sale" de uno que ya viene saliendo desde el frame 0. */
 var PUNCH_ARM_KEYS = [
   { t: 0.00, a: -78, b: 120 },
+  { t: 0.06, a: -90, b: 129 },
   { t: 0.20, a: -58, b: 76 },
   { t: 0.40, a: 74, b: -75 },
   { t: 0.55, a: 59, b: -29 },
@@ -73,6 +89,7 @@ var PUNCH_ARM_KEYS = [
 ];
 var KICK_LEG_KEYS = [
   { t: 0.00, a: 9, b: 11 },
+  { t: 0.05, a: -8, b: 3 },
   { t: 0.20, a: 59, b: 73 },
   { t: 0.40, a: 83, b: 66 },
   { t: 0.50, a: 100, b: -12 },
@@ -139,7 +156,19 @@ var TUNE = {
   runBob: 5.4, headBobRun: 3, headLagPhase: 0.03, pelvisDrive: 3,
   breatheAmp: 1.6, idleBobAmp: 0.3, idleSwayX: 1.5, idleWeightSwayX: 2.3, idleWeightLegSpread: 4,
   idleShoulderRotAmp: 4.4, idleHeadTurnAmp: 3, idleHandDriftAmp: 4.2, armSwayAmp: 5.8,
-  headSpringK: 0.99,
+  // headSpringK: con lerp(a,b,t), t más ALTO converge MÁS RÁPIDO al objetivo (t=0.99 cierra el
+  // 99% de la distancia en un solo frame — un snap casi instantáneo, no el "atraso visible de
+  // un par de frames" que describe el comentario de más abajo). Bajado a 0.32 para que el
+  // resorte de la cabeza sea un resorte de verdad. leanSpring (torso) un poco más firme que la
+  // cabeza a propósito: el torso lidera el movimiento, la cabeza lo sigue con más demora —
+  // jerarquía natural de una cadena de huesos, no los dos moviéndose en lockstep.
+  headSpringK: 0.32, leanSpringK: 0.42,
+  // Duración del blend entre "familias" de pose (correr/patear/pegar/aire/quieto). Antes cada
+  // cambio de estado saltaba directo al nuevo ángulo en un solo frame.
+  blendMs: 90,
+  // Amplitud de la asimetría de zancada (fracción de fase, no grados) — rompe el espejo
+  // matemático perfecto entre las dos piernas/brazos al correr.
+  strideAsymAmt: 0.05,
   squashScaleY: 0.4, squashScaleX: 0.31, squashWaveScaleY: 0.08, squashWaveScaleX: 0.05,
   stretchScaleY: 0, stretchScaleX: 0, takeoffScaleY: 0.23, takeoffScaleX: 0.2,
   actionPopSquash: 0.07, actionPopStretch: 0.03,
@@ -376,6 +405,17 @@ function drawBurnFlash(ctx, p, cx, midY, halfH) {
   ctx.restore();
 }
 
+// Interpola una pose {a,b} objetivo desde la última pose realmente dibujada (fromPose), cuando
+// el "grupo de estado" del rig (correr/patear/pegar/aire/quieto) acaba de cambiar. Sin esto,
+// cada cambio de estado saltaba directo al nuevo ángulo en un solo frame — la costura entre
+// poses era instantánea, probablemente la causa #1 de que el rig se sintiera rígido pese a
+// tener cada pose individual bien hecha. fromPose es null en el primer dibujo de un jugador
+// (nada que blendear todavía), devuelve el objetivo directo.
+function blendPose(fromPose, toPose, frac) {
+  if (!fromPose) return toPose;
+  return { a: lerp(fromPose.a, toPose.a, frac), b: lerp(fromPose.b, toPose.b, frac) };
+}
+
 /**
  * @param {CanvasRenderingContext2D} ctx
  * @param {object} p - needs: x, y (feet), vx, vy, facing, grounded,
@@ -454,6 +494,17 @@ function drawStickman(ctx, p, color, dbg) {
   else if (kicking) lean = -p.facing * snap * TUNE.kickLeanSnap; // counter-lean away from the kicking leg
   else if (!p.grounded) lean = p.facing * clamp(p.vy / 9, -1, 1) * TUNE.airLeanMax;
   else lean = idleShoulderRot * TUNE.idleLeanMix;
+
+  // Inercia del torso: antes `lean` saltaba directo al valor del branch de arriba cada frame —
+  // solo la cabeza tenía un resorte de retraso (más abajo), así que el torso se sentía soldado
+  // en comparación. Mismo mecanismo, un poco más firme que el de la cabeza (el torso lidera, la
+  // cabeza lo sigue con más demora — jerarquía natural de una cadena de huesos, no todo
+  // moviéndose en lockstep). Se aplica ANTES del golpe de hitstun de abajo a propósito: un
+  // impacto tiene que leerse instantáneo, no amortiguado por un resorte, o pierde el golpe seco.
+  if (!snail) {
+    p._leanSpring = p._leanSpring == null ? lean : lerp(p._leanSpring, lean, TUNE.leanSpringK);
+    lean = p._leanSpring;
+  }
 
   // knockback: torso tilts away from the hit and springs back over ~180ms (secondary motion,
   // not an instant snap). hitStunT/hitDir are additive fields set by screen.html on a landed hit.
@@ -556,37 +607,73 @@ function drawStickman(ctx, p, color, dbg) {
     }
   }
 
+  // ---- transición entre estados + inercia de miembros ----
+  // dt derivado de idleT (que sim.js ya incrementa cada physics step, tanto en host como en
+  // guest interpolation) en vez de un reloj propio — así el blend queda atado a tiempo de
+  // simulación real, no al framerate de dibujo.
+  var idleTMs = (p.idleT || 0) * 1000;
+  var frameDt = p._lastIdleTMs != null ? clamp(idleTMs - p._lastIdleTMs, 0, 60) : 16.6667;
+  p._lastIdleTMs = idleTMs;
+
+  // Asimetría de zancada estable por jugador (no por frame — si cambiara cada frame se vería
+  // como tembleque, no como personalidad): rompe el espejo matemático perfecto entre las dos
+  // piernas/brazos al correr.
+  var strideAsym = p._strideAsym;
+  if (strideAsym == null) {
+    strideAsym = (((p.id || 0) * 53 + 7) % 17) / 17 * TUNE.strideAsymAmt - TUNE.strideAsymAmt / 2;
+    p._strideAsym = strideAsym;
+  }
+
+  // Blend corto cada vez que cambia la "familia" de pose (correr/patear/pegar/aire/quieto) —
+  // no en cada frame dentro de la misma familia. Antes cada cambio de estado saltaba directo
+  // al nuevo ángulo en un solo frame; la costura entre poses era instantánea, probablemente la
+  // causa más grande de que el rig se sintiera rígido.
+  var stateKey = kicking ? "kick" : !p.grounded ? "air" : running ? "run" : punching ? "punch" : "idle";
+  if (p._animState == null) p._animState = stateKey;
+  if (stateKey !== p._animState) {
+    p._animState = stateKey;
+    p._blendT = TUNE.blendMs;
+    p._blendFromLegA = p._lastLegA; p._blendFromLegB = p._lastLegB;
+    p._blendFromArmA = p._lastArmA; p._blendFromArmB = p._lastArmB;
+  }
+  if (p._blendT > 0) p._blendT = Math.max(0, p._blendT - frameDt);
+  var blendFrac = p._blendT > 0 ? smoothstep(1 - p._blendT / TUNE.blendMs) : 1;
+
   // ---- legs first, so the torso overlaps them like a real silhouette ----
+  var legBLower = SHIN;
+  var legATarget, legBTarget;
   if (kicking) {
     // planted support leg takes a slight backward give, bracing the kick
-    limbLeg(ctx, hipX, hipY, STANCE.kickSupportLeg[0].a, STANCE.kickSupportLeg[0].b, THIGH, SHIN, p.facing, 4.6, 3.4);
+    legATarget = { a: STANCE.kickSupportLeg[0].a, b: STANCE.kickSupportLeg[0].b };
     // kicking leg: keyframed across the strike (raise the knee, snap the shin out, retract)
-    var kk = sampleTableOnce(KICK_LEG_KEYS, attackLin);
-    limbLeg(ctx, hipX, hipY, kk.a, kk.b, THIGH, SHIN + 1, p.facing, 4.6, 3.4);
+    var kk = sampleTableOnce(KICK_LEG_KEYS, attackLin, easeOutQuad);
+    legBTarget = { a: kk.a, b: kk.b };
+    legBLower = SHIN + 1;
   } else if (!p.grounded) {
-    var t = (clamp(p.vy / 9, -1, 1) + 1) / 2; // 0 = launching upward, 1 = falling fast
+    var tAirLeg = (clamp(p.vy / 9, -1, 1) + 1) / 2; // 0 = launching upward, 1 = falling fast
     // Rising: both knees pull up, shins tucking back behind the thighs (heel toward the
     // seat) for a tight, readable jump silhouette. Falling: legs stretch back out, reaching
     // down for the ground.
-    var jla = sampleTableOnce(JUMP_LEGA_KEYS, t);
-    var jlb = sampleTableOnce(JUMP_LEGB_KEYS, t);
-    limbLeg(ctx, hipX, hipY, jla.a, jla.b, THIGH, SHIN, p.facing, 4.6, 3.4);
-    limbLeg(ctx, hipX, hipY, jlb.a, jlb.b, THIGH, SHIN, p.facing, 4.6, 3.4);
+    legATarget = sampleTableOnce(JUMP_LEGA_KEYS, tAirLeg);
+    legBTarget = sampleTableOnce(JUMP_LEGB_KEYS, tAirLeg);
   } else if (running) {
-    var legBack = sampleTable(LEG_KEYS, phaseNow);
-    var legFront = sampleTable(LEG_KEYS, phaseNow + 0.5);
-    limbLeg(ctx, hipX, hipY, legBack.a, legBack.b, THIGH, SHIN, p.facing, 4.6, 3.4);
-    limbLeg(ctx, hipX, hipY, legFront.a, legFront.b, THIGH, SHIN, p.facing, 4.6, 3.4);
+    legATarget = sampleTable(LEG_KEYS, phaseNow);
+    legBTarget = sampleTable(LEG_KEYS, phaseNow + 0.5 + strideAsym);
   } else if (punching) {
     // a boxer's base: rear leg braced, lead leg planted a touch forward.
-    limbLeg(ctx, hipX, hipY, STANCE.punchLegs[0].a, STANCE.punchLegs[0].b, THIGH, SHIN, p.facing, 4.6, 3.4);
-    limbLeg(ctx, hipX, hipY, STANCE.punchLegs[1].a, STANCE.punchLegs[1].b, THIGH, SHIN, p.facing, 4.6, 3.4);
+    legATarget = { a: STANCE.punchLegs[0].a, b: STANCE.punchLegs[0].b };
+    legBTarget = { a: STANCE.punchLegs[1].a, b: STANCE.punchLegs[1].b };
   } else {
     // fighting stance: staggered, knees bent and ready, not a flat-footed idle stand.
     // weight-shift biases the two legs oppositely, so the stance visibly favors one side.
-    limbLeg(ctx, hipX, hipY, IDLE_LEGS[0].a + idleWeight * TUNE.idleWeightLegSpread, IDLE_LEGS[0].b, THIGH, SHIN, p.facing, 4.6, 3.4);
-    limbLeg(ctx, hipX, hipY, IDLE_LEGS[1].a - idleWeight * TUNE.idleWeightLegSpread, IDLE_LEGS[1].b, THIGH, SHIN, p.facing, 4.6, 3.4);
+    legATarget = { a: IDLE_LEGS[0].a + idleWeight * TUNE.idleWeightLegSpread, b: IDLE_LEGS[0].b };
+    legBTarget = { a: IDLE_LEGS[1].a - idleWeight * TUNE.idleWeightLegSpread, b: IDLE_LEGS[1].b };
   }
+  var legA = blendPose(p._blendFromLegA, legATarget, blendFrac);
+  var legB = blendPose(p._blendFromLegB, legBTarget, blendFrac);
+  p._lastLegA = legA; p._lastLegB = legB;
+  limbLeg(ctx, hipX, hipY, legA.a, legA.b, THIGH, SHIN, p.facing, 4.6, 3.4);
+  limbLeg(ctx, hipX, hipY, legB.a, legB.b, THIGH, legBLower, p.facing, 4.6, 3.4);
 
   // ---- torso ----
   ctx.lineWidth = 4.8;
@@ -598,35 +685,40 @@ function drawStickman(ctx, p, color, dbg) {
   auraSegment(ctx, hipX, hipY, shoulderX, shoulderY, CURRENT_AURA);
 
   // ---- arms ----
+  var armBWidthB = 3.2, armADot = false, armBDot = false;
+  var armATarget, armBTarget;
   if (punching) {
     // off arm stays cocked by the chin, guard-style
-    limbArm(ctx, shoulderX, shoulderY, STANCE.punchGuardArm[0].a, STANCE.punchGuardArm[0].b, UARM, FARM, p.facing, 4.2, 3.2, false);
+    armATarget = { a: STANCE.punchGuardArm[0].a, b: STANCE.punchGuardArm[0].b };
     // punching arm: keyframed across the strike (wind-up -> throw -> recovery)
-    var pa = sampleTableOnce(PUNCH_ARM_KEYS, attackLin);
-    limbArm(ctx, shoulderX, shoulderY, pa.a, pa.b, UARM, FARM, p.facing, 4.2, 3.4, true);
+    var pa = sampleTableOnce(PUNCH_ARM_KEYS, attackLin, easeOutQuad);
+    armBTarget = { a: pa.a, b: pa.b };
+    armBWidthB = 3.4; armBDot = true;
   } else if (kicking) {
-    limbArm(ctx, shoulderX, shoulderY, STANCE.kickArms[0].a, STANCE.kickArms[0].b, UARM, FARM, p.facing, 4.2, 3.2, true); // thrown back for balance
-    limbArm(ctx, shoulderX, shoulderY, STANCE.kickArms[1].a, STANCE.kickArms[1].b, UARM, FARM, p.facing, 4.2, 3.2, true);
+    armATarget = { a: STANCE.kickArms[0].a, b: STANCE.kickArms[0].b }; // thrown back for balance
+    armBTarget = { a: STANCE.kickArms[1].a, b: STANCE.kickArms[1].b };
+    armADot = true; armBDot = true;
   } else if (!p.grounded) {
-    var ta = (clamp(p.vy / 9, -1, 1) + 1) / 2;
+    var tAirArm = (clamp(p.vy / 9, -1, 1) + 1) / 2;
     // angle convention: 0 = hanging down, 180 = reaching straight up. Rising throws both
     // arms up for lift; falling brings them down and forward to brace for the landing.
-    var jaa = sampleTableOnce(JUMP_ARMA_KEYS, ta);
-    var jab = sampleTableOnce(JUMP_ARMB_KEYS, ta);
-    limbArm(ctx, shoulderX, shoulderY, jaa.a, jaa.b, UARM, FARM, p.facing, 4.2, 3.2);
-    limbArm(ctx, shoulderX, shoulderY, jab.a, jab.b, UARM, FARM, p.facing, 4.2, 3.2);
+    armATarget = sampleTableOnce(JUMP_ARMA_KEYS, tAirArm);
+    armBTarget = sampleTableOnce(JUMP_ARMB_KEYS, tAirArm);
   } else if (running) {
-    var armBack = sampleTable(ARM_KEYS, phaseNow + 0.5);
-    var armFront = sampleTable(ARM_KEYS, phaseNow);
-    limbArm(ctx, shoulderX, shoulderY, armBack.a, armBack.b, UARM, FARM, p.facing, 4.2, 3.2);
-    limbArm(ctx, shoulderX, shoulderY, armFront.a, armFront.b, UARM, FARM, p.facing, 4.2, 3.2);
+    armATarget = sampleTable(ARM_KEYS, phaseNow + 0.5);
+    armBTarget = sampleTable(ARM_KEYS, phaseNow + strideAsym);
   } else {
     // simple resting pose: elbows stay put, relaxed by the sides; only the forearms turn in
     // to bring the fists together in front of the body. Rises and falls gently with the breath.
     var armSway = breathe * TUNE.armSwayAmp;
-    limbArm(ctx, shoulderX, shoulderY, IDLE_ARMS[0].a - armSway + idleHandDrift, IDLE_ARMS[0].b, UARM, FARM, p.facing, 4.2, 3.2);
-    limbArm(ctx, shoulderX, shoulderY, IDLE_ARMS[1].a + armSway - idleHandDrift, IDLE_ARMS[1].b, UARM, FARM, p.facing, 4.2, 3.2);
+    armATarget = { a: IDLE_ARMS[0].a - armSway + idleHandDrift, b: IDLE_ARMS[0].b };
+    armBTarget = { a: IDLE_ARMS[1].a + armSway - idleHandDrift, b: IDLE_ARMS[1].b };
   }
+  var armA = blendPose(p._blendFromArmA, armATarget, blendFrac);
+  var armB = blendPose(p._blendFromArmB, armBTarget, blendFrac);
+  p._lastArmA = armA; p._lastArmB = armB;
+  limbArm(ctx, shoulderX, shoulderY, armA.a, armA.b, UARM, FARM, p.facing, 4.2, 3.2, armADot);
+  limbArm(ctx, shoulderX, shoulderY, armB.a, armB.b, UARM, FARM, p.facing, 4.2, armBWidthB, armBDot);
 
   // ---- head ----
   ctx.lineWidth = 4.4;
