@@ -258,7 +258,27 @@
         <button id="createBtn">Crear sala</button>
         <button class="ghost" id="joinShowBtn">Unirme a una sala</button>
       </div>
+      <button class="ghost" id="practiceBtn" style="width:100%; margin-top:10px;">Pr&aacute;ctica libre</button>
       <div class="err" id="mainErr"></div>
+    </div>
+
+    <div class="card" id="practiceCard" style="display:none">
+      <p class="sub">Eleg&iacute; la dificultad del rival:</p>
+
+      <button type="button" class="modeOption selected" id="diffEasyBtn">
+        <strong>F&aacute;cil</strong>
+        <span class="desc">Reacciona lento y no siempre aprovecha los huecos. Para entrar en calor.</span>
+      </button>
+      <button type="button" class="modeOption" id="diffMediumBtn">
+        <strong>Media</strong>
+        <span class="desc">Persigue y golpea con criterio, sin ser implacable.</span>
+      </button>
+      <button type="button" class="modeOption" id="diffHardBtn">
+        <strong>Dif&iacute;cil</strong>
+        <span class="desc">Reacciona r&aacute;pido, cuida el borde de la plataforma y ataca apenas puede.</span>
+      </button>
+
+      <button id="practiceConfirmBtn" style="width:100%; margin-top: 4px;">Empezar pr&aacute;ctica</button>
     </div>
 
     <div class="card" id="joinCard" style="display:none">
@@ -361,9 +381,25 @@
   function colorFor(id) { return PLAYER_COLORS[id % PLAYER_COLORS.length]; }
   function nameFor(id) { return id === myId ? "Vos" : (names[id] || ("Jugador " + id)); }
 
-  /* El servidor corre la simulación; acá Sim solo se usa por su lado guest (interpolación +
-     dibujo). init() únicamente le da los colores/nombres para el render. */
-  Sim.init({ colorFor: colorFor, nameFor: nameFor });
+  /* En modo online el servidor corre la simulación; acá Sim solo se usa por su lado guest
+     (interpolación + dibujo). En Práctica Libre, en cambio, Sim SÍ corre de verdad en el
+     navegador (ver más abajo) — por eso onPhaseChange está enchufado: es la única forma en que
+     Sim avisa "empezó una ronda nueva" cuando es él mismo el que decide cuándo pasa, en vez de
+     enterarse por un mensaje "round" del servidor como en el resto de este archivo. */
+  Sim.init({
+    colorFor: colorFor, nameFor: nameFor,
+    onPhaseChange: function (info) {
+      if (!practiceActive || info.t !== "roundStart") return;
+      var rb = $("roundBanner");
+      rb.textContent = "RONDA " + info.round + " — PRÁCTICA LIBRE";
+      rb.classList.add("show");
+      var ft = $("fightText");
+      ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
+      // Mismo hito que el modo Infinito online (cada 5 rondas vuelve el mapa inicial): acá el
+      // reveal usa datos reales, a diferencia del cliente guest, porque este Sim sí simula.
+      if (info.infinite && info.round % 5 === 0) showScoreReveal(Sim.getMatchStats());
+    },
+  });
 
   /* ---------------------------------------------------------------- UI helpers */
   function renderTopbar() {
@@ -526,12 +562,138 @@
     $("finalScreen").classList.add("show");
   }
 
+  /* ---------------------------------------------------------------- práctica libre (sin red) */
+  // A diferencia del resto de este archivo (que solo dibuja lo que manda el servidor), acá Sim
+  // corre de verdad en el navegador: mismo Sim.step()/Sim.draw() que usa el host en
+  // desktop/game.html, solo que el "segundo jugador" es una IA local en vez de un guest remoto.
+  var PRACTICE_ME = 1, PRACTICE_AI = 2;
+  var practiceActive = false;
+  var practiceDifficulty = "medium";
+  var practiceAiAccum = 0;
+  var ROOM_HTML_DEFAULT = $("room").innerHTML;
+
+  var PRACTICE_DIFFS = {
+    easy:   { decisionMs: 260, attackChance: 0.55, chaseSlack: 46, edgeMargin: 30, jumpChance: 0.015 },
+    medium: { decisionMs: 150, attackChance: 0.80, chaseSlack: 30, edgeMargin: 22, jumpChance: 0.03  },
+    hard:   { decisionMs: 80,  attackChance: 0.97, chaseSlack: 16, edgeMargin: 14, jumpChance: 0.05  },
+  };
+
+  function findPlatformUnder(p) {
+    var map = Sim.getCurrentMap();
+    if (!map) return null;
+    var plats = map.platforms;
+    for (var i = 0; i < plats.length; i++) {
+      var pl = plats[i];
+      if (Math.abs(pl.y - p.y) < 2 && p.x + 13 > pl.x && p.x - 13 < pl.x + pl.w) return pl;
+    }
+    return null;
+  }
+
+  /* Nada de pathfinding: reglas simples, re-evaluadas cada `decisionMs` según la dificultad
+     (no cada frame, así la IA "piensa" a intervalos en vez de corregir el input 60 veces por
+     segundo). Persigue en horizontal, no camina fuera del borde de su plataforma actual, salta
+     si el jugador está bastante más arriba (o al azar), y ataca en rango si el cooldown lo
+     permite. Los booleans left/right quedan sostenidos como un input humano; jump/punch/kick son
+     "edges" que Sim ya limpia solo un frame después (handleInput no necesita un "false" después). */
+  function practiceAiTick(dt) {
+    var players = Sim.getPlayers();
+    var ai = players[PRACTICE_AI], me = players[PRACTICE_ME];
+    if (!ai || !me) return;
+
+    practiceAiAccum += dt;
+    if (practiceAiAccum < PRACTICE_DIFFS[practiceDifficulty].decisionMs) return;
+    practiceAiAccum = 0;
+
+    if (!ai.alive || !me.alive) {
+      Sim.handleInput(PRACTICE_AI, "left", false);
+      Sim.handleInput(PRACTICE_AI, "right", false);
+      return;
+    }
+
+    var cfg = PRACTICE_DIFFS[practiceDifficulty];
+    var dx = me.x - ai.x, absDx = Math.abs(dx);
+    var wantLeft = false, wantRight = false;
+    if (absDx > cfg.chaseSlack) { wantRight = dx > 0; wantLeft = dx < 0; }
+
+    var plat = findPlatformUnder(ai);
+    if (plat) {
+      if (wantLeft && ai.x - plat.x < cfg.edgeMargin) wantLeft = false;
+      if (wantRight && (plat.x + plat.w) - ai.x < cfg.edgeMargin) wantRight = false;
+    }
+    Sim.handleInput(PRACTICE_AI, "left", wantLeft);
+    Sim.handleInput(PRACTICE_AI, "right", wantRight);
+
+    if (ai.grounded && (me.y < ai.y - 40 || Math.random() < cfg.jumpChance)) {
+      Sim.handleInput(PRACTICE_AI, "jump", true);
+    }
+
+    var attacks = Sim.getAttacks();
+    if (ai.attackCooldown <= 0 && absDx < attacks.kick.reach && Math.random() < cfg.attackChance) {
+      Sim.handleInput(PRACTICE_AI, absDx <= attacks.punch.reach ? "punch" : "kick", true);
+    }
+  }
+
+  function selectPracticeDifficulty(diff) {
+    practiceDifficulty = diff;
+    $("diffEasyBtn").classList.toggle("selected", diff === "easy");
+    $("diffMediumBtn").classList.toggle("selected", diff === "medium");
+    $("diffHardBtn").classList.toggle("selected", diff === "hard");
+  }
+  $("diffEasyBtn").addEventListener("click", function () { selectPracticeDifficulty("easy"); });
+  $("diffMediumBtn").addEventListener("click", function () { selectPracticeDifficulty("medium"); });
+  $("diffHardBtn").addEventListener("click", function () { selectPracticeDifficulty("hard"); });
+
+  function enterPractice() {
+    practiceActive = true;
+    practiceAiAccum = 0;
+    myId = PRACTICE_ME;
+    names = {}; names[PRACTICE_AI] = "NPC";
+    finalShown = false;
+    hideScoreReveal();
+
+    Sim.resetToLobby();
+    Sim.addPlayer(PRACTICE_ME);
+    Sim.addPlayer(PRACTICE_AI);
+    Sim.startMatch(1, false, { mode: "infinite" });
+
+    $("room").innerHTML = "<b>PRÁCTICA LIBRE</b>";
+    $("endMatchBtn").textContent = "Abandonar práctica";
+    $("endMatchBtn").classList.add("show");
+    $("wrap").classList.add("playing");
+    stopLobbyBackground();
+  }
+
+  function exitPractice() {
+    practiceActive = false;
+    Sim.resetToLobby();
+    myId = null;
+    names = {};
+    hideScoreReveal();
+
+    $("wrap").classList.remove("playing");
+    $("roundBanner").classList.remove("show");
+    $("endMatchBtn").classList.remove("show");
+    $("endMatchBtn").textContent = "Terminar partida";
+    $("room").innerHTML = ROOM_HTML_DEFAULT;
+    $("choiceCard").style.display = "block";
+    startLobbyBackground();
+  }
+
   /* ---------------------------------------------------------------- loop de render */
   var lastFrame = performance.now();
 
   function frameLoop(now) {
     var frameDt = Math.min(40, Math.max(0, now - lastFrame));
     lastFrame = now;
+
+    if (practiceActive) {
+      practiceAiTick(frameDt);
+      Sim.step(frameDt);
+      renderTopbar();
+      Sim.draw(ctx, now, frameDt);
+      requestAnimationFrame(frameLoop);
+      return;
+    }
 
     var frame = Sim.guestFrame(now, frameDt);
     if (frame) {
@@ -751,13 +913,16 @@
     if (!action) return;
     e.preventDefault();
     if (e.repeat && action !== "left" && action !== "right") return;
-    Net.sendInput(action, true);
+    // Práctica libre no tiene servidor: el input maneja Sim directo en vez de viajar por Net.
+    if (practiceActive) Sim.handleInput(PRACTICE_ME, action, true);
+    else Net.sendInput(action, true);
   });
   window.addEventListener("keyup", function (e) {
     if (isTyping()) return;
     var action = KEYS[e.key.toLowerCase()];
     if (action !== "left" && action !== "right") return;
-    Net.sendInput(action, false);
+    if (practiceActive) Sim.handleInput(PRACTICE_ME, action, false);
+    else Net.sendInput(action, false);
   });
 
   /* ---------------------------------------------------------------- wiring del lobby */
@@ -774,6 +939,19 @@
     $("backLink").style.display = "inline";
   });
 
+  $("practiceBtn").addEventListener("click", function () {
+    $("mainErr").textContent = "";
+    $("choiceCard").style.display = "none";
+    $("practiceCard").style.display = "block";
+    $("backLink").style.display = "inline";
+  });
+
+  $("practiceConfirmBtn").addEventListener("click", function () {
+    $("practiceCard").style.display = "none";
+    $("backLink").style.display = "none";
+    enterPractice();
+  });
+
   // Un solo back link para las tres ramas (crear / unirse / ya adentro de la sala): ocultar
   // la que no esté no molesta. Si estábamos DENTRO de una sala ya creada (roomCard visible),
   // "volver" significa salir de verdad — avisarle al servidor, no solo cambiar de pantalla.
@@ -788,6 +966,7 @@
     }
     $("joinCard").style.display = "none";
     $("modeCard").style.display = "none";
+    $("practiceCard").style.display = "none";
     $("roomCard").style.display = "none";
     $("choiceCard").style.display = "block";
     $("backLink").style.display = "none";
@@ -844,8 +1023,10 @@
     this.setAttribute("aria-checked", String(snailOn));
   });
   $("startBtn").addEventListener("click", function () { Net.start(snailOn); });
-  $("endMatchBtn").addEventListener("click", function () { Net.endMatch(); });
+  $("endMatchBtn").addEventListener("click", function () { if (practiceActive) exitPractice(); else Net.endMatch(); });
   $("playAgainBtn").addEventListener("click", function () { Net.again(); });
+
+  selectPracticeDifficulty("medium"); // sincroniza practiceDifficulty con el botón ya marcado "selected" en el HTML
 
   /* ---------------------------------------------------------------- panel de audio */
   (function () {
