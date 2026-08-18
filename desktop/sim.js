@@ -324,7 +324,13 @@ var Sim = (function () {
     if (p.power && p.power.type === "aire") speedMult *= AIR_SPEED_MULT;
     if (p.slowT > 0) speedMult *= SLOW_MULT;
     var spd = SPEED * speedMult;
-    if (p.input.left && !p.input.right) { p.vx = -spd; p.facing = -1; }
+    if (p.hitStunT > 0) {
+      // En hitstun no se puede caminar: antes el input de movimiento pisaba vx cada frame sin
+      // importar nada, así que alguien corriendo hacia el que pega podía cancelar el empuje de
+      // la patada al toque con solo seguir sosteniendo la tecla. Ahora, mientras dura el
+      // stun, el único movimiento horizontal es el que aporta kbx (el empuje en sí).
+      p.vx = 0;
+    } else if (p.input.left && !p.input.right) { p.vx = -spd; p.facing = -1; }
     else if (p.input.right && !p.input.left) { p.vx = spd; p.facing = 1; }
     else p.vx = 0;
 
