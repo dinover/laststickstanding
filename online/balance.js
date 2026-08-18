@@ -18,9 +18,9 @@
      - Daño de la piña bajado de 16 a 11 tras la prueba real: seguía ganando por demasiado
        margen y las rondas terminaban muy rápido. La patada mantiene su daño (8).
      - El empuje de la piña sigue siendo casi nulo (0.8): no compite con la patada en espacio.
-     - Empuje de la patada subido de 4.2 a 7.5 en X (bastante más — es su única razón de
-       existir) y bajado de -3.0 a -1.4 en Y (menos "pop" vertical, apenas un salto chico:
-       "hacia atrás y un poquito arriba, no mucho").
+     - Empuje de la patada: primer ajuste post-relanzamiento a 7.5/-1.4, después DUPLICADO otra
+       vez a pedido (15 en X, -2.8 en Y) — seguía sin sentirse suficiente. Mismo criterio de
+       parábola baja: bastante hacia atrás, apenas hacia arriba.
 
    DPS con los números nuevos:
 
@@ -49,8 +49,8 @@ var BALANCE_ATTACKS = {
     cooldown: 380,
     damage: 8,
     reach: 44,
-    kbX: 7.5,       // subido de 4.2 — tiene que servir para ir corriendo jugadores de verdad
-    kbY: -1.4,      // bajado de -3.0 — parábola baja: "hacia atrás y apenas arriba", no un pop alto
+    kbX: 15,        // duplicado de 7.5 a pedido — tiene que servir para ir corriendo jugadores de verdad
+    kbY: -2.8,      // duplicado de -1.4 — parábola baja: "hacia atrás y apenas arriba", no un pop alto
     hitStun: 220,
     hitStop: 60,
     trauma: 0.55,
