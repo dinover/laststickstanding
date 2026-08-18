@@ -60,11 +60,12 @@ function makeReachability(consts) {
     return 0; // overlapping horizontally
   }
 
-  // BFS connectivity check across the whole platform set (undirected: if a can reach b,
-  // assume the reverse hop is also makeable at worst by a drop+jump).
-  function allConnected(platforms) {
-    if (platforms.length <= 1) return true;
+  // Agrupa las plataformas en componentes conexas (undirected: si a llega a b, se asume que
+  // la vuelta también se puede hacer aunque sea cayendo). allConnected() y la pasada de
+  // rescate del generador comparten esto — antes cada uno tenía su propio BFS suelto.
+  function components(platforms) {
     var n = platforms.length;
+    if (n === 0) return [];
     var adj = [];
     for (var i = 0; i < n; i++) adj.push([]);
     for (var i2 = 0; i2 < n; i2++) {
@@ -75,20 +76,29 @@ function makeReachability(consts) {
       }
     }
     var seen = new Array(n).fill(false);
-    var stack = [0];
-    seen[0] = true;
-    var count = 1;
-    while (stack.length) {
-      var cur = stack.pop();
-      for (var k = 0; k < adj[cur].length; k++) {
-        var nb = adj[cur][k];
-        if (!seen[nb]) { seen[nb] = true; count++; stack.push(nb); }
+    var comps = [];
+    for (var s = 0; s < n; s++) {
+      if (seen[s]) continue;
+      var comp = [], stack = [s];
+      seen[s] = true;
+      while (stack.length) {
+        var cur = stack.pop();
+        comp.push(cur);
+        for (var k = 0; k < adj[cur].length; k++) {
+          var nb = adj[cur][k];
+          if (!seen[nb]) { seen[nb] = true; stack.push(nb); }
+        }
       }
+      comps.push(comp);
     }
-    return count === n;
+    return comps;
   }
 
-  return { reachable: reachable, allConnected: allConnected, maxHorizontal: maxHorizontal };
+  function allConnected(platforms) {
+    return components(platforms).length <= 1;
+  }
+
+  return { reachable: reachable, allConnected: allConnected, components: components, maxHorizontal: maxHorizontal };
 }
 
 /* ==================================================================== map archetypes */
@@ -682,9 +692,17 @@ var Hazards = (function () {
     if (rng() > 0.35) return hazards; // most maps stay hazard-free
     var idx = built.hazardCandidates[Math.floor(rng() * built.hazardCandidates.length)];
     var pl = built.platforms[idx];
-    if (!pl) return hazards;
-    var w = Math.min(pl.w * 0.5, 60 + rng() * 30);
-    hazards.push({ type: "spikes", x: pl.x + (pl.w - w) / 2, y: pl.y, w: w, h: 10 });
+    // Plataformas angostas no dejan margen real para compartir espacio con púas — antes esto
+    // no se filtraba, y en pasos de la torre (~100-120px) las púas centradas se comían casi
+    // todo lo pisable.
+    if (!pl || pl.w < 110) return hazards;
+    var w = Math.min(pl.w * 0.35, 55);
+    /* Pegadas a UN borde (no centradas): así el resto de la plataforma queda como una franja
+       segura CONTIGUA para aterrizar y pisar, en vez de dos márgenes angostos a los costados
+       — eso último era, en la práctica, casi imposible de acertar en medio de un combate. */
+    var onLeft = rng() < 0.5;
+    var x = onLeft ? pl.x : pl.x + pl.w - w;
+    hazards.push({ type: "spikes", x: x, y: pl.y, w: w, h: 10 });
     return hazards;
   }
 
@@ -709,6 +727,47 @@ var Hazards = (function () {
 
   return { place: place, draw: draw, check: check, HazardTypes: HazardTypes };
 })();
+
+/* Si el archetype eligió un layout que quedó con alguna plataforma sin conexión (después de
+   los 5 reintentos de generateMap), esta es la última red de seguridad: en vez de mover TODAS
+   las plataformas 15% hacia el centro sin verificar nada después (lo que hacía el rescate
+   viejo — ni siquiera garantizaba conectar nada, y de paso desarmaba layouts que ya estaban
+   bien), acá se identifica el componente más chico desconectado del resto y se lo arrastra —
+   junto, preservando su forma — hacia la plataforma alcanzable más cercana del grupo
+   principal, un poco por iteración, re-chequeando conectividad en cada paso hasta que cierra
+   (o hasta el tope de iteraciones, por las dudas). */
+function connectAllPlatforms(platforms, reach, W, H) {
+  var maxIter = 60;
+  for (var iter = 0; iter < maxIter; iter++) {
+    var comps = reach.components(platforms);
+    if (comps.length <= 1) return true;
+    comps.sort(function (a, b) { return a.length - b.length; });
+    var isolated = comps[0];
+    var mainIdx = {};
+    for (var c = 1; c < comps.length; c++) comps[c].forEach(function (i) { mainIdx[i] = true; });
+
+    var best = null, bestDist = Infinity;
+    isolated.forEach(function (i) {
+      Object.keys(mainIdx).forEach(function (jStr) {
+        var j = Number(jStr);
+        var a = platforms[i], b = platforms[j];
+        var d = Math.abs((a.x + a.w / 2) - (b.x + b.w / 2)) + Math.abs(a.y - b.y);
+        if (d < bestDist) { bestDist = d; best = { a: a, b: b }; }
+      });
+    });
+    if (!best) return reach.allConnected(platforms); // no debería pasar si hay algo en cada lado
+
+    var dx = (best.b.x + best.b.w / 2) - (best.a.x + best.a.w / 2);
+    var dy = best.b.y - best.a.y;
+    var stepX = dx * 0.25, stepY = dy * 0.25; // avanzar de a poco, no de un salto
+    isolated.forEach(function (idx) {
+      var pl = platforms[idx];
+      pl.x = Math.max(20, Math.min(W - 20 - pl.w, pl.x + stepX));
+      pl.y = Math.max(120, Math.min(500, pl.y + stepY));
+    });
+  }
+  return reach.allConnected(platforms);
+}
 
 /* ==================================================================== World: public API */
 var World = (function () {
@@ -738,13 +797,7 @@ var World = (function () {
       if (reach.allConnected(built.platforms)) break;
       attempts++;
     }
-    // rescue pass: if still not fully connected after retries, nudge the platform farthest
-    // from the group toward the center so no zone is left unreachable.
-    if (!reach.allConnected(built.platforms)) {
-      var plats = built.platforms;
-      var cx = W / 2;
-      plats.forEach(function (pl) { pl.x += (cx - (pl.x + pl.w / 2)) * 0.15; });
-    }
+    if (!reach.allConnected(built.platforms)) connectAllPlatforms(built.platforms, reach, W, H);
 
     var biomeId = Biomes.random(rng);
     var biome = Biomes.get(biomeId);
