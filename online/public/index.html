@@ -31,7 +31,18 @@
   #wrap { position: relative; z-index: 1; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
   canvas { display: block; background: #05060d; box-shadow: 0 0 80px rgba(53,240,224,.08); }
   canvas#c { display: none; }
-  #wrap.playing canvas#c { display: block; }
+  /* La resolución interna del canvas queda en 960x540 (todo el motor de físicas/dibujo la
+     asume fija — World, stickman.js, fx.js), pero el tamaño en pantalla ahora escala al
+     viewport completo manteniendo la proporción 16:9: min(ancho, alto*16/9) para el ancho y
+     min(alto, ancho*9/16) para el alto. Antes quedaba fijo en 960x540 CSS también, así que en
+     un monitor grande se veía como una ventanita chica centrada en medio de la pantalla negra.
+     Con pantallas más altas que anchas (poco común acá) aparecen franjas arriba/abajo, efecto
+     cine — es intencional, no un bug. */
+  #wrap.playing canvas#c {
+    display: block;
+    width: min(100vw, calc(100vh * 16 / 9));
+    height: min(100vh, calc(100vw * 9 / 16));
+  }
   #wrap.playing #lobby { display: none; }
 
   #room, #topbar { display: none; }
@@ -176,7 +187,7 @@
   .modeOption.selected { border-color: #35f0e0; box-shadow: 0 0 0 1px #35f0e0 inset; }
   .modeOption.selected strong { color: #35f0e0; }
   .modeOption .soon { font-size: 10px; color: #ffc247; margin-left: 6px; letter-spacing: .04em; }
-  button, input {
+  button, input, select {
     font-family: inherit; font-size: 14px; border-radius: 8px; border: 1px solid #2a3050;
     background: #12162a; color: #eaf0ff; padding: 13px 16px;
   }
@@ -186,6 +197,7 @@
   button.snail.on { color: #35f0e0; border-color: #35f0e0; }
   button:disabled { opacity: .5; cursor: default; box-shadow: none; }
   input { width: 100%; box-sizing: border-box; margin-bottom: 14px; text-align: center; letter-spacing: .08em; }
+  select { width: 100%; box-sizing: border-box; margin: 10px 0 14px; cursor: pointer; }
   input#codeInput { text-transform: uppercase; }
   .codeShow { font-size: 40px; letter-spacing: .18em; color: #35f0e0; text-shadow: 0 0 20px rgba(53,240,224,.5); margin: 16px 0; }
   .rosterList { display: flex; flex-direction: column; gap: 8px; margin: 18px 0; text-align: left; }
@@ -277,6 +289,19 @@
         <strong>Dif&iacute;cil</strong>
         <span class="desc">Reacciona r&aacute;pido, cuida el borde de la plataforma y ataca apenas puede.</span>
       </button>
+
+      <p class="sub" style="margin-top:16px">Eleg&iacute; el tipo de terreno (se repite en cada ronda):</p>
+      <select id="terrainSelect">
+        <option value="">Aleatorio (como en el resto del juego)</option>
+        <option value="arena">Arena</option>
+        <option value="puente">Puente</option>
+        <option value="torre">Torre</option>
+        <option value="escalera">Escalera</option>
+        <option value="islas">Islas</option>
+        <option value="anillo">Anillo</option>
+        <option value="crater">Cr&aacute;ter</option>
+        <option value="piramide">Pir&aacute;mide</option>
+      </select>
 
       <button id="practiceConfirmBtn" style="width:100%; margin-top: 4px;">Empezar pr&aacute;ctica</button>
     </div>
@@ -391,7 +416,7 @@
     onPhaseChange: function (info) {
       if (!practiceActive || info.t !== "roundStart") return;
       var rb = $("roundBanner");
-      rb.textContent = "RONDA " + info.round + " — PRÁCTICA LIBRE";
+      rb.textContent = "RONDA " + info.round + " — " + info.mapName;
       rb.classList.add("show");
       var ft = $("fightText");
       ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
@@ -736,7 +761,8 @@
     Sim.resetToLobby();
     Sim.addPlayer(PRACTICE_ME);
     Sim.addPlayer(PRACTICE_AI);
-    Sim.startMatch(1, false, { mode: "infinite" });
+    var terrain = $("terrainSelect").value || null; // "" (Aleatorio) -> null, sin terreno fijo
+    Sim.startMatch(1, false, { mode: "infinite", mapArchetype: terrain });
 
     $("room").innerHTML = "<b>PRÁCTICA LIBRE</b>";
     $("endMatchBtn").textContent = "Abandonar práctica";

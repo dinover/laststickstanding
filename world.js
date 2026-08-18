@@ -784,12 +784,14 @@ var World = (function () {
 
   var backgroundCache = null; // { key, bg }
 
-  function generateMap(seed, consts) {
+  // forcedArchId: opcional — si viene y es un id válido, se usa ese archetype en vez de
+  // sortear uno al azar (Práctica Libre lo usa para repetir siempre el mismo tipo de terreno).
+  function generateMap(seed, consts, forcedArchId) {
     var W = consts.W, H = consts.H;
     var rng = WorldBackground.mulberry32(seed);
     var reach = makeReachability(consts);
     var ids = MapArchetypes.ids;
-    var archId = ids[Math.floor(rng() * ids.length)];
+    var archId = (forcedArchId && ids.indexOf(forcedArchId) >= 0) ? forcedArchId : ids[Math.floor(rng() * ids.length)];
 
     var built = null, attempts = 0;
     while (attempts < 5) {

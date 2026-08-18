@@ -52,8 +52,12 @@ var Sim = (function () {
     ],
   };
 
+  // forcedArchetype: null en todos los builds salvo Práctica Libre (build web), que la fija vía
+  // opts.mapArchetype en startMatch() para poder practicar un solo tipo de terreno sin fin.
+  var forcedArchetype = null;
+
   function genMap(seed) {
-    return World.generateMap(seed, { SPEED: SPEED, JUMP_V: JUMP_V, GRAVITY_UP: GRAVITY_UP, GRAVITY_DOWN: GRAVITY_DOWN, W: W, H: H });
+    return World.generateMap(seed, { SPEED: SPEED, JUMP_V: JUMP_V, GRAVITY_UP: GRAVITY_UP, GRAVITY_DOWN: GRAVITY_DOWN, W: W, H: H }, forcedArchetype);
   }
 
   var colorFor = function (id) { return "#35f0e0"; };
@@ -121,8 +125,10 @@ var Sim = (function () {
     if (roundsMode !== "infinite" && currentRound > totalRounds) { endMatch(); return; }
     /* Modo infinito: cada 5 rondas (5, 10, 15…) vuelve al mapa inicial, igual que la ronda 1.
        El puntaje NUNCA se resetea acá — sigue acumulando desde la ronda 1 hasta que el
-       anfitrión corta la partida con forceEndMatch(). */
-    var useStartMap = currentRound === 1 || (roundsMode === "infinite" && currentRound % 5 === 0);
+       anfitrión corta la partida con forceEndMatch(). Con un terreno fijado (Práctica Libre)
+       esto se salta del todo: el objetivo es practicar ESE tipo de mapa sin fin, no que se lo
+       interrumpa el mapa inicial genérico cada 5 rondas. */
+    var useStartMap = !forcedArchetype && (currentRound === 1 || (roundsMode === "infinite" && currentRound % 5 === 0));
     currentMap = useStartMap ? MAP0 : genMap(1000 + currentRound * 37 + Math.floor(Math.random() * 900));
     eliminationOrder = [];
     spawnRoundPlayers(currentMap);
@@ -481,12 +487,14 @@ var Sim = (function () {
 
   /* opts es nuevo y opcional: sin él (como llaman desktop/game.html y steam/game.html, con
      solo 2 argumentos) el comportamiento es EXACTAMENTE el de siempre — modo "fixed", 1..20
-     rondas clampeadas. Solo el build web pasa { mode: "infinite" }. */
+     rondas clampeadas. Solo el build web pasa { mode: "infinite" }, y solo Práctica Libre
+     además pasa { mapArchetype: "torre" } (o el id que sea) para fijar el tipo de terreno. */
   function startMatch(rounds, snail, opts) {
     opts = opts || {};
     roundsMode = opts.mode === "infinite" ? "infinite" : "fixed";
     totalRounds = roundsMode === "infinite" ? Infinity : Math.max(1, Math.min(20, rounds || 3));
     snailMode = !!snail;
+    forcedArchetype = opts.mapArchetype || null;
     roster = Object.keys(players).map(Number);
     scores = {};
     matchStats = {};
@@ -501,6 +509,7 @@ var Sim = (function () {
   function resetToLobby() {
     phase = "lobby";
     roundsMode = "fixed";
+    forcedArchetype = null;
     players = {};
     roster = [];
     scores = {};
