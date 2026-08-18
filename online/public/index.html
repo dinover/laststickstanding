@@ -570,6 +570,7 @@
   var practiceActive = false;
   var practiceDifficulty = "medium";
   var practiceAiAccum = 0;
+  var practiceAiPathCommitted = false; // ver practiceAiTick: evita que un salto al azar arrastre a la IA a un hueco
   var ROOM_HTML_DEFAULT = $("room").innerHTML;
 
   var PRACTICE_DIFFS = {
@@ -578,23 +579,68 @@
     hard:   { decisionMs: 80,  attackChance: 0.97, chaseSlack: 16, edgeMargin: 14, jumpChance: 0.05  },
   };
 
-  function findPlatformUnder(p) {
-    var map = Sim.getCurrentMap();
-    if (!map) return null;
-    var plats = map.platforms;
+  function platformIndexAt(plats, p) {
     for (var i = 0; i < plats.length; i++) {
       var pl = plats[i];
-      if (Math.abs(pl.y - p.y) < 2 && p.x + 13 > pl.x && p.x - 13 < pl.x + pl.w) return pl;
+      if (Math.abs(pl.y - p.y) < 2 && p.x + 13 > pl.x && p.x - 13 < pl.x + pl.w) return i;
     }
-    return null;
+    return -1;
   }
 
-  /* Nada de pathfinding: reglas simples, re-evaluadas cada `decisionMs` según la dificultad
-     (no cada frame, así la IA "piensa" a intervalos en vez de corregir el input 60 veces por
-     segundo). Persigue en horizontal, no camina fuera del borde de su plataforma actual, salta
-     si el jugador está bastante más arriba (o al azar), y ataca en rango si el cooldown lo
-     permite. Los booleans left/right quedan sostenidos como un input humano; jump/punch/kick son
-     "edges" que Sim ya limpia solo un frame después (handleInput no necesita un "false" después). */
+  var PATHFIND_FALL_MARGIN = 40; // solape horizontal tolerado para "se puede caer de una a otra"
+  var PATHFIND_JUMP_RISE = 230;  // altura máx. aprox. de un salto (JUMP_V=-20.5, GRAVITY_UP=0.95)
+
+  /* Grafo de "a qué otra plataforma se puede llegar desde acá": cayendo (si hay solape
+     horizontal razonable y la otra está más abajo) o saltando (si está más arriba pero dentro
+     de la altura de salto). No modela el arco exacto del salto ni el drift al caer, pero
+     alcanza para que la IA elija un camino real en vez de tirarse a un borde cualquiera sin
+     saber qué hay del otro lado — que es justo lo que la dejaba cayendo al vacío en mapas
+     generados con huecos de verdad. */
+  function buildPlatformGraph(plats) {
+    var adj = [];
+    for (var i = 0; i < plats.length; i++) {
+      adj.push([]);
+      for (var j = 0; j < plats.length; j++) {
+        if (i === j) continue;
+        var a = plats[i], b = plats[j];
+        var overlap = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+        if (overlap < -PATHFIND_FALL_MARGIN) continue; // ni cerca en X, no hay forma de llegar
+        if (b.y > a.y) adj[i].push(j); // b está más abajo: se llega cayendo
+        else if (a.y - b.y <= PATHFIND_JUMP_RISE) adj[i].push(j); // b más arriba pero saltable
+      }
+    }
+    return adj;
+  }
+
+  /* BFS de `from` a `to`: devuelve el índice del PRIMER salto del camino más corto, o -1 si no
+     hay ninguno — en ese caso la IA no se tira a lo loco, se queda quieta antes que arriesgarse
+     a un hueco sin fondo. */
+  function bfsNextHop(adj, from, to) {
+    if (from < 0 || to < 0 || from === to) return -1;
+    var visited = {}; visited[from] = true;
+    var queue = [{ node: from, hop: -1 }];
+    for (var qi = 0; qi < queue.length; qi++) {
+      var cur = queue[qi];
+      var neighbors = adj[cur.node];
+      for (var k = 0; k < neighbors.length; k++) {
+        var nb = neighbors[k];
+        if (visited[nb]) continue;
+        visited[nb] = true;
+        var hop = cur.hop === -1 ? nb : cur.hop;
+        if (nb === to) return hop;
+        queue.push({ node: nb, hop: hop });
+      }
+    }
+    return -1;
+  }
+
+  /* Re-evaluada cada `decisionMs` según la dificultad (no cada frame, así la IA "piensa" a
+     intervalos en vez de corregir el input 60 veces por segundo). Si el rival está en otra
+     plataforma, usa BFS sobre el grafo de plataformas para elegir el próximo salto del camino
+     más corto — no persigue su x exacto ni el borde "más cercano" sin más, que es lo que la
+     hacía rebotar en el mismo lugar o tirarse a un vacío sin salida. Ataca solo si está en
+     rango horizontal Y vertical de verdad. Los booleans left/right quedan sostenidos como un
+     input humano; jump/punch/kick son "edges" que Sim ya limpia un frame después. */
   function practiceAiTick(dt) {
     var players = Sim.getPlayers();
     var ai = players[PRACTICE_AI], me = players[PRACTICE_ME];
@@ -607,44 +653,55 @@
     if (!ai.alive || !me.alive) {
       Sim.handleInput(PRACTICE_AI, "left", false);
       Sim.handleInput(PRACTICE_AI, "right", false);
+      practiceAiPathCommitted = false;
       return;
     }
 
     var cfg = PRACTICE_DIFFS[practiceDifficulty];
     var dx = me.x - ai.x, absDx = Math.abs(dx);
-    var dy = me.y - ai.y; // positivo: el rival está más abajo (el eje Y crece hacia el piso)
-    var descending = dy > 40;
-    var wantLeft = false, wantRight = false;
+    var dy = me.y - ai.y;
+    var wantLeft = false, wantRight = false, wantJump = false;
+    var ambientJumpOk = false; // el salto "de relleno" al azar solo vale parado en terreno conocido
 
-    if (descending) {
-      var platHere = findPlatformUnder(ai);
-      if (platHere) {
-        /* Mientras seguimos parados en una plataforma más alta, ir al borde MÁS CERCANO de
-           ESTA plataforma — no perseguir el x del rival. Perseguirlo acá fue el primer intento
-           y falla justo cuando el rival está más o menos centrado debajo: la IA camina hacia su
-           x, "llega", pero sigue arriba sin poder pegar, así que no tiene ningún motivo para
-           seguir cruzando el resto de la plataforma — y si el rival está apenas para el otro
-           lado del centro, `dx` cambia de signo a mitad de camino y la hace retroceder, dejándola
-           rebotando en el mismo lugar para siempre. El borde de la propia plataforma, en cambio,
-           no se mueve: la dirección elegida no se revierte sola. */
-        var distLeft = ai.x - platHere.x, distRight = (platHere.x + platHere.w) - ai.x;
-        if (distLeft < distRight) wantLeft = true; else wantRight = true;
-      } else if (absDx > 2) {
-        // Ya nos tiramos y estamos cayendo: ahí sí tiene sentido ajustar hacia el rival en el aire.
-        wantRight = dx > 0; wantLeft = dx < 0;
+    var map = Sim.getCurrentMap();
+    var plats = map.platforms;
+    var aiIdx = platformIndexAt(plats, ai);
+    var meIdx = platformIndexAt(plats, me);
+
+    if (aiIdx >= 0 && meIdx >= 0 && aiIdx !== meIdx) {
+      var nextIdx = bfsNextHop(buildPlatformGraph(plats), aiIdx, meIdx);
+      if (nextIdx >= 0) {
+        var cur = plats[aiIdx], target = plats[nextIdx];
+        var goRight = (target.x + target.w / 2) > (cur.x + cur.w / 2);
+        wantRight = goRight; wantLeft = !goRight;
+        wantJump = target.y < cur.y; // el próximo salto del camino está más arriba
+        practiceAiPathCommitted = true;
+      } else {
+        // Sin camino conocido: mejor quedarse quieta que arriesgarse a un hueco sin fondo.
+        practiceAiPathCommitted = false;
       }
-    } else if (absDx > cfg.chaseSlack) {
-      wantRight = dx > 0; wantLeft = dx < 0;
-      var plat = findPlatformUnder(ai);
-      if (plat) {
+    } else if (aiIdx < 0) {
+      /* En el aire. Solo se ajusta hacia el rival si venimos de un salto/caída REALMENTE
+         decidido por el pathfinding (practiceAiPathCommitted) — un salto de relleno al azar sin
+         plataforma de destino no debe arrastrarnos hacia ningún lado, porque eso es justo lo que
+         la hacía cruzar un hueco que no tenía por qué cruzar y caer al vacío. */
+      if (practiceAiPathCommitted && absDx > 2) { wantRight = dx > 0; wantLeft = dx < 0; }
+    } else {
+      // Misma plataforma (o el rival también está en el aire): combate normal, terreno conocido.
+      practiceAiPathCommitted = false;
+      ambientJumpOk = true;
+      if (absDx > cfg.chaseSlack) {
+        wantRight = dx > 0; wantLeft = dx < 0;
+        var plat = plats[aiIdx];
         if (wantLeft && ai.x - plat.x < cfg.edgeMargin) wantLeft = false;
         if (wantRight && (plat.x + plat.w) - ai.x < cfg.edgeMargin) wantRight = false;
       }
     }
+
     Sim.handleInput(PRACTICE_AI, "left", wantLeft);
     Sim.handleInput(PRACTICE_AI, "right", wantRight);
 
-    if (ai.grounded && !descending && (dy < -40 || Math.random() < cfg.jumpChance)) {
+    if (ai.grounded && (wantJump || (ambientJumpOk && Math.random() < cfg.jumpChance))) {
       Sim.handleInput(PRACTICE_AI, "jump", true);
     }
 
