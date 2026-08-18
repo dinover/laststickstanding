@@ -8,33 +8,34 @@
      index.html): `<script src="/balance.js">`, sirviéndose vía la ruta agregada en server.js.
    El bloque final expone lo mismo por los dos caminos sin duplicar los números.
 
-   Diseño (2026-08-18, versión previa al relanzamiento): la piña es el ataque dominante — más
-   rápida Y más daño — y la patada vive pura y exclusivamente del empuje.
+   Diseño (2026-08-18, ajustado tras la primera prueba real post-relanzamiento): la piña sigue
+   siendo el ataque de ritmo — más rápida — pero con menos daño que en la vuelta anterior (mataba
+   demasiado rápido en la práctica). La patada gana MUCHO más empuje: ahora sirve de verdad para
+   ir corriendo jugadores hacia el borde, en una parábola baja (bastante hacia atrás, apenas
+   hacia arriba — no un pop alto).
 
-     - La piña sigue siendo el DOBLE de rápida que la patada (190 ms de cooldown contra 380),
-       así que entran exactamente dos piñas en el tiempo de una patada.
-     - La piña pega el DOBLE que la patada por golpe (16 contra 8): antes era al revés
-       (patada 15, piña 9). Ahora no hay ningún escenario donde convenga elegir patada por
-       daño — su única razón de ser es el empuje.
-     - El empuje de la piña sigue siendo casi nulo (0.8): ni con el daño más alto se puede usar
-       para sacar a nadie de la plataforma.
-     - La patada empuja fuerte (4.2 en X, -3.0 en Y): sigue siendo la única herramienta para
-       sacar al rival del borde. Paga esa utilidad con una brecha de daño enorme.
+     - La piña sigue siendo el DOBLE de rápida que la patada (190 ms de cooldown contra 380).
+     - Daño de la piña bajado de 16 a 11 tras la prueba real: seguía ganando por demasiado
+       margen y las rondas terminaban muy rápido. La patada mantiene su daño (8).
+     - El empuje de la piña sigue siendo casi nulo (0.8): no compite con la patada en espacio.
+     - Empuje de la patada subido de 4.2 a 7.5 en X (bastante más — es su única razón de
+       existir) y bajado de -3.0 a -1.4 en Y (menos "pop" vertical, apenas un salto chico:
+       "hacia atrás y un poquito arriba, no mucho").
 
    DPS con los números nuevos:
 
-     piña   16 daño / 0.19 s = 84.2 daño/s
+     piña   11 daño / 0.19 s = 57.9 daño/s
      patada  8 daño / 0.38 s = 21.1 daño/s
 
-   La piña gana la carrera de daño por goleada — es la decisión de diseño explícita de esta
-   vuelta, no un descuido: la patada deja de competir en daño sostenido y pasa a ser
-   estrictamente una herramienta de espacio/cierre de ronda, no una alternativa de DPS. */
+   La piña sigue ganando en daño sostenido (menos por goleada que antes), la patada sigue
+   siendo la única herramienta de espacio/cierre de ronda — ahora con un empuje que realmente
+   se nota. */
 
 var BALANCE_ATTACKS = {
   punch: {
     dur: 140,       // mitad exacta de la patada: la animación también tiene que leerse rápida
     cooldown: 190,  // mitad exacta de la patada -> dos piñas por patada
-    damage: 16,     // el doble de la patada — ver diseño arriba
+    damage: 11,     // bajado de 16 tras la prueba real — mataba demasiado rápido
     reach: 34,
     kbX: 0.8,       // "apenas hacia atrás" — el empuje sigue siendo cosa de la patada, no de esto
     kbY: 0,
@@ -46,10 +47,10 @@ var BALANCE_ATTACKS = {
   kick: {
     dur: 280,
     cooldown: 380,
-    damage: 8,      // la mitad de la piña — ver diseño arriba
+    damage: 8,
     reach: 44,
-    kbX: 4.2,
-    kbY: -3.0,
+    kbX: 7.5,       // subido de 4.2 — tiene que servir para ir corriendo jugadores de verdad
+    kbY: -1.4,      // bajado de -3.0 — parábola baja: "hacia atrás y apenas arriba", no un pop alto
     hitStun: 220,
     hitStop: 60,
     trauma: 0.55,

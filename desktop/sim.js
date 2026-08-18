@@ -18,6 +18,11 @@ var Sim = (function () {
 
   var W = 960, H = 540;
   var GRAVITY_UP = 0.95, GRAVITY_DOWN = 0.7, SPEED = 4.3, JUMP_V = -20.5;
+  /* Doble salto: valor fijo, no una fracción de la velocidad restante del primer salto. La
+     altura máxima de un salto con velocidad v es v²/(2·GRAVITY_UP) — despejando para que el
+     segundo salto llegue a la MITAD de esa altura (110.6px contra 221.2px del primero) da
+     JUMP_V / √2. Es una constante calculada una sola vez, no algo que varíe salto a salto. */
+  var JUMP_V2 = JUMP_V / Math.SQRT2;
   var PW = 13, PH = 52;
   /* Tabla de ataques. Antes esto estaba desparramado en ternarios `type === "kick" ? a : b`
      por todo stepPlayer; juntarlo acá permite que cada build ajuste el combate por su cuenta
@@ -98,6 +103,7 @@ var Sim = (function () {
       walkCycle: 0, idleT: Math.random() * 10, squash: 0,
       hitStunT: 0, hitDir: 1, jumpAnticT: 0, deathFadeT: 0,
       power: null, burnT: 0, burnTickT: 0, burnFlashT: 0, slowT: 0,
+      doubleJumped: false,
     };
   }
 
@@ -143,6 +149,7 @@ var Sim = (function () {
       p.vx = 0; p.vy = 0; p.hp = 100; p.alive = true;
       p.attack = null; p.attackCooldown = 0;
       p.power = null; p.burnT = 0; p.burnTickT = 0; p.burnFlashT = 0; p.slowT = 0;
+      p.doubleJumped = false;
     });
     orb = null;
     orbTimer = ORB_SPAWN_MS;
@@ -321,7 +328,15 @@ var Sim = (function () {
     else if (p.input.right && !p.input.left) { p.vx = spd; p.facing = 1; }
     else p.vx = 0;
 
-    if (p.jumpEdge && p.grounded) { p.vy = JUMP_V; p.grounded = false; p.jumpAnticT = 90; AudioManager.on.jump(); }
+    if (p.jumpEdge) {
+      if (p.grounded) {
+        p.vy = JUMP_V; p.grounded = false; p.jumpAnticT = 90; p.doubleJumped = false; AudioManager.on.jump();
+      } else if (!p.doubleJumped) {
+        // Segundo salto en el aire: valor fijo (JUMP_V2), no una fracción de lo que quedaba
+        // de vy — se puede pedir cayendo o subiendo, siempre da la misma altura extra.
+        p.vy = JUMP_V2; p.doubleJumped = true; p.jumpAnticT = 90; AudioManager.on.jump();
+      }
+    }
     p.jumpEdge = false;
 
     if ((p.punchEdge || p.kickEdge) && p.attackCooldown <= 0) {
@@ -382,6 +397,7 @@ var Sim = (function () {
           AudioManager.on.land(landStrength);
         }
         p.vy = 0; p.grounded = true;
+        p.doubleJumped = false; // tocar cualquier superficie repone el segundo salto
       }
     }
 
