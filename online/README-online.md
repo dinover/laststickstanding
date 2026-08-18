@@ -1,14 +1,19 @@
-# Last Stick Standing — build online (servidor autoritativo en Render)
+# Last Stick Standing — build online (servidor autoritativo en Oracle Cloud)
 
-Versión web con **servidor dedicado**: el juego se simula en Render y los jugadores solo entran
-con un link. Nadie instala nada y nadie hostea.
+Versión web con **servidor dedicado**: el juego se simula en una VM del Always Free tier de
+Oracle Cloud (Oracle Linux, `sa-saopaulo-1`) y los jugadores solo entran con un link. Nadie
+instala nada y nadie hostea. Ver [`oracle/README-oracle.md`](../oracle/README-oracle.md) para el
+deploy completo (creación de la VM, firewall, TLS) y [`oracle/bootstrap.sh`](../oracle/bootstrap.sh)
+para el setup inicial.
 
-Historial: corrió antes en Fly.io (`gru`, São Paulo, mejor latencia) y se probó migrar a una VM
-propia en Oracle Cloud Always Free (`oracle/README-oracle.md`), que hubiera dado la misma latencia
-que Fly gratis — quedó pausado por la complejidad de mantener una VM real (RAM real de ~500MB pese
-a que la consola decía 1GB, ida y vuelta con OOM-kills al instalar Docker, firewall en dos capas,
-etc.) a cambio de simplicidad. Los archivos de esa migración (`docker-compose.yml`, `Caddyfile`,
-`oracle/`) quedan en el repo por si se retoma; no se usan mientras el server viva en Render.
+Para actualizar la VM después de un cambio de código: `ssh` adentro, `cd ~/laststickstanding`,
+`git pull && docker compose up -d --build`.
+
+Historial: corrió antes en Fly.io (`gru`, misma latencia que Oracle) y pasó por Render (free tier
+más simple de mantener, pero sin región en Sudamérica — mucho más lag). Oracle quedó como destino
+definitivo: mejor latencia que Render, sin el costo de Fly, a cambio de mantener la VM a mano
+(ver las advertencias de RAM real y swap en `oracle/README-oracle.md`). `render.yaml` queda en el
+repo por si en algún momento hace falta un fallback rápido, pero no es el deploy activo.
 
 Es la tercera forma de jugar online, al lado de las que ya existen:
 
