@@ -197,7 +197,25 @@
   button.snail.on { color: #35f0e0; border-color: #35f0e0; }
   button:disabled { opacity: .5; cursor: default; box-shadow: none; }
   input { width: 100%; box-sizing: border-box; margin-bottom: 14px; text-align: center; letter-spacing: .08em; }
-  select { width: 100%; box-sizing: border-box; margin: 10px 0 14px; cursor: pointer; }
+
+  /* Tarjetas de tema (Práctica Libre): snapshot real del fondo de cada bioma, generado con las
+     mismas World Background.build/draw que ya pintan el fondo del lobby — no un dropdown de
+     texto. */
+  .themeGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 6px 0 16px; }
+  .themeTile {
+    cursor: pointer; border: 1px solid #2a3050; border-radius: 10px; overflow: hidden;
+    background: #12162a; padding: 0; text-align: center;
+  }
+  .themeTile canvas, .themeTile .placeholder {
+    display: block; width: 100%; height: 60px;
+  }
+  .themeTile .placeholder {
+    display: flex; align-items: center; justify-content: center; font-size: 24px;
+    background: linear-gradient(135deg, #1c1330, #26293e);
+  }
+  .themeTile .lbl { display: block; padding: 6px 4px; font-size: 11px; color: #eaf0ff; }
+  .themeTile.selected { border-color: #35f0e0; box-shadow: 0 0 0 1px #35f0e0 inset; }
+  .themeTile.selected .lbl { color: #35f0e0; }
   input#codeInput { text-transform: uppercase; }
   .codeShow { font-size: 40px; letter-spacing: .18em; color: #35f0e0; text-shadow: 0 0 20px rgba(53,240,224,.5); margin: 16px 0; }
   .rosterList { display: flex; flex-direction: column; gap: 8px; margin: 18px 0; text-align: left; }
@@ -290,19 +308,12 @@
         <span class="desc">Reacciona r&aacute;pido, cuida el borde de la plataforma y ataca apenas puede.</span>
       </button>
 
-      <p class="sub" style="margin-top:16px">Eleg&iacute; el tipo de terreno (se repite en cada ronda):</p>
-      <select id="terrainSelect">
-        <option value="">Aleatorio (como en el resto del juego)</option>
-        <option value="arena">Arena</option>
-        <option value="puente">Puente</option>
-        <option value="torre">Torre</option>
-        <option value="escalera">Escalera</option>
-        <option value="islas">Islas</option>
-        <option value="anillo">Anillo</option>
-        <option value="crater">Cr&aacute;ter</option>
-        <option value="piramide">Pir&aacute;mide</option>
-      </select>
+      <button id="practiceNextBtn" style="width:100%; margin-top: 4px;">Siguiente</button>
+    </div>
 
+    <div class="card" id="practiceThemeCard" style="display:none">
+      <p class="sub">&iquest;Qu&eacute; mapa quer&eacute;s practicar? (se repite en cada ronda)</p>
+      <div class="themeGrid" id="themeGrid"></div>
       <button id="practiceConfirmBtn" style="width:100%; margin-top: 4px;">Empezar pr&aacute;ctica</button>
     </div>
 
@@ -756,6 +767,59 @@
   $("diffMediumBtn").addEventListener("click", function () { selectPracticeDifficulty("medium"); });
   $("diffHardBtn").addEventListener("click", function () { selectPracticeDifficulty("hard"); });
 
+  /* ---- tarjetas de tema (bioma): snapshots reales, no un <select> de texto ---- */
+  var THEME_CHOICES = [
+    { id: "", label: "Aleatorio" },
+    { id: "bosque", label: "Bosque" },
+    { id: "ruinas", label: "Ruinas" },
+    { id: "volcan", label: "Volcán" },
+    { id: "neon", label: "Neón" },
+    { id: "nieve", label: "Nieve" },
+  ];
+  var practiceBiome = "";
+  var THEME_THUMB_W = 160, THEME_THUMB_H = 90;
+
+  // Se arma UNA sola vez (no en cada visita a la pantalla): son 5 fondos estáticos, no hace
+  // falta regenerarlos cada vez que se entra a Práctica Libre.
+  function buildThemeGrid() {
+    var grid = $("themeGrid");
+    grid.innerHTML = "";
+    THEME_CHOICES.forEach(function (choice) {
+      var tile = document.createElement("div");
+      tile.className = "themeTile" + (choice.id === practiceBiome ? " selected" : "");
+
+      if (choice.id) {
+        var canvas = document.createElement("canvas");
+        canvas.width = THEME_THUMB_W; canvas.height = THEME_THUMB_H;
+        var tctx = canvas.getContext("2d");
+        // Mismo par build+draw que ya usa el fondo animado del lobby (startLobbyBackground) —
+        // acá alcanza con UN frame estático, no hace falta el loop de animación para una miniatura.
+        var bg = WorldBackground.build(choice.id, 1, THEME_THUMB_W, THEME_THUMB_H);
+        Camera.update(16);
+        WorldBackground.draw(tctx, bg, THEME_THUMB_W, THEME_THUMB_H, Camera);
+        tile.appendChild(canvas);
+      } else {
+        var ph = document.createElement("div");
+        ph.className = "placeholder";
+        ph.textContent = "🎲";
+        tile.appendChild(ph);
+      }
+
+      var lbl = document.createElement("span");
+      lbl.className = "lbl";
+      lbl.textContent = choice.label;
+      tile.appendChild(lbl);
+
+      tile.addEventListener("click", function () {
+        practiceBiome = choice.id;
+        Array.prototype.forEach.call(grid.children, function (el) { el.classList.remove("selected"); });
+        tile.classList.add("selected");
+      });
+
+      grid.appendChild(tile);
+    });
+  }
+
   function enterPractice() {
     practiceActive = true;
     practiceAiAccum = 0;
@@ -767,8 +831,7 @@
     Sim.resetToLobby();
     Sim.addPlayer(PRACTICE_ME);
     Sim.addPlayer(PRACTICE_AI);
-    var terrain = $("terrainSelect").value || null; // "" (Aleatorio) -> null, sin terreno fijo
-    Sim.startMatch(1, false, { mode: "infinite", mapArchetype: terrain });
+    Sim.startMatch(1, false, { mode: "infinite", biome: practiceBiome || null });
 
     $("room").innerHTML = "<b>PRÁCTICA LIBRE</b>";
     $("endMatchBtn").textContent = "Abandonar práctica";
@@ -789,6 +852,10 @@
     $("endMatchBtn").classList.remove("show");
     $("endMatchBtn").textContent = "Terminar partida";
     $("room").innerHTML = ROOM_HTML_DEFAULT;
+    // Explícito, no solo "mostrar choiceCard": si quedó alguna tarjeta de práctica visible de
+    // un paso anterior, sin esto se ve por encima/al lado de choiceCard en vez de en su lugar.
+    $("practiceCard").style.display = "none";
+    $("practiceThemeCard").style.display = "none";
     $("choiceCard").style.display = "block";
     startLobbyBackground();
   }
@@ -1078,17 +1145,29 @@
     $("backLink").style.display = "inline";
   });
 
-  $("practiceConfirmBtn").addEventListener("click", function () {
+  $("practiceNextBtn").addEventListener("click", function () {
     $("practiceCard").style.display = "none";
+    $("practiceThemeCard").style.display = "block";
+  });
+
+  $("practiceConfirmBtn").addEventListener("click", function () {
+    $("practiceThemeCard").style.display = "none";
     $("backLink").style.display = "none";
     enterPractice();
   });
 
-  // Un solo back link para las tres ramas (crear / unirse / ya adentro de la sala): ocultar
-  // la que no esté no molesta. Si estábamos DENTRO de una sala ya creada (roomCard visible),
-  // "volver" significa salir de verdad — avisarle al servidor, no solo cambiar de pantalla.
+  // Un solo back link para todas las ramas (crear / unirse / práctica en sus dos pasos / ya
+  // adentro de la sala): ocultar la que no esté no molesta. Desde la pantalla de tema vuelve
+  // un solo paso (a dificultad), no directo al inicio — son dos pasos de la MISMA decisión.
+  // Si estábamos DENTRO de una sala ya creada (roomCard visible), "volver" significa salir de
+  // verdad — avisarle al servidor, no solo cambiar de pantalla.
   $("backLink").addEventListener("click", function (e) {
     e.preventDefault();
+    if ($("practiceThemeCard").style.display === "block") {
+      $("practiceThemeCard").style.display = "none";
+      $("practiceCard").style.display = "block";
+      return;
+    }
     if ($("roomCard").style.display === "block") {
       Net.leave();
       myId = null;
@@ -1191,6 +1270,7 @@
 
   Net.connect();
   startLobbyBackground();
+  buildThemeGrid();
   requestAnimationFrame(frameLoop);
 })();
 </script>

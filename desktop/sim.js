@@ -52,12 +52,14 @@ var Sim = (function () {
     ],
   };
 
-  // forcedArchetype: null en todos los builds salvo Práctica Libre (build web), que la fija vía
-  // opts.mapArchetype en startMatch() para poder practicar un solo tipo de terreno sin fin.
+  // forcedArchetype: disponible pero sin uso actual (ver World.generateMap). forcedBiome es lo
+  // que Práctica Libre sí fija vía opts.biome en startMatch(), para repetir siempre el mismo
+  // fondo+música sin importarle el layout de plataformas, que sigue variando normalmente.
   var forcedArchetype = null;
+  var forcedBiome = null;
 
   function genMap(seed) {
-    return World.generateMap(seed, { SPEED: SPEED, JUMP_V: JUMP_V, GRAVITY_UP: GRAVITY_UP, GRAVITY_DOWN: GRAVITY_DOWN, W: W, H: H }, forcedArchetype);
+    return World.generateMap(seed, { SPEED: SPEED, JUMP_V: JUMP_V, GRAVITY_UP: GRAVITY_UP, GRAVITY_DOWN: GRAVITY_DOWN, W: W, H: H }, forcedArchetype, forcedBiome);
   }
 
   var colorFor = function (id) { return "#35f0e0"; };
@@ -104,13 +106,39 @@ var Sim = (function () {
   /* ---------------------------------------------------------------- lobby / round flow */
   function spawnRoundPlayers(map) {
     var plats = map.platforms;
+    var hazards = map.hazards || [];
     roster.forEach(function (id, i) {
       var p = ensurePlayer(id);
       var plat = plats[i % plats.length];
       var pad = Math.min(22, plat.w / 3);
       var lo = plat.x + pad, hi = plat.x + plat.w - pad;
       if (hi <= lo) { lo = plat.x + plat.w / 2; hi = lo; }
-      p.x = lo + Math.random() * (hi - lo);
+
+      /* No parar sobre las púas al caer. Hazards.place() (world.js) siempre las pega a UN
+         borde de la plataforma, nunca centradas, así que la franja del otro lado entero queda
+         libre — solo hay que angostar el rango de spawn a esa franja. */
+      var hz = null;
+      for (var hi2 = 0; hi2 < hazards.length; hi2++) {
+        var candidate = hazards[hi2];
+        // No alcanza con comparar solo "y": dos plataformas distintas pueden compartir altura
+        // (arena, anillo) y agarrar la púa de la OTRA. El hazard tiene que caer además dentro
+        // del rango horizontal de esta plataforma puntual.
+        if (Math.abs(candidate.y - plat.y) < 2 && candidate.x >= plat.x - 1 && candidate.x + candidate.w <= plat.x + plat.w + 1) {
+          hz = candidate;
+          break;
+        }
+      }
+      if (hz) {
+        // +PW (no solo un margen fijo): p.x es el CENTRO del cuerpo, que ocupa PW de cada
+        // lado — sin sumarlo, un x apenas pasado el borde de la púa igual dejaba el cuerpo
+        // pisándola (medía el centro contra el borde, no el borde del cuerpo contra el borde).
+        var hzLo = hz.x, hzHi = hz.x + hz.w, safety = PW + 6;
+        if (hzLo <= plat.x + 1) lo = Math.max(lo, hzHi + safety); // púas a la izquierda -> usar la derecha
+        else hi = Math.min(hi, hzLo - safety); // púas a la derecha -> usar la izquierda
+        if (hi <= lo) { lo = hi = (hzLo <= plat.x + 1) ? plat.x + plat.w - pad : plat.x + pad; }
+      }
+
+      p.x = lo + Math.random() * Math.max(0, hi - lo);
       p.y = -20 - i * 50;
       p.vx = 0; p.vy = 0; p.hp = 100; p.alive = true;
       p.attack = null; p.attackCooldown = 0;
@@ -129,7 +157,17 @@ var Sim = (function () {
        esto se salta del todo: el objetivo es practicar ESE tipo de mapa sin fin, no que se lo
        interrumpa el mapa inicial genérico cada 5 rondas. */
     var useStartMap = !forcedArchetype && (currentRound === 1 || (roundsMode === "infinite" && currentRound % 5 === 0));
-    currentMap = useStartMap ? MAP0 : genMap(1000 + currentRound * 37 + Math.floor(Math.random() * 900));
+    if (useStartMap) {
+      // MAP0 es un objeto compartido con biome:"ruinas" fijo en su definición — con un bioma
+      // forzado (Práctica Libre) no se lo puede mutar in-place (lo reutilizan todos los
+      // builds), así que se arma una copia liviana solo para pisarle biome (y el nombre, para
+      // que el cartel de ronda no diga "Ruinas" mientras suena la música de otro bioma).
+      currentMap = forcedBiome
+        ? Object.assign({}, MAP0, { biome: forcedBiome, name: MAP0.name + " · " + Biomes.get(forcedBiome).name })
+        : MAP0;
+    } else {
+      currentMap = genMap(1000 + currentRound * 37 + Math.floor(Math.random() * 900));
+    }
     eliminationOrder = [];
     spawnRoundPlayers(currentMap);
     phase = "fightIntro";
@@ -494,13 +532,14 @@ var Sim = (function () {
   /* opts es nuevo y opcional: sin él (como llaman desktop/game.html y steam/game.html, con
      solo 2 argumentos) el comportamiento es EXACTAMENTE el de siempre — modo "fixed", 1..20
      rondas clampeadas. Solo el build web pasa { mode: "infinite" }, y solo Práctica Libre
-     además pasa { mapArchetype: "torre" } (o el id que sea) para fijar el tipo de terreno. */
+     además pasa { biome: "volcan" } (o el id que sea) para fijar el fondo+música. */
   function startMatch(rounds, snail, opts) {
     opts = opts || {};
     roundsMode = opts.mode === "infinite" ? "infinite" : "fixed";
     totalRounds = roundsMode === "infinite" ? Infinity : Math.max(1, Math.min(20, rounds || 3));
     snailMode = !!snail;
     forcedArchetype = opts.mapArchetype || null;
+    forcedBiome = opts.biome || null;
     roster = Object.keys(players).map(Number);
     scores = {};
     matchStats = {};
@@ -516,6 +555,7 @@ var Sim = (function () {
     phase = "lobby";
     roundsMode = "fixed";
     forcedArchetype = null;
+    forcedBiome = null;
     players = {};
     roster = [];
     scores = {};

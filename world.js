@@ -169,16 +169,20 @@ var MapArchetypes = (function () {
     },
 
     islas: function (rng, W, H) {
-      var w = 220 + rng() * 60;
-      var y = 360 + (rng() - 0.5) * 40;
+      var w = 230 + rng() * 50;
+      var y = 370 + (rng() - 0.5) * 30;
       var plats = [
-        { x: 60 + rng() * 20, y: y, w: w, h: 24 },
-        { x: W - 60 - w - rng() * 20, y: y, w: w, h: 24 },
+        { x: 50 + rng() * 15, y: y, w: w, h: 24 },
+        { x: W - 50 - w - rng() * 15, y: y, w: w, h: 24 },
       ];
-      // two small stepping perches offset in height, no direct central bridge
-      plats.push({ x: W / 2 - 130 + (rng() - 0.5) * 30, y: y - 120 - rng() * 30, w: 110, h: 16 });
-      plats.push({ x: W / 2 + 20 + (rng() - 0.5) * 30, y: y - 200 - rng() * 30, w: 110, h: 16 });
-      return { platforms: plats, hazardCandidates: [2, 3] };
+      /* Un solo escalón central, ancho, en vez de dos escalones angostos encadenados. La
+         versión vieja (dos perches offset, "sin puente directo") obligaba a encadenar 3 saltos
+         de precisión seguidos para cruzar de lado a lado — técnicamente conectado según
+         reachable(), pero en la práctica de un combate real eso dejaba a quien cruzaba varado
+         sin poder volver. Un escalón ancho baja el cruce a 2 saltos con margen de sobra. */
+      var midW = 190 + rng() * 40;
+      plats.push({ x: (W - midW) / 2 + (rng() - 0.5) * 20, y: y - 115 - rng() * 20, w: midW, h: 18 });
+      return { platforms: plats, hazardCandidates: [2] };
     },
 
     anillo: function (rng, W, H) {
@@ -785,8 +789,12 @@ var World = (function () {
   var backgroundCache = null; // { key, bg }
 
   // forcedArchId: opcional — si viene y es un id válido, se usa ese archetype en vez de
-  // sortear uno al azar (Práctica Libre lo usa para repetir siempre el mismo tipo de terreno).
-  function generateMap(seed, consts, forcedArchId) {
+  // sortear uno al azar (queda disponible para quien lo necesite; Práctica Libre por ahora no
+  // lo usa — ver forcedBiomeId más abajo, que es lo que Práctica Libre sí fija).
+  // forcedBiomeId: opcional — mismo mecanismo pero para el bioma (fondo + música). Práctica
+  // Libre lo usa para practicar siempre con el mismo tema visual/sonoro, dejando el LAYOUT de
+  // plataformas variar normalmente entre rondas.
+  function generateMap(seed, consts, forcedArchId, forcedBiomeId) {
     var W = consts.W, H = consts.H;
     var rng = WorldBackground.mulberry32(seed);
     var reach = makeReachability(consts);
@@ -801,7 +809,7 @@ var World = (function () {
     }
     if (!reach.allConnected(built.platforms)) connectAllPlatforms(built.platforms, reach, W, H);
 
-    var biomeId = Biomes.random(rng);
+    var biomeId = (forcedBiomeId && Biomes.ids.indexOf(forcedBiomeId) >= 0) ? forcedBiomeId : Biomes.random(rng);
     var biome = Biomes.get(biomeId);
     var pool = names[archId] || ["Sector Desconocido"];
     var mapName = pool[Math.floor(rng() * pool.length)] + " · " + biome.name;
