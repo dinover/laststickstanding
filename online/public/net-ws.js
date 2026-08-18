@@ -145,13 +145,13 @@ var Net = (function () {
 
     /* mode y rounds quedan fijos para toda la vida de la sala — se deciden acá, antes de que
        exista, no dentro del lobby. Ver el comentario en server.js sobre por qué. */
-    create: function (nick, mode, rounds) {
+    create: function (nick, mode, rounds, color) {
       open();
-      send({ t: "create", nick: nick, mode: mode, rounds: rounds });
+      send({ t: "create", nick: nick, mode: mode, rounds: rounds, color: color });
     },
-    join: function (code, nick) {
+    join: function (code, nick, color) {
       open();
-      send({ t: "join", code: code, nick: nick });
+      send({ t: "join", code: code, nick: nick, color: color });
     },
 
     sendInput: function (action, down) {

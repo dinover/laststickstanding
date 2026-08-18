@@ -215,6 +215,20 @@
   button:disabled { opacity: .5; cursor: default; box-shadow: none; }
   input { width: 100%; box-sizing: border-box; margin-bottom: 14px; text-align: center; letter-spacing: .08em; }
 
+  /* Fila nombre + botón de personalización, en la tarjeta principal del lobby. */
+  .nameRow { display: flex; gap: 8px; margin-bottom: 14px; }
+  .nameRow input { margin-bottom: 0; flex: 1; min-width: 0; }
+  .nameRow button { flex: 0 0 auto; width: auto; padding: 13px 15px; font-size: 16px; line-height: 1; }
+
+  #customizePreviewWrap { display: flex; justify-content: center; margin-bottom: 6px; }
+  #customizePreview { background: #0a0c18; border-radius: 10px; border: 1px solid #2a3050; }
+  .swatchGrid { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 4px 0 16px; }
+  .swatch {
+    width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
+    border: 2px solid rgba(255,255,255,.15); box-shadow: 0 0 8px currentColor;
+  }
+  .swatch.selected { border-color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.22), 0 0 12px currentColor; }
+
   /* Tarjetas de tema (Práctica Libre): snapshot real del fondo de cada bioma, generado con las
      mismas World Background.build/draw que ya pintan el fondo del lobby — no un dropdown de
      texto. */
@@ -300,13 +314,25 @@
     <p class="sub">Modo online &mdash; servidor dedicado, todos con la misma latencia.</p>
 
     <div class="card" id="choiceCard">
-      <input id="nickInputMain" maxlength="14" placeholder="Tu nombre" />
+      <div class="nameRow">
+        <input id="nickInputMain" maxlength="14" placeholder="Tu nombre" />
+        <button type="button" class="ghost" id="customizeBtn" title="Personalizar tu stick">&#127912;</button>
+      </div>
       <div class="rolePick">
         <button id="createBtn">Crear sala</button>
         <button class="ghost" id="joinShowBtn">Unirme a una sala</button>
       </div>
       <button class="ghost" id="practiceBtn" style="width:100%; margin-top:10px;">Pr&aacute;ctica libre</button>
       <div class="err" id="mainErr"></div>
+    </div>
+
+    <div class="card" id="customizeCard" style="display:none">
+      <p class="sub">Person&aacute;lizá tu stick:</p>
+      <div id="customizePreviewWrap"><canvas id="customizePreview" width="200" height="230"></canvas></div>
+      <input id="customizeNameInput" maxlength="14" placeholder="Tu nombre" />
+      <div class="swatchGrid" id="swatchGrid"></div>
+      <button id="customizeSaveBtn" style="width:100%">Guardar</button>
+      <a class="back" id="customizeBackLink" href="#">&lsaquo; volver</a>
     </div>
 
     <div class="card" id="practiceCard" style="display:none">
@@ -422,7 +448,114 @@
   var ctx = canvas.getContext("2d");
   var PLAYER_COLORS = ["#35f0e0", "#ff2e88", "#9dff4f", "#ffc247", "#7b6cff", "#4fd2ff", "#ff7a3d", "#ff5ec4"];
 
+  /* ---------------------------------------------------------------- sombreado del stick (solo acá) */
+  /* stickman.js es un <script> clásico compartido con desktop/ y steam/ (no un módulo): una
+     function-declaration de top-level ahí se vuelve una propiedad de window, y tanto acá como
+     dentro de sim.js (/sim.js == ../desktop/sim.js) se llama a drawStickman como identificador
+     libre, resuelto en cada invocación contra ESE mismo global. Reasignar window.drawStickman
+     ACÁ intercepta también lo que dibuja Sim.draw() — sin tocar un solo byte de stickman.js ni
+     de sim.js, que desktop/steam siguen cargando tal cual, sin este archivo encima. */
+  var baseDrawStickman = window.drawStickman;
+  var shineDbg = {};
+
+  /* Canvas de trabajo aparte, SIEMPRE transparente: el sombreado usa "source-atop", que tiñe
+     cualquier píxel ya opaco dentro del recorte — no distingue "esto es el trazo del stick" de
+     "esto es el fondo del mundo". En el canvas real el fondo (cielo, plataformas) ya está pintado
+     y es 100% opaco antes de que se dibuje cada jugador, así que aplicar el degradé ahí tiñe
+     TODO el rectángulo, no solo el muñeco — el "box con iluminación en las esquinas" que se veía
+     en partida. Dibujando primero en este canvas limpio (sin fondo) el source-atop solo puede
+     agarrar los píxeles que drawStickman acaba de pintar; recién después se pega ese resultado
+     ya sombreado sobre el canvas real con drawImage. */
+  var shineCanvas = document.createElement("canvas");
+  var shineCtx = shineCanvas.getContext("2d");
+
+  window.drawStickman = function (ctx, p, color, dbg) {
+    // Snail mode ya se salta toda la "juice" (squash, shadowBlur, auras — ver stickman.js) por
+    // plata de rendimiento; el sombreado suma otro canvas + composición por jugador y cuadro,
+    // así que se lo salta también. Ídem para fantasmas de estela y el fade de la muerte: ambos
+    // llegan con ctx.globalAlpha ya bajado por el llamador (Trails.draw / drawPlayer en
+    // desktop/sim.js), y a esa opacidad el matiz no se nota — no vale la pena el costo extra.
+    if (window.SNAIL_MODE || ctx.globalAlpha < 1) return baseDrawStickman(ctx, p, color, dbg);
+
+    var info = dbg || shineDbg;
+    var w = ctx.canvas.width, h = ctx.canvas.height;
+    if (shineCanvas.width !== w || shineCanvas.height !== h) {
+      shineCanvas.width = w; shineCanvas.height = h;
+    }
+    shineCtx.setTransform(1, 0, 0, 1, 0, 0);
+    shineCtx.clearRect(0, 0, w, h);
+    // Misma transformación (cámara: shake/zoom) que tiene el canvas real en este momento, para
+    // que el resultado caiga exactamente en el mismo pixel al pegarlo de vuelta.
+    shineCtx.setTransform(ctx.getTransform());
+    var rig = baseDrawStickman(shineCtx, p, color, info);
+    drawStickShine(shineCtx, info);
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(shineCanvas, 0, 0);
+    ctx.restore();
+    return rig;
+  };
+
+  /* drawStickman pinta todo el rig con un strokeStyle fijo (un solo color de línea) — de ahí la
+     sensación "flat". En vez de tocar ese archivo compartido, se recorta al bounding box del
+     muñeco (con las coordenadas que drawStickman ya deja en `dbg`: cx/feet/headX/headY/scaleX) y
+     se pinta un degradé encima en modo "source-atop": ese modo de composición solo pinta sobre
+     píxeles YA opacos dentro del clip —el trazo recién dibujado—, nunca el fondo ni a otro
+     jugador que caiga fuera de la caja. Dos pasadas: luz arriba / sombra abajo (como si la luz
+     viniera de arriba) y un brillo lateral suave, para que lea "tubo redondeado" y no una tira
+     plana de un solo tono. */
+  function drawStickShine(ctx, dbg) {
+    if (dbg.headX == null || dbg.cx == null) return;
+    var scaleX = Math.abs(dbg.scaleX || 1);
+    // Caja bien holgada alrededor del rig: el glow (shadowBlur=6 en stickman.js) sangra unos
+    // px más allá del trazo, y ese halo también queda dentro del clip. Si el borde del clip
+    // cayera donde el halo todavía es visible, se notaría un corte recto ahí — por eso el
+    // margen extra, no solo el ancho del cuerpo.
+    var halfW = 15 * scaleX + 14;
+    var top = dbg.headY - 26;
+    var bottom = dbg.feet + 14;
+    var left = dbg.cx - halfW;
+    var width = halfW * 2;
+    var height = bottom - top;
+    if (height <= 0 || width <= 0) return;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(left, top, width, height);
+    ctx.clip();
+    ctx.globalCompositeOperation = "source-atop";
+
+    /* Los dos degradés bajan a alfa 0 justo en cada borde del clip (0 y 1), no solo "cerca" —
+       así el límite del rectángulo cae siempre en una zona 100% transparente y nunca se ve como
+       una caja. Antes ambos llegaban al borde con alfa > 0, y donde los DOS bordes coinciden
+       (las esquinas) sumaban su brillo/sombra uno sobre el otro — de ahí las esquinas
+       "iluminadas" que se veían como un marco alrededor del muñeco. */
+    var vert = ctx.createLinearGradient(0, top, 0, bottom);
+    vert.addColorStop(0, "rgba(255,255,255,0)");
+    vert.addColorStop(0.16, "rgba(255,255,255,.34)");
+    vert.addColorStop(0.38, "rgba(255,255,255,.04)");
+    vert.addColorStop(0.6, "rgba(0,0,0,0)");
+    vert.addColorStop(0.86, "rgba(0,0,0,.26)");
+    vert.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = vert;
+    ctx.fillRect(left, top, width, height);
+
+    var horiz = ctx.createLinearGradient(left, 0, left + width, 0);
+    horiz.addColorStop(0, "rgba(255,255,255,0)");
+    horiz.addColorStop(0.22, "rgba(255,255,255,.14)");
+    horiz.addColorStop(0.45, "rgba(255,255,255,0)");
+    horiz.addColorStop(0.65, "rgba(0,0,0,0)");
+    horiz.addColorStop(0.84, "rgba(0,0,0,.16)");
+    horiz.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = horiz;
+    ctx.fillRect(left, top, width, height);
+
+    ctx.restore();
+  }
+
   var names = {};
+  var colors = {}; // id -> color asignado por el servidor (ver Net.on("lobby"))
   var myId = null;
   var snailOn = false;
   var totalRoundsPick = 3; // valor elegido ANTES de crear la sala (modeCard)
@@ -432,7 +565,10 @@
   var lastMap = null; // último mapa recibido; el servidor solo lo manda cuando cambia
 
   function $(id) { return document.getElementById(id); }
-  function colorFor(id) { return PLAYER_COLORS[id % PLAYER_COLORS.length]; }
+  // El color "real" de cada jugador lo asigna el servidor (ver server.js: pickColor) y llega en
+  // cada "lobby". El fallback por índice de slot solo se usa antes de recibir ese mensaje, o en
+  // Práctica Libre, donde no hay servidor.
+  function colorFor(id) { return colors[id] || PLAYER_COLORS[id % PLAYER_COLORS.length]; }
   function nameFor(id) { return id === myId ? "Vos" : (names[id] || ("Jugador " + id)); }
 
   /* En modo online el servidor corre la simulación; acá Sim solo se usa por su lado guest
@@ -842,6 +978,7 @@
     practiceAiAccum = 0;
     myId = PRACTICE_ME;
     names = {}; names[PRACTICE_AI] = "NPC";
+    colors = {}; if (myColor) colors[PRACTICE_ME] = myColor;
     finalShown = false;
     hideScoreReveal();
 
@@ -862,6 +999,7 @@
     Sim.resetToLobby();
     myId = null;
     names = {};
+    colors = {};
     hideScoreReveal();
 
     $("wrap").classList.remove("playing");
@@ -876,6 +1014,97 @@
     $("choiceCard").style.display = "block";
     startLobbyBackground();
   }
+
+  /* ---------------------------------------------------------------- personalización del stick */
+  /* localStorage (no sessionStorage, a diferencia del token de red en net-ws.js): el nombre y el
+     color elegidos tienen que sobrevivir entre pestañas y entre sesiones, no solo mientras dura
+     una partida. */
+  var PROFILE_KEY = "lss-profile";
+  function loadProfile() {
+    try {
+      var raw = localStorage.getItem(PROFILE_KEY);
+      var p = raw ? JSON.parse(raw) : null;
+      return p && typeof p === "object" ? p : {};
+    } catch (e) { return {}; }
+  }
+  function saveProfile(p) {
+    try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch (e) { /* incógnito o storage bloqueado */ }
+  }
+
+  var profile = loadProfile();
+  // null = todavía no eligió color a propósito: el servidor le asigna uno random libre (ver
+  // pickColor en server.js). Si ya guardó uno antes, se lo mandamos y el servidor lo respeta
+  // salvo que ya esté en uso por otro jugador conectado.
+  var myColor = profile.color || null;
+  if (profile.name) $("nickInputMain").value = profile.name;
+
+  /* Muñeco de preview: un objeto "player" mínimo, quieto y en el suelo, para que drawStickman
+     (stickman.js, cargado como script global) lo dibuje con su pose de parado/idle real — la
+     misma función que usa el juego, no una copia. Solo idleT avanza cuadro a cuadro (igual que
+     sim.js: idleT += dt*0.001), que es lo que le da la respiración/balanceo del idle. */
+  var customizePreviewPlayer = {
+    x: 100, y: 190, vx: 0, vy: 0, grounded: true, facing: 1, hp: 100, alive: true,
+    attack: null, attackCooldown: 0, walkCycle: 0, idleT: Math.random() * 10, squash: 0,
+    hitStunT: 0, hitDir: 1, jumpAnticT: 0, deathFadeT: 0, power: null, burnT: 0, burnTickT: 0,
+    burnFlashT: 0, slowT: 0,
+  };
+  var customizePreviewColor = myColor || PLAYER_COLORS[0];
+  var customizeRaf = null;
+  var customizeLastT = null;
+
+  function renderSwatches() {
+    var grid = $("swatchGrid");
+    grid.innerHTML = "";
+    PLAYER_COLORS.forEach(function (c) {
+      var sw = document.createElement("div");
+      sw.className = "swatch" + (c === customizePreviewColor ? " selected" : "");
+      sw.style.color = c; sw.style.background = c;
+      sw.title = c;
+      sw.addEventListener("click", function () {
+        customizePreviewColor = c;
+        Array.prototype.forEach.call(grid.children, function (el) { el.classList.remove("selected"); });
+        sw.classList.add("selected");
+      });
+      grid.appendChild(sw);
+    });
+  }
+
+  function customizeFrame(now) {
+    var dt = customizeLastT == null ? 16.6667 : Math.min(40, now - customizeLastT);
+    customizeLastT = now;
+    customizePreviewPlayer.idleT += dt * 0.001;
+    var canvas = $("customizePreview");
+    var pctx = canvas.getContext("2d");
+    pctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawStickman(pctx, customizePreviewPlayer, customizePreviewColor);
+    customizeRaf = requestAnimationFrame(customizeFrame);
+  }
+
+  function openCustomize() {
+    $("choiceCard").style.display = "none";
+    $("customizeCard").style.display = "block";
+    $("customizeNameInput").value = $("nickInputMain").value.trim() || profile.name || "";
+    customizePreviewColor = myColor || PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
+    renderSwatches();
+    customizeLastT = null;
+    if (!customizeRaf) customizeRaf = requestAnimationFrame(customizeFrame);
+  }
+  function closeCustomize() {
+    if (customizeRaf) { cancelAnimationFrame(customizeRaf); customizeRaf = null; }
+    $("customizeCard").style.display = "none";
+    $("choiceCard").style.display = "block";
+  }
+
+  $("customizeBtn").addEventListener("click", openCustomize);
+  $("customizeBackLink").addEventListener("click", function (e) { e.preventDefault(); closeCustomize(); });
+  $("customizeSaveBtn").addEventListener("click", function () {
+    var nm = $("customizeNameInput").value.trim() || "Jugador";
+    myColor = customizePreviewColor;
+    profile = { name: nm, color: myColor };
+    saveProfile(profile);
+    $("nickInputMain").value = nm;
+    closeCustomize();
+  });
 
   /* ---------------------------------------------------------------- loop de render */
   var lastFrame = performance.now();
@@ -994,6 +1223,8 @@
     $("mainErr").textContent = "La partida anterior ya no está disponible.";
     myId = null;
     finalShown = false;
+    names = {};
+    colors = {};
     Sim.resetGuest();
     lastMap = null;
     startLobbyBackground();
@@ -1006,7 +1237,8 @@
 
   Net.on("lobby", function (msg) {
     names = {};
-    msg.players.forEach(function (p) { names[p.id] = p.name; });
+    colors = {};
+    msg.players.forEach(function (p) { names[p.id] = p.name; if (p.color) colors[p.id] = p.color; });
     renderRoster(msg.players, msg.owner);
     var owner = Net.isOwner();
     $("ownerControls").style.display = owner ? "block" : "none";
@@ -1191,6 +1423,7 @@
       finalShown = false;
       hideScoreReveal();
       names = {};
+      colors = {};
     }
     $("joinCard").style.display = "none";
     $("modeCard").style.display = "none";
@@ -1207,7 +1440,7 @@
       return;
     }
     $("joinErr").textContent = "Conectando…";
-    Net.join(code, $("nickInputMain").value.trim() || "Jugador");
+    Net.join(code, $("nickInputMain").value.trim() || "Jugador", myColor);
   });
 
   /* ---- selección de modo (antes de crear la sala) ---- */
@@ -1232,7 +1465,7 @@
 
   $("modeConfirmBtn").addEventListener("click", function () {
     $("modeErr").textContent = "";
-    Net.create($("nickInputMain").value.trim() || "Anfitrión", selectedMode, totalRoundsPick);
+    Net.create($("nickInputMain").value.trim() || "Anfitrión", selectedMode, totalRoundsPick, myColor);
   });
 
   // Rondas dentro de la sala (modo "rounds"): cada click pide el cambio al servidor; el

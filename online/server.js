@@ -46,6 +46,12 @@ const REJOIN_GRACE_MS = 30000;
 /* Mismo alfabeto que net.js: sin 0/O/1/I, para poder dictar el código en voz alta. */
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
+/* Misma paleta que PLAYER_COLORS en online/public/index.html (8 = MAX_PLAYERS). Duplicada acá
+   a propósito: el color que elige cada jugador es cosmético, pero se valida server-side como
+   cualquier otro input — no hay que confiar en que el cliente mande un hex válido ni en que
+   respete el "no repetido" por su cuenta. */
+const PLAYER_COLORS = ["#35f0e0", "#ff2e88", "#9dff4f", "#ffc247", "#7b6cff", "#4fd2ff", "#ff7a3d", "#ff5ec4"];
+
 /* ------------------------------------------------------------------ archivos estáticos */
 const STATIC = {
   "/": ["public/index.html", "text/html; charset=utf-8"],
@@ -328,6 +334,7 @@ function lobbyState(room) {
     players: [...room.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
+      color: p.color,
       connected: p.connected,
     })),
   };
@@ -347,7 +354,36 @@ function cleanNick(raw) {
   return s.slice(0, 14) || "Jugador";
 }
 
-function joinRoom(room, ws, nick) {
+/* Devuelve el color de PLAYER_COLORS que matchea (case-insensitive), o null si no está en la
+   paleta — cubre tanto "no eligió ninguno" (undefined/vacío) como cualquier otra cosa. */
+function cleanColor(raw) {
+  const c = String(raw == null ? "" : raw).trim().toLowerCase();
+  const i = PLAYER_COLORS.indexOf(c);
+  return i === -1 ? null : PLAYER_COLORS[i];
+}
+
+/* Colores ya tomados en la sala. Se cuentan TODOS los jugadores presentes, no solo los
+   conectados: si se excluyera a los "ausentes" (ver REJOIN_GRACE_MS), alguien podría reclamar
+   el color de otro que se cayó del wifi y va a volver en cualquier momento, y quedarían dos
+   jugadores con el mismo color a la vez apenas reconecte. */
+function usedColors(room) {
+  const used = {};
+  for (const p of room.players.values()) if (p.color) used[p.color] = true;
+  return used;
+}
+
+/* Si pidió un color válido y libre, ese. Si no (no eligió, pidió uno inválido, o ya lo tiene
+   otro jugador de la sala), uno al azar entre los que queden libres. */
+function pickColor(room, wantedRaw) {
+  const wanted = cleanColor(wantedRaw);
+  const used = usedColors(room);
+  if (wanted && !used[wanted]) return wanted;
+  const free = PLAYER_COLORS.filter((c) => !used[c]);
+  if (free.length) return free[Math.floor(Math.random() * free.length)];
+  return PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)]; // no debería pasar: MAX_PLAYERS === PLAYER_COLORS.length
+}
+
+function joinRoom(room, ws, nick, colorRaw) {
   if (room.host.sim.getPhase() !== "lobby") return { err: "Esa partida ya empezó." };
   const id = freeSlot(room);
   if (id === null) return { err: "La sala está llena (8 jugadores)." };
@@ -358,6 +394,7 @@ function joinRoom(room, ws, nick) {
   const player = {
     id,
     name: cleanNick(nick),
+    color: pickColor(room, colorRaw),
     ws,
     connected: true,
     token: crypto.randomUUID(),
@@ -510,7 +547,7 @@ function handleMessage(ws, raw) {
        mismo paso donde antes el anfitrión elegía las rondas dentro del lobby. */
     const room = createRoom(msg.mode, msg.rounds);
     if (!room) return send(ws, { t: "err", msg: "No hay códigos de sala libres, probá de nuevo." });
-    const res = joinRoom(room, ws, msg.nick);
+    const res = joinRoom(room, ws, msg.nick, msg.color);
     if (res.err) {
       destroyRoom(room);
       send(ws, { t: "err", msg: res.err });
@@ -535,7 +572,7 @@ function handleMessage(ws, raw) {
     const code = String(msg.code || "").toUpperCase().trim();
     const room = rooms.get(code);
     if (!room) return send(ws, { t: "err", msg: "No existe una sala con ese código." });
-    const res = joinRoom(room, ws, msg.nick);
+    const res = joinRoom(room, ws, msg.nick, msg.color);
     if (res.err) send(ws, { t: "err", msg: res.err });
     return;
   }
