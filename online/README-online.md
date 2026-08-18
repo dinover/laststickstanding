@@ -1,13 +1,14 @@
-# Last Stick Standing — build online (servidor autoritativo en Oracle Cloud)
+# Last Stick Standing — build online (servidor autoritativo en Render)
 
-Versión web con **servidor dedicado**: el juego se simula en una VM del Always Free tier de
-Oracle Cloud (región São Paulo) y los jugadores solo entran con un link. Nadie instala nada y
-nadie hostea. Ver [`oracle/README-oracle.md`](../oracle/README-oracle.md) para el deploy completo
-(creación de la VM, firewall, TLS).
+Versión web con **servidor dedicado**: el juego se simula en Render y los jugadores solo entran
+con un link. Nadie instala nada y nadie hostea.
 
-Historial: corrió antes en Fly.io (`gru`, misma latencia que Oracle ahora) y brevemente en Render
-(free tier, pero sin región en Sudamérica — ver el comentario que queda más abajo en la sección
-vieja de deploy, dejado como referencia).
+Historial: corrió antes en Fly.io (`gru`, São Paulo, mejor latencia) y se probó migrar a una VM
+propia en Oracle Cloud Always Free (`oracle/README-oracle.md`), que hubiera dado la misma latencia
+que Fly gratis — quedó pausado por la complejidad de mantener una VM real (RAM real de ~500MB pese
+a que la consola decía 1GB, ida y vuelta con OOM-kills al instalar Docker, firewall en dos capas,
+etc.) a cambio de simplicidad. Los archivos de esa migración (`docker-compose.yml`, `Caddyfile`,
+`oracle/`) quedan en el repo por si se retoma; no se usan mientras el server viva en Render.
 
 Es la tercera forma de jugar online, al lado de las que ya existen:
 
@@ -55,7 +56,7 @@ npm start
 Abrí `http://localhost:8080` en dos pestañas: en una "Crear sala", en la otra "Unirme" con ese
 código. Andá a `http://localhost:8080/health` para ver salas y jugadores conectados.
 
-## Deploy en Render (histórico — se migró a Oracle Cloud, ver arriba)
+## Deploy en Render (actual)
 
 `render.yaml` y `Dockerfile` viven en la **raíz del repo** (no acá), porque el servidor necesita
 `stickman.js`, `fx.js`, `world.js` y `desktop/sim.js`, que están un nivel más arriba. Render lee

@@ -2,7 +2,7 @@
   "name": "last-stick-standing-online",
   "version": "1.0.0",
   "private": true,
-  "description": "Servidor autoritativo de Last Stick Standing (Oracle Cloud, region sa-saopaulo-1)",
+  "description": "Servidor autoritativo de Last Stick Standing (Render)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
