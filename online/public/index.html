@@ -612,23 +612,48 @@
 
     var cfg = PRACTICE_DIFFS[practiceDifficulty];
     var dx = me.x - ai.x, absDx = Math.abs(dx);
+    var dy = me.y - ai.y; // positivo: el rival está más abajo (el eje Y crece hacia el piso)
+    var descending = dy > 40;
     var wantLeft = false, wantRight = false;
-    if (absDx > cfg.chaseSlack) { wantRight = dx > 0; wantLeft = dx < 0; }
 
-    var plat = findPlatformUnder(ai);
-    if (plat) {
-      if (wantLeft && ai.x - plat.x < cfg.edgeMargin) wantLeft = false;
-      if (wantRight && (plat.x + plat.w) - ai.x < cfg.edgeMargin) wantRight = false;
+    if (descending) {
+      var platHere = findPlatformUnder(ai);
+      if (platHere) {
+        /* Mientras seguimos parados en una plataforma más alta, ir al borde MÁS CERCANO de
+           ESTA plataforma — no perseguir el x del rival. Perseguirlo acá fue el primer intento
+           y falla justo cuando el rival está más o menos centrado debajo: la IA camina hacia su
+           x, "llega", pero sigue arriba sin poder pegar, así que no tiene ningún motivo para
+           seguir cruzando el resto de la plataforma — y si el rival está apenas para el otro
+           lado del centro, `dx` cambia de signo a mitad de camino y la hace retroceder, dejándola
+           rebotando en el mismo lugar para siempre. El borde de la propia plataforma, en cambio,
+           no se mueve: la dirección elegida no se revierte sola. */
+        var distLeft = ai.x - platHere.x, distRight = (platHere.x + platHere.w) - ai.x;
+        if (distLeft < distRight) wantLeft = true; else wantRight = true;
+      } else if (absDx > 2) {
+        // Ya nos tiramos y estamos cayendo: ahí sí tiene sentido ajustar hacia el rival en el aire.
+        wantRight = dx > 0; wantLeft = dx < 0;
+      }
+    } else if (absDx > cfg.chaseSlack) {
+      wantRight = dx > 0; wantLeft = dx < 0;
+      var plat = findPlatformUnder(ai);
+      if (plat) {
+        if (wantLeft && ai.x - plat.x < cfg.edgeMargin) wantLeft = false;
+        if (wantRight && (plat.x + plat.w) - ai.x < cfg.edgeMargin) wantRight = false;
+      }
     }
     Sim.handleInput(PRACTICE_AI, "left", wantLeft);
     Sim.handleInput(PRACTICE_AI, "right", wantRight);
 
-    if (ai.grounded && (me.y < ai.y - 40 || Math.random() < cfg.jumpChance)) {
+    if (ai.grounded && !descending && (dy < -40 || Math.random() < cfg.jumpChance)) {
       Sim.handleInput(PRACTICE_AI, "jump", true);
     }
 
     var attacks = Sim.getAttacks();
-    if (ai.attackCooldown <= 0 && absDx < attacks.kick.reach && Math.random() < cfg.attackChance) {
+    // Mismo margen vertical que usa Sim para decidir si un golpe conecta (ver stepPlayer:
+    // "dy < 60" en desktop/sim.js) — sin este chequeo la IA atacaba aunque el rival estuviera en
+    // otra plataforma, fuera de alcance vertical, y quedaba tirando golpes al aire sin parar.
+    var verticalOk = Math.abs(dy) < 60;
+    if (verticalOk && ai.attackCooldown <= 0 && absDx < attacks.kick.reach && Math.random() < cfg.attackChance) {
       Sim.handleInput(PRACTICE_AI, absDx <= attacks.punch.reach ? "punch" : "kick", true);
     }
   }
