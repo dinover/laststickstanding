@@ -38,6 +38,19 @@ var Sim = (function () {
   };
 
   var ORB_SPAWN_MS = 10000, ORB_POWER_MS = 8000, ORB_PICKUP_R = 28;
+  /* Rey de la Colina: el círculo tarda HILL_APPEAR_DELAY_MS en aparecer por primera vez, queda
+     activo HILL_ACTIVE_MS y al vencer salta a otra plataforma sin pausa entre medio. Cada
+     milisegundo parado adentro suma hacia HILL_TARGET_MS (30 s de acumulado total, no seguido);
+     HILL_TARGET_SCORE es el puntaje que da ese acumulado completo — al llegar ahí termina la
+     partida. */
+  var HILL_APPEAR_DELAY_MS = 5000, HILL_ACTIVE_MS = 15000, HILL_RADIUS = 95;
+  var HILL_TARGET_MS = 30000, HILL_TARGET_SCORE = 100;
+
+  /* Rey del Orbe: partida a reloj (2 min), sin objetivo de puntos — gana quien acumuló más
+     tiempo total con un power activo (p.power truthy, cualquier tipo) cuando se acaba el
+     tiempo. Reusa el sistema de orbes que ya existe (spawnOrb/updateOrbs); acá solo se suma el
+     tiempo sostenido. */
+  var ORBKING_MATCH_MS = 120000;
   var BURN_MS = 3000, BURN_TICK_MS = 500, BURN_DMG = 2;
   var SLOW_MS = 2500, SLOW_MULT = 0.5;
   var ARMOR_MULT = 0.5;
@@ -90,7 +103,17 @@ var Sim = (function () {
      único que usan los builds de escritorio y Steam. "infinite" es exclusivo del build web —
      ver online/server.js — y solo se activa pasando opts.mode a startMatch(). */
   var roundsMode = "fixed"; // "fixed" | "infinite"
+  /* "normal" reproduce el juego de siempre (eliminación decide la ronda). "koth" y "orbking"
+     son exclusivos del build web — ver online/server.js — y comparten que eliminate() reaparece
+     al jugador en vez de sacarlo de la ronda (ver noElimination()/su rama al principio de la
+     función): en ninguno de los dos gana quien sobrevive, así que checkRoundEnd() nunca corre
+     para ellos. koth suma puntos por updateHill(); orbking por updateOrbHold() contra un reloj
+     fijo (ver ORBKING_MATCH_MS). */
+  var gameMode = "normal"; // "normal" | "koth" | "orbking"
+  function noElimination() { return gameMode === "koth" || gameMode === "orbking"; }
   var orb = null, orbTimer = ORB_SPAWN_MS;
+  var hill = null, hillTimer = 0, hillLastPlatformIdx = -1;
+  var orbkingTimer = 0;
 
   function newPlayer(id) {
     return {
@@ -103,48 +126,52 @@ var Sim = (function () {
       walkCycle: 0, idleT: Math.random() * 10, squash: 0,
       hitStunT: 0, hitDir: 1, jumpAnticT: 0, deathFadeT: 0,
       power: null, burnT: 0, burnTickT: 0, burnFlashT: 0, slowT: 0,
-      doubleJumped: false,
+      doubleJumped: false, hillMs: 0, orbMs: 0,
     };
   }
 
   function ensurePlayer(id) { if (!players[id]) players[id] = newPlayer(id); return players[id]; }
 
   /* ---------------------------------------------------------------- lobby / round flow */
+  /* x seguro para caer sobre `plat` sin quedar parado en una púa. Hazards.place() (world.js)
+     siempre las pega a UN borde de la plataforma, nunca centradas, así que la franja del otro
+     lado entero queda libre — solo hay que angostar el rango a esa franja. Compartido entre el
+     spawn de inicio de ronda y el respawn de Rey de la Colina. */
+  function computeSpawnX(plat, hazards) {
+    var pad = Math.min(22, plat.w / 3);
+    var lo = plat.x + pad, hi = plat.x + plat.w - pad;
+    if (hi <= lo) { lo = plat.x + plat.w / 2; hi = lo; }
+
+    var hz = null;
+    for (var hi2 = 0; hi2 < hazards.length; hi2++) {
+      var candidate = hazards[hi2];
+      // No alcanza con comparar solo "y": dos plataformas distintas pueden compartir altura
+      // (arena, anillo) y agarrar la púa de la OTRA. El hazard tiene que caer además dentro
+      // del rango horizontal de esta plataforma puntual.
+      if (Math.abs(candidate.y - plat.y) < 2 && candidate.x >= plat.x - 1 && candidate.x + candidate.w <= plat.x + plat.w + 1) {
+        hz = candidate;
+        break;
+      }
+    }
+    if (hz) {
+      // +PW (no solo un margen fijo): p.x es el CENTRO del cuerpo, que ocupa PW de cada
+      // lado — sin sumarlo, un x apenas pasado el borde de la púa igual dejaba el cuerpo
+      // pisándola (medía el centro contra el borde, no el borde del cuerpo contra el borde).
+      var hzLo = hz.x, hzHi = hz.x + hz.w, safety = PW + 6;
+      if (hzLo <= plat.x + 1) lo = Math.max(lo, hzHi + safety); // púas a la izquierda -> usar la derecha
+      else hi = Math.min(hi, hzLo - safety); // púas a la derecha -> usar la izquierda
+      if (hi <= lo) { lo = hi = (hzLo <= plat.x + 1) ? plat.x + plat.w - pad : plat.x + pad; }
+    }
+    return lo + Math.random() * Math.max(0, hi - lo);
+  }
+
   function spawnRoundPlayers(map) {
     var plats = map.platforms;
     var hazards = map.hazards || [];
     roster.forEach(function (id, i) {
       var p = ensurePlayer(id);
       var plat = plats[i % plats.length];
-      var pad = Math.min(22, plat.w / 3);
-      var lo = plat.x + pad, hi = plat.x + plat.w - pad;
-      if (hi <= lo) { lo = plat.x + plat.w / 2; hi = lo; }
-
-      /* No parar sobre las púas al caer. Hazards.place() (world.js) siempre las pega a UN
-         borde de la plataforma, nunca centradas, así que la franja del otro lado entero queda
-         libre — solo hay que angostar el rango de spawn a esa franja. */
-      var hz = null;
-      for (var hi2 = 0; hi2 < hazards.length; hi2++) {
-        var candidate = hazards[hi2];
-        // No alcanza con comparar solo "y": dos plataformas distintas pueden compartir altura
-        // (arena, anillo) y agarrar la púa de la OTRA. El hazard tiene que caer además dentro
-        // del rango horizontal de esta plataforma puntual.
-        if (Math.abs(candidate.y - plat.y) < 2 && candidate.x >= plat.x - 1 && candidate.x + candidate.w <= plat.x + plat.w + 1) {
-          hz = candidate;
-          break;
-        }
-      }
-      if (hz) {
-        // +PW (no solo un margen fijo): p.x es el CENTRO del cuerpo, que ocupa PW de cada
-        // lado — sin sumarlo, un x apenas pasado el borde de la púa igual dejaba el cuerpo
-        // pisándola (medía el centro contra el borde, no el borde del cuerpo contra el borde).
-        var hzLo = hz.x, hzHi = hz.x + hz.w, safety = PW + 6;
-        if (hzLo <= plat.x + 1) lo = Math.max(lo, hzHi + safety); // púas a la izquierda -> usar la derecha
-        else hi = Math.min(hi, hzLo - safety); // púas a la derecha -> usar la izquierda
-        if (hi <= lo) { lo = hi = (hzLo <= plat.x + 1) ? plat.x + plat.w - pad : plat.x + pad; }
-      }
-
-      p.x = lo + Math.random() * Math.max(0, hi - lo);
+      p.x = computeSpawnX(plat, hazards);
       p.y = -20 - i * 50;
       p.vx = 0; p.vy = 0; p.hp = 100; p.alive = true;
       p.attack = null; p.attackCooldown = 0;
@@ -162,8 +189,11 @@ var Sim = (function () {
        El puntaje NUNCA se resetea acá — sigue acumulando desde la ronda 1 hasta que el
        anfitrión corta la partida con forceEndMatch(). Con un terreno fijado (Práctica Libre)
        esto se salta del todo: el objetivo es practicar ESE tipo de mapa sin fin, no que se lo
-       interrumpa el mapa inicial genérico cada 5 rondas. */
-    var useStartMap = !forcedArchetype && (currentRound === 1 || (roundsMode === "infinite" && currentRound % 5 === 0));
+       interrumpa el mapa inicial genérico cada 5 rondas. Colina/Orbe (noElimination()) tampoco
+       usan el mapa inicial en su única ronda: no son "una serie de rondas" que empieza por un
+       mapa conocido, son una partida entera — les toca un mapa procedural como a cualquier otra
+       ronda posterior. */
+    var useStartMap = !forcedArchetype && !noElimination() && (currentRound === 1 || (roundsMode === "infinite" && currentRound % 5 === 0));
     if (useStartMap) {
       // MAP0 es un objeto compartido con biome:"ruinas" fijo en su definición — con un bioma
       // forzado (Práctica Libre) no se lo puede mutar in-place (lo reutilizan todos los
@@ -194,11 +224,23 @@ var Sim = (function () {
     endMatch();
   }
 
+  /* Reaparece a un jugador en los modos sin eliminación: mismo tratamiento que el spawn de
+     inicio de ronda (cae desde arriba a una plataforma al azar, esquivando púas), pero sin
+     tocar hillMs/orbMs ni scores — esos son el marcador de la partida y tienen que sobrevivir
+     al respawn. */
+  function respawnPlayer(p) {
+    var plats = currentMap.platforms;
+    var plat = plats[Math.floor(Math.random() * plats.length)];
+    p.x = computeSpawnX(plat, currentMap.hazards || []);
+    p.y = -20 - Math.random() * 60;
+    p.vx = 0; p.vy = 0; p.kbx = 0; p.hp = 100;
+    p.attack = null; p.attackCooldown = 0;
+    p.power = null; p.burnT = 0; p.burnTickT = 0; p.burnFlashT = 0; p.slowT = 0;
+    p.doubleJumped = false; p.hitStunT = 0; p.deathFadeT = 0;
+  }
+
   function eliminate(p) {
     if (!p.alive) return;
-    p.alive = false;
-    p.deathFadeT = 420;
-    eliminationOrder.push(p.id);
     if (matchStats[p.id]) matchStats[p.id].falls++;
     HitStop.trigger(55);
     Camera.addTrauma(0.85);
@@ -206,6 +248,18 @@ var Sim = (function () {
     ScreenFX.flash(0.5);
     Particles.eliminationBurst(p.x, p.y - 24, colorFor(p.id));
     AudioManager.on.ko();
+
+    /* Rey de la Colina y Rey del Orbe no eliminan a nadie: caerse o llegar a 0 hp solo hace que
+       reaparezcas. La partida la gana el puntaje (círculo o tiempo con power), no la
+       supervivencia — así que acá se corta antes de tocar alive/eliminationOrder/checkRoundEnd. */
+    if (noElimination()) {
+      respawnPlayer(p);
+      return;
+    }
+
+    p.alive = false;
+    p.deathFadeT = 420;
+    eliminationOrder.push(p.id);
     var aliveN = roster.filter(function (id) { return players[id] && players[id].alive; }).length;
     if (aliveN === 2) AudioManager.on.clutch();
     checkRoundEnd();
@@ -232,6 +286,52 @@ var Sim = (function () {
     var winner = ranked[0];
     onPhaseChange({ t: "final", ranked: ranked, winner: winner });
     if (winner !== undefined) AudioManager.on.victory(); else AudioManager.on.gameOver();
+  }
+
+  /* ---------------------------------------------------------------- rey de la colina */
+  /* Nunca repite la plataforma anterior (si hay más de una para elegir), para que el círculo
+     no vuelva a caer en el mismo lugar dos veces seguidas. y - 30: mismo offset que spawnOrb,
+     deja el centro a la altura del torso de alguien parado ahí. */
+  function pickHillSpot() {
+    var plats = currentMap.platforms;
+    if (!plats.length) return null;
+    var idx = Math.floor(Math.random() * plats.length);
+    if (plats.length > 1 && idx === hillLastPlatformIdx) idx = (idx + 1) % plats.length;
+    hillLastPlatformIdx = idx;
+    var pl = plats[idx];
+    return { x: pl.x + pl.w / 2, y: pl.y - 30, r: HILL_RADIUS };
+  }
+
+  function updateHill(dt) {
+    if (phase !== "fight") return;
+    hillTimer -= dt;
+    if (hillTimer <= 0) { hill = pickHillSpot(); hillTimer = HILL_ACTIVE_MS; }
+    if (!hill) return;
+
+    for (var i = 0; i < roster.length; i++) {
+      var p = players[roster[i]];
+      if (!p || !p.alive) continue;
+      var dx = p.x - hill.x, dy = (p.y - 20) - hill.y;
+      if (dx * dx + dy * dy > hill.r * hill.r) continue;
+      p.hillMs += dt;
+      var newScore = Math.min(HILL_TARGET_SCORE, Math.floor(p.hillMs * (HILL_TARGET_SCORE / HILL_TARGET_MS)));
+      if (newScore > (scores[p.id] || 0)) scores[p.id] = newScore;
+      if (scores[p.id] >= HILL_TARGET_SCORE) { endMatch(); return; }
+    }
+  }
+
+  function drawHill(ctx) {
+    if (!hill) return;
+    ctx.save();
+    ctx.fillStyle = "rgba(255,194,71,.10)";
+    ctx.strokeStyle = "rgba(255,194,71,.9)";
+    ctx.lineWidth = 3;
+    if (!snailMode) { ctx.shadowColor = "rgba(255,194,71,.7)"; ctx.shadowBlur = 16; }
+    ctx.beginPath();
+    ctx.arc(hill.x, hill.y, hill.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   }
 
   /* ---------------------------------------------------------------- power orbs */
@@ -277,6 +377,35 @@ var Sim = (function () {
     if (!snailMode) { ctx.shadowColor = color; ctx.shadowBlur = 14; }
     ctx.beginPath(); ctx.arc(orb.x, y, 10, 0, Math.PI * 2); ctx.fill();
     if (!snailMode) ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  /* ---------------------------------------------------------------- rey del orbe */
+  /* Cuenta, para cada jugador vivo, cuánto tiempo lleva con un power activo (cualquier tipo —
+     p.power lo pone updateOrbs()/pickup, y stepPlayer ya lo va apagando solo al vencer su
+     duración). Puntaje = segundos enteros acumulados, sin tope: gana quien más sume cuando se
+     acaba orbkingTimer. */
+  function updateOrbHold(dt) {
+    if (phase !== "fight") return;
+    orbkingTimer -= dt;
+    for (var i = 0; i < roster.length; i++) {
+      var p = players[roster[i]];
+      if (!p || !p.alive || !p.power) continue;
+      p.orbMs += dt;
+      scores[p.id] = Math.floor(p.orbMs / 1000);
+    }
+    if (orbkingTimer <= 0) endMatch();
+  }
+
+  function drawMatchClock(ctx) {
+    if (phase !== "fight" && phase !== "fightIntro") return;
+    var totalSec = Math.max(0, Math.ceil(orbkingTimer / 1000));
+    var mm = Math.floor(totalSec / 60), ss = totalSec % 60;
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,.85)";
+    ctx.font = "bold 22px Chakra Petch, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(mm + ":" + (ss < 10 ? "0" : "") + ss, W / 2, 34);
     ctx.restore();
   }
 
@@ -511,6 +640,17 @@ var Sim = (function () {
       ctx.textAlign = "center";
       ctx.fillText(nameFor(p.id), p.x, headY - 30);
     }
+
+    /* Contador de puntos de Rey de la Colina / Rey del Orbe, arriba del nombre. Sin gate de
+       snailMode: en estos modos es el marcador de la partida, no un adorno, así que se ve
+       incluso en PCs lentas. */
+    if (gameMode === "koth" || gameMode === "orbking") {
+      ctx.fillStyle = gameMode === "koth" ? "rgba(255,194,71,.95)" : "rgba(157,255,79,.95)";
+      ctx.font = "bold 11px Chakra Petch, sans-serif";
+      ctx.textAlign = "center";
+      var txt = gameMode === "koth" ? (scores[p.id] || 0) + " / " + HILL_TARGET_SCORE : (scores[p.id] || 0) + "s";
+      ctx.fillText(txt, p.x, headY - 42);
+    }
   }
 
   /* ================================================================== public API (host) */
@@ -553,14 +693,21 @@ var Sim = (function () {
 
   /* opts es nuevo y opcional: sin él (como llaman desktop/game.html y steam/game.html, con
      solo 2 argumentos) el comportamiento es EXACTAMENTE el de siempre — modo "fixed", 1..20
-     rondas clampeadas. Solo el build web pasa { mode: "infinite" }, y solo Práctica Libre
-     además pasa { biome: "volcan" } (o el id que sea) para fijar el fondo+música. */
+     rondas clampeadas. Solo el build web pasa { mode: "infinite" } o { mode: "koth" }, y solo
+     Práctica Libre además pasa { biome: "volcan" } (o el id que sea) para fijar el fondo+música.
+     Rey de la Colina y Rey del Orbe son una sola ronda que nunca termina por eliminación (ver
+     eliminate()/noElimination()). Colina usa el archetype "colina" de world.js (mucho más
+     terreno que los demás) salvo que Práctica Libre ya haya forzado uno propio; Orbe juega en
+     mapas normales (no necesita más terreno, el reloj de 2 min ya limita la partida). Los dos
+     arrancan con el marcador en 0 como cualquier otro modo — acá scores[id] son puntos del
+     círculo o segundos con power, no puntaje de ronda. */
   function startMatch(rounds, snail, opts) {
     opts = opts || {};
+    gameMode = opts.mode === "koth" ? "koth" : opts.mode === "orbking" ? "orbking" : "normal";
     roundsMode = opts.mode === "infinite" ? "infinite" : "fixed";
-    totalRounds = roundsMode === "infinite" ? Infinity : Math.max(1, Math.min(20, rounds || 3));
+    totalRounds = noElimination() ? 1 : (roundsMode === "infinite" ? Infinity : Math.max(1, Math.min(20, rounds || 3)));
     snailMode = !!snail;
-    forcedArchetype = opts.mapArchetype || null;
+    forcedArchetype = opts.mapArchetype || (gameMode === "koth" ? "colina" : null);
     forcedBiome = opts.biome || null;
     roster = Object.keys(players).map(Number);
     scores = {};
@@ -568,7 +715,13 @@ var Sim = (function () {
     roster.forEach(function (id) {
       scores[id] = 0;
       matchStats[id] = { kicks: 0, punches: 0, falls: 0, hitsLanded: 0, hitsTaken: 0 };
+      var p = players[id];
+      if (p) { p.hillMs = 0; p.orbMs = 0; }
     });
+    hill = null;
+    hillTimer = 0;
+    hillLastPlatformIdx = -1;
+    orbkingTimer = 0;
     currentRound = 0;
     nextRound();
   }
@@ -576,6 +729,7 @@ var Sim = (function () {
   function resetToLobby() {
     phase = "lobby";
     roundsMode = "fixed";
+    gameMode = "normal";
     forcedArchetype = null;
     forcedBiome = null;
     players = {};
@@ -585,6 +739,10 @@ var Sim = (function () {
     currentMap = MAP0;
     orb = null;
     orbTimer = ORB_SPAWN_MS;
+    hill = null;
+    hillTimer = 0;
+    hillLastPlatformIdx = -1;
+    orbkingTimer = 0;
     AudioManager.on.toLobby();
   }
 
@@ -594,10 +752,17 @@ var Sim = (function () {
     for (var si = 0; si < idsToStep.length; si++) stepPlayer(players[idsToStep[si]], dt, damageEnabled);
     resolvePlayerCollisions(idsToStep);
     updateOrbs(dt);
+    if (gameMode === "koth") updateHill(dt);
+    else if (gameMode === "orbking") updateOrbHold(dt);
 
     if (phase === "fightIntro") {
       phaseTimer -= dt;
-      if (phaseTimer <= 0) { phase = "fight"; orbTimer = ORB_SPAWN_MS; Camera.zoomImpulse(0.04); AudioManager.on.fightBegin(); onPhaseChange({ t: "fight" }); }
+      if (phaseTimer <= 0) {
+        phase = "fight"; orbTimer = ORB_SPAWN_MS;
+        if (gameMode === "koth") { hill = null; hillTimer = HILL_APPEAR_DELAY_MS; }
+        else if (gameMode === "orbking") { orbkingTimer = ORBKING_MATCH_MS; }
+        Camera.zoomImpulse(0.04); AudioManager.on.fightBegin(); onPhaseChange({ t: "fight" });
+      }
     } else if (phase === "roundEnd") {
       phaseTimer -= dt;
       if (phaseTimer <= 0) nextRound();
@@ -612,10 +777,12 @@ var Sim = (function () {
     Camera.begin(ctx, W, H);
     drawMap(ctx, now, dt);
     drawOrb(ctx);
+    if (gameMode === "koth") drawHill(ctx);
     var ids = phase === "lobby" ? Object.keys(players).map(Number) : roster;
     for (var i = 0; i < ids.length; i++) drawPlayer(ctx, players[ids[i]]);
     Particles.draw(ctx);
     Camera.end(ctx);
+    if (gameMode === "orbking") drawMatchClock(ctx); // relojito fijo en pantalla, no shakea con la cámara
     ScreenFX.drawVignette(ctx, W, H);
     ScreenFX.draw(ctx, W, H);
   }
@@ -655,7 +822,7 @@ var Sim = (function () {
     return {
       phase: phase, round: currentRound, totalRounds: totalRounds,
       map: cleanMapForNetwork(currentMap), roster: roster, scores: scores, players: pl,
-      orb: orb, snail: snailMode,
+      orb: orb, snail: snailMode, gameMode: gameMode, hill: hill, orbkingTimer: orbkingTimer,
     };
   }
 
@@ -694,6 +861,8 @@ var Sim = (function () {
     phase = s.phase; currentRound = s.round; totalRounds = s.totalRounds;
     currentMap = s.map; roster = s.roster; scores = s.scores;
     orb = s.orb; snailMode = !!s.snail;
+    gameMode = s.gameMode || "normal"; hill = s.hill || null;
+    orbkingTimer = s.orbkingTimer || 0;
 
     var span = guestPrevSnap ? (guestCurSnap.t - guestPrevSnap.t) : 0;
     var t = span > 0 ? clamp((nowT - guestCurSnap.t) / span, 0, 1.4) : 1;

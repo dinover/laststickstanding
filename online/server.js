@@ -120,13 +120,19 @@ function freeCode() {
 }
 
 /* "rounds" reproduce el único modo que existía: el anfitrión elige cuántas rondas. "infinite"
-   es nuevo: se juega ronda a ronda sin límite, con el puntaje acumulando desde la ronda 1;
-   cada 5 rondas vuelve al mapa inicial (ver nextRound() en desktop/sim.js). "Historia" (modo
-   contra IA) todavía no existe — el cliente ni lo ofrece — así que cualquier valor que no sea
-   "infinite" cae en "rounds" por default, no solo por si alguien manda basura sino porque es
-   el modo que ya estaba andando en producción. */
+   se juega ronda a ronda sin límite, con el puntaje acumulando desde la ronda 1; cada 5 rondas
+   vuelve al mapa inicial (ver nextRound() en desktop/sim.js). "koth" es Rey de la Colina: una
+   sola ronda sin eliminación, la gana quien llegue primero a 100 puntos de círculo (ver
+   updateHill() en desktop/sim.js). "orbking" es Rey del Orbe: partida a reloj de 2 minutos,
+   también sin eliminación, gana quien más tiempo sostuvo un power activo (ver updateOrbHold()).
+   "Historia" (modo contra IA) todavía no existe — el cliente ni lo ofrece — así que cualquier
+   valor que no sea "infinite"/"koth"/"orbking" cae en "rounds" por default, no solo por si
+   alguien manda basura sino porque es el modo que ya estaba andando en producción. */
 function normalizeMode(raw) {
-  return raw === "infinite" ? "infinite" : "rounds";
+  if (raw === "infinite") return "infinite";
+  if (raw === "koth") return "koth";
+  if (raw === "orbking") return "orbking";
+  return "rounds";
 }
 
 function createRoom(mode, rounds) {
@@ -205,6 +211,7 @@ function onPhaseChange(room, evt) {
       totalRounds: Number.isFinite(evt.totalRounds) ? evt.totalRounds : null,
       mapName: evt.mapName,
       infinite: !!evt.infinite,
+      mode: room.mode, // "rounds" | "infinite" | "koth" — el cliente lo usa para el texto del cartel
       stats: room.host.sim.getMatchStats(),
     });
   }
@@ -301,6 +308,8 @@ function compressSnapshot(snap, room) {
   }
 
   if (snap.orb) snap.orb = { type: snap.orb.type, x: r(snap.orb.x, 1), y: r(snap.orb.y, 1), bornT: Math.round(snap.orb.bornT) };
+  if (snap.hill) snap.hill = { x: r(snap.hill.x, 1), y: r(snap.hill.y, 1), r: snap.hill.r };
+  if (typeof snap.orbkingTimer === "number") snap.orbkingTimer = Math.round(snap.orbkingTimer);
 
   /* El mapa solo cambia al empezar una ronda. Se manda entero cuando cambia y se omite el
      resto del tiempo; el cliente se queda con el último que recibió. */

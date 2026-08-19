@@ -384,6 +384,16 @@
         <span class="desc">Ronda tras ronda sin l&iacute;mite. El marcador acumula desde la primera ronda; cada 5 rondas vuelve al mapa inicial. El anfitri&oacute;n la corta cuando quiere.</span>
       </button>
 
+      <button type="button" class="modeOption" id="modeKothBtn">
+        <strong>Rey de la Colina</strong>
+        <span class="desc">Un c&iacute;rculo aparece en el mapa cada tanto: qued&aacute;te adentro para sumar puntos. El primero en llegar a 100 gana. Nadie se elimina — si te tiran, volv&eacute;s a caer al mapa.</span>
+      </button>
+
+      <button type="button" class="modeOption" id="modeOrbkingBtn">
+        <strong>Rey del Orbe</strong>
+        <span class="desc">Partida a reloj (2 minutos). Agarr&aacute; los orbes de poder y mantenelos activos: gana quien acumul&oacute; m&aacute;s tiempo con un power encima. Tampoco se elimina a nadie.</span>
+      </button>
+
       <button type="button" class="modeOption" disabled>
         <strong>Historia <span class="soon">PR&Oacute;XIMAMENTE</span></strong>
         <span class="desc">Un jugador contra la IA.</span>
@@ -1249,9 +1259,13 @@
        optimista, así que un guest ve el número cambiar en vivo apenas el anfitrión lo toca. */
     $("modeSummary").textContent = msg.mode === "infinite"
       ? "♾️ Modo infinito — el marcador no se reinicia entre rondas"
-      : "🎯 Por rondas — " + msg.rounds + (msg.rounds === 1 ? " ronda" : " rondas");
+      : msg.mode === "koth"
+        ? "⛰️ Rey de la Colina — el primero en llegar a 100 puntos gana"
+        : msg.mode === "orbking"
+          ? "🔮 Rey del Orbe — 2 minutos, gana quien más tiempo sostuvo un power"
+          : "🎯 Por rondas — " + msg.rounds + (msg.rounds === 1 ? " ronda" : " rondas");
 
-    var roundsMode = msg.mode !== "infinite";
+    var roundsMode = msg.mode === "rounds";
     $("roomRoundsRow").style.display = roundsMode ? "flex" : "none";
     if (roundsMode) {
       roomRoundsPick = msg.rounds;
@@ -1279,9 +1293,15 @@
 
   Net.on("round", function (msg) {
     var rb = $("roundBanner");
-    // totalRounds llega null cuando el modo es infinito (ver onPhaseChange en server.js).
-    var totalTxt = msg.totalRounds == null ? "∞" : msg.totalRounds;
-    rb.textContent = "RONDA " + msg.round + " / " + totalTxt + " — " + msg.mapName;
+    if (msg.mode === "koth") {
+      rb.textContent = "REY DE LA COLINA — " + msg.mapName;
+    } else if (msg.mode === "orbking") {
+      rb.textContent = "REY DEL ORBE — " + msg.mapName;
+    } else {
+      // totalRounds llega null cuando el modo es infinito (ver onPhaseChange en server.js).
+      var totalTxt = msg.totalRounds == null ? "∞" : msg.totalRounds;
+      rb.textContent = "RONDA " + msg.round + " / " + totalTxt + " — " + msg.mapName;
+    }
     rb.classList.add("show");
     var ft = $("fightText");
     ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
@@ -1448,10 +1468,14 @@
     selectedMode = mode;
     $("modeRoundsBtn").classList.toggle("selected", mode === "rounds");
     $("modeInfiniteBtn").classList.toggle("selected", mode === "infinite");
+    $("modeKothBtn").classList.toggle("selected", mode === "koth");
+    $("modeOrbkingBtn").classList.toggle("selected", mode === "orbking");
     $("roundsPickRow").style.display = mode === "rounds" ? "flex" : "none";
   }
   $("modeRoundsBtn").addEventListener("click", function () { selectMode("rounds"); });
   $("modeInfiniteBtn").addEventListener("click", function () { selectMode("infinite"); });
+  $("modeKothBtn").addEventListener("click", function () { selectMode("koth"); });
+  $("modeOrbkingBtn").addEventListener("click", function () { selectMode("orbking"); });
   selectMode("rounds"); // sincroniza selectedMode con el estado inicial que ya muestra el HTML
 
   $("minusBtn").addEventListener("click", function () {

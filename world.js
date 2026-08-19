@@ -215,6 +215,36 @@ var MapArchetypes = (function () {
       return { platforms: plats, hazardCandidates: [2] };
     },
 
+    /* Modo Rey de la Colina: mucho más terreno que los demás archetypes (10 plataformas contra
+       3-7 del resto) para que la zona disputada siempre tenga varias rutas de entrada/salida
+       (piso, dos repisas bajas, un anillo de 6 plataformas medias, una cima) — la pelea es por
+       posición, no por un único camino de acceso. Sin hazardCandidates a propósito: acá el
+       objetivo es perseguir/defender el círculo, no perder por pisar una púa de casualidad. */
+    colina: function (rng, W, H) {
+      var plats = [];
+      var floorW = 420 + rng() * 160;
+      var floorX = (W - floorW) / 2 + (rng() - 0.5) * 40;
+      plats.push({ x: floorX, y: 470 + (rng() - 0.5) * 10, w: floorW, h: 24 });
+
+      var lowW = 130 + rng() * 30;
+      plats.push({ x: 40 + rng() * 20, y: 400 + (rng() - 0.5) * 20, w: lowW, h: 16 });
+      plats.push({ x: W - 40 - lowW - rng() * 20, y: 400 + (rng() - 0.5) * 20, w: lowW, h: 16 });
+
+      var cx = W / 2, cy = 300, rx = 300 + rng() * 30, ry = 110 + rng() * 20, n = 6;
+      for (var i = 0; i < n; i++) {
+        var ang = (i / n) * Math.PI * 2;
+        var w = 90 + rng() * 40;
+        var x = clamp(cx + Math.cos(ang) * rx - w / 2, 40, W - 40 - w);
+        var y = clamp(cy + Math.sin(ang) * ry, 150, 420);
+        plats.push({ x: x, y: y, w: w, h: 15 });
+      }
+
+      var apexW = 130 + rng() * 30;
+      plats.push({ x: (W - apexW) / 2 + (rng() - 0.5) * 20, y: 165 + (rng() - 0.5) * 16, w: apexW, h: 16 });
+
+      return { platforms: plats, hazardCandidates: [] };
+    },
+
     piramide: function (rng, W, H) {
       var layers = 3 + Math.floor(rng() * 2);
       var plats = [];
@@ -784,6 +814,7 @@ var World = (function () {
     anillo: ["El Anillo", "Círculo Exterior", "Corona"],
     crater: ["El Cráter", "La Fosa", "Filo del Vacío"],
     piramide: ["La Pirámide", "Templo Escalonado", "Zigurat"],
+    colina: ["La Colina", "Cumbre Disputada", "El Trono"],
   };
 
   var backgroundCache = null; // { key, bg }
