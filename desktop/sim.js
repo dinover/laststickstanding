@@ -405,7 +405,12 @@ var Sim = (function () {
     ctx.fillStyle = "rgba(255,255,255,.85)";
     ctx.font = "bold 22px Chakra Petch, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(mm + ":" + (ss < 10 ? "0" : "") + ss, W / 2, 34);
+    /* y=112, no 34: el HUD del build online superpone DOM encima del canvas ahí arriba — el
+       topbar de avatares de colores (top:14px, 40px de alto) y, debajo, el cartel de ronda que
+       queda visible durante todo el fight (top:64px) — y a y=34 el reloj quedaba tapado por el
+       primero. 112 cae debajo de los dos con margen, en la franja de "cielo" que ningún
+       archetype de world.js usa para plataformas. */
+    ctx.fillText(mm + ":" + (ss < 10 ? "0" : "") + ss, W / 2, 112);
     ctx.restore();
   }
 

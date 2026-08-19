@@ -185,6 +185,13 @@ window.SNAIL_MODE = false;
   var PW = 13, PH = 52; // half-width, height
   var PUNCH_MS = 230, KICK_MS = 280, ATTACK_COOLDOWN = 380;
 
+  /* Rey de la Colina / Rey del Orbe: mismos números y misma lógica que el build online (ver
+     desktop/sim.js), portados a mano acá porque esta pantalla no comparte módulo de simulación
+     con el resto de los builds — es su propio loop desde siempre. */
+  var HILL_APPEAR_DELAY_MS = 5000, HILL_ACTIVE_MS = 15000, HILL_RADIUS = 95;
+  var HILL_TARGET_MS = 30000, HILL_TARGET_SCORE = 100;
+  var ORBKING_MATCH_MS = 120000;
+
   /* ---------------------------------------------------------------- rng / maps */
   function mulberry32(seed) {
     return function () {
@@ -209,8 +216,8 @@ window.SNAIL_MODE = false;
     ],
   };
 
-  function genMap(seed) {
-    return World.generateMap(seed, { SPEED: SPEED, JUMP_V: JUMP_V, GRAVITY_UP: GRAVITY_UP, GRAVITY_DOWN: GRAVITY_DOWN, W: W, H: H });
+  function genMap(seed, forcedArchId) {
+    return World.generateMap(seed, { SPEED: SPEED, JUMP_V: JUMP_V, GRAVITY_UP: GRAVITY_UP, GRAVITY_DOWN: GRAVITY_DOWN, W: W, H: H }, forcedArchId);
   }
 
   /* ---------------------------------------------------------------- state */
@@ -223,6 +230,13 @@ window.SNAIL_MODE = false;
   var eliminationOrder = [];
   var phaseTimer = 0;
   var roundBannerText = "";
+  /* "rounds" es el único modo que existía. "koth"/"orbking" no eliminan a nadie — ver
+     noElimination() y su uso en eliminate() — y deciden la partida por puntaje en vez de por
+     supervivencia (updateHill()/updateOrbHold()). */
+  var gameMode = "rounds"; // "rounds" | "koth" | "orbking"
+  function noElimination() { return gameMode === "koth" || gameMode === "orbking"; }
+  var hill = null, hillTimer = 0, hillLastPlatformIdx = -1;
+  var orbkingTimer = 0;
 
   function newPlayer(id) {
     return {
@@ -250,6 +264,7 @@ window.SNAIL_MODE = false;
       burnT: 0, burnTickT: 0, // fuego DoT stamped on a hit target, independent of the attacker's power window
       burnFlashT: 0, // decaying — refreshed on the fire hit itself and on every DoT tick, purely visual
       slowT: 0, // hielo slow stamped on a hit target
+      hillMs: 0, orbMs: 0, // acumulado de Rey de la Colina / Rey del Orbe — sobrevive al respawn
     };
   }
 
@@ -262,7 +277,7 @@ window.SNAIL_MODE = false;
     return {
       t: "phase", phase: phase, rounds: totalRounds, round: currentRound,
       alive: Object.keys(players).filter(function (k) { return players[k].alive; }).map(Number),
-      mapName: currentMap.name,
+      mapName: currentMap.name, mode: gameMode,
     };
   }
 
@@ -287,8 +302,12 @@ window.SNAIL_MODE = false;
   }
 
   /* ---------------------------------------------------------------- lobby / round flow */
-  function startMatch(rounds) {
-    totalRounds = Math.max(1, Math.min(20, rounds || 3));
+  // Rey de la Colina / Rey del Orbe son una sola ronda que nunca termina por eliminación (ver
+  // noElimination()); Colina usa el archetype "colina" de world.js (más terreno que el resto,
+  // más rutas hacia el círculo), Orbe juega mapas normales — el reloj de 2 min ya la limita.
+  function startMatch(rounds, mode) {
+    gameMode = mode === "koth" || mode === "orbking" ? mode : "rounds";
+    totalRounds = noElimination() ? 1 : Math.max(1, Math.min(20, rounds || 3));
     // Union getControllerDeviceIds() with whoever's already tracked in players{}, rather than
     // trusting the SDK's device-table snapshot alone: that table is refreshed by a "devices"
     // broadcast from the shell, and on a real network a guest who joined and moved around in
@@ -301,7 +320,12 @@ window.SNAIL_MODE = false;
     Object.keys(players).forEach(function (id) { rosterSet[id] = true; });
     roster = Object.keys(rosterSet).map(Number);
     scores = {};
-    roster.forEach(function (id) { scores[id] = 0; });
+    roster.forEach(function (id) {
+      scores[id] = 0;
+      var p = players[id];
+      if (p) { p.hillMs = 0; p.orbMs = 0; }
+    });
+    hill = null; hillTimer = 0; hillLastPlatformIdx = -1; orbkingTimer = 0;
     currentRound = 0;
     document.getElementById("lobbyPanel").classList.add("hide");
     nextRound();
@@ -309,15 +333,18 @@ window.SNAIL_MODE = false;
 
   // Every spawn x is chosen from inside an actual platform's span, so a straight vertical
   // fall always lands on solid ground — never into the void between platforms.
+  function spawnX(plat) {
+    var pad = Math.min(22, plat.w / 3);
+    var lo = plat.x + pad, hi = plat.x + plat.w - pad;
+    if (hi <= lo) { lo = plat.x + plat.w / 2; hi = lo; }
+    return lo + Math.random() * (hi - lo);
+  }
+
   function spawnRoundPlayers(map) {
     var plats = map.platforms;
     roster.forEach(function (id, i) {
       var p = ensurePlayer(id);
-      var plat = plats[i % plats.length];
-      var pad = Math.min(22, plat.w / 3);
-      var lo = plat.x + pad, hi = plat.x + plat.w - pad;
-      if (hi <= lo) { lo = plat.x + plat.w / 2; hi = lo; }
-      p.x = lo + Math.random() * (hi - lo);
+      p.x = spawnX(plats[i % plats.length]);
       p.y = -20 - i * 50;
       p.vx = 0; p.vy = 0;
       p.hp = 100;
@@ -332,13 +359,35 @@ window.SNAIL_MODE = false;
     orbTimer = ORB_SPAWN_MS;
   }
 
+  // Reaparece a un jugador de Colina/Orbe en vez de eliminarlo: mismo tratamiento que el spawn
+  // de inicio de ronda, pero sin tocar hillMs/orbMs/scores — esos son el marcador de la
+  // partida y tienen que sobrevivir al respawn.
+  function respawnPlayer(p) {
+    var plats = currentMap.platforms;
+    p.x = spawnX(plats[Math.floor(Math.random() * plats.length)]);
+    p.y = -20 - Math.random() * 60;
+    p.vx = 0; p.vy = 0; p.kbx = 0; p.hp = 100;
+    p.attack = null; p.attackCooldown = 0;
+    p.power = null; p.burnT = 0; p.burnTickT = 0; p.burnFlashT = 0; p.slowT = 0;
+    p.hitStunT = 0; p.deathFadeT = 0;
+  }
+
   function nextRound() {
     currentRound++;
     if (currentRound > totalRounds) { endMatch(); return; }
-    currentMap = currentRound === 1 ? MAP0 : genMap(1000 + currentRound * 37 + Math.floor(Math.random() * 900));
+    // Colina/Orbe no arrancan en el mapa inicial genérico de "ronda 1": son una partida entera,
+    // no la primera de una serie, así que les toca un mapa procedural como a cualquier otra
+    // ronda posterior.
+    if (noElimination()) {
+      currentMap = genMap(1000 + currentRound * 37 + Math.floor(Math.random() * 900), gameMode === "koth" ? "colina" : null);
+    } else {
+      currentMap = currentRound === 1 ? MAP0 : genMap(1000 + currentRound * 37 + Math.floor(Math.random() * 900));
+    }
     eliminationOrder = [];
     spawnRoundPlayers(currentMap);
-    roundBannerText = "RONDA " + currentRound + " / " + totalRounds + " — " + currentMap.name;
+    roundBannerText = gameMode === "koth" ? "REY DE LA COLINA — " + currentMap.name
+      : gameMode === "orbking" ? "REY DEL ORBE — " + currentMap.name
+      : "RONDA " + currentRound + " / " + totalRounds + " — " + currentMap.name;
     var rb = document.getElementById("roundBanner");
     rb.textContent = roundBannerText;
     rb.classList.add("show");
@@ -353,16 +402,25 @@ window.SNAIL_MODE = false;
 
   function eliminate(p) {
     if (!p.alive) return;
-    p.alive = false;
-    p.deathFadeT = 420;
-    eliminationOrder.push(p.id);
     HitStop.trigger(55);
     Camera.addTrauma(0.85);
     Camera.zoomImpulse(0.05);
     ScreenFX.flash(0.5);
     Particles.eliminationBurst(p.x, p.y - 24, ac.getPlayerColor(p.id));
-    renderTopbar();
     AudioManager.on.ko();
+
+    // Colina/Orbe no eliminan a nadie: caerse o llegar a 0 hp solo hace que reaparezcas. La
+    // partida la gana el puntaje (círculo o tiempo con power), no la supervivencia — así que
+    // acá se corta antes de tocar alive/eliminationOrder/checkRoundEnd/el topbar de "afuera".
+    if (noElimination()) {
+      respawnPlayer(p);
+      return;
+    }
+
+    p.alive = false;
+    p.deathFadeT = 420;
+    eliminationOrder.push(p.id);
+    renderTopbar();
     var aliveN = roster.filter(function (id) { return players[id] && players[id].alive; }).length;
     if (aliveN === 2) AudioManager.on.clutch();
     checkRoundEnd();
@@ -413,6 +471,7 @@ window.SNAIL_MODE = false;
     document.getElementById("lobbyPanel").classList.remove("hide");
     document.getElementById("roundBanner").classList.remove("show");
     phase = "lobby";
+    gameMode = "rounds";
     players = {};
     roster = [];
     scores = {};
@@ -420,6 +479,7 @@ window.SNAIL_MODE = false;
     currentMap = MAP0;
     orb = null;
     orbTimer = ORB_SPAWN_MS;
+    hill = null; hillTimer = 0; hillLastPlatformIdx = -1; orbkingTimer = 0;
     broadcastPhase();
     AudioManager.on.toLobby();
   }
@@ -537,6 +597,77 @@ window.SNAIL_MODE = false;
     if (!window.SNAIL_MODE) { ctx.shadowColor = color; ctx.shadowBlur = 14; }
     ctx.beginPath(); ctx.arc(orb.x, y, 10, 0, Math.PI * 2); ctx.fill();
     if (!window.SNAIL_MODE) ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  /* ---------------------------------------------------------------- rey de la colina */
+  function pickHillSpot() {
+    var plats = currentMap.platforms;
+    if (!plats.length) return null;
+    var idx = Math.floor(Math.random() * plats.length);
+    if (plats.length > 1 && idx === hillLastPlatformIdx) idx = (idx + 1) % plats.length;
+    hillLastPlatformIdx = idx;
+    var pl = plats[idx];
+    return { x: pl.x + pl.w / 2, y: pl.y - 30, r: HILL_RADIUS };
+  }
+
+  function updateHill(dt) {
+    if (phase !== "fight") return;
+    hillTimer -= dt;
+    if (hillTimer <= 0) { hill = pickHillSpot(); hillTimer = HILL_ACTIVE_MS; }
+    if (!hill) return;
+
+    for (var i = 0; i < roster.length; i++) {
+      var p = players[roster[i]];
+      if (!p || !p.alive) continue;
+      var dx = p.x - hill.x, dy = (p.y - 20) - hill.y;
+      if (dx * dx + dy * dy > hill.r * hill.r) continue;
+      p.hillMs += dt;
+      var newScore = Math.min(HILL_TARGET_SCORE, Math.floor(p.hillMs * (HILL_TARGET_SCORE / HILL_TARGET_MS)));
+      if (newScore > (scores[p.id] || 0)) scores[p.id] = newScore;
+      if (scores[p.id] >= HILL_TARGET_SCORE) { endMatch(); return; }
+    }
+  }
+
+  function drawHill() {
+    if (!hill) return;
+    ctx.save();
+    ctx.fillStyle = "rgba(255,194,71,.10)";
+    ctx.strokeStyle = "rgba(255,194,71,.9)";
+    ctx.lineWidth = 3;
+    if (!window.SNAIL_MODE) { ctx.shadowColor = "rgba(255,194,71,.7)"; ctx.shadowBlur = 16; }
+    ctx.beginPath();
+    ctx.arc(hill.x, hill.y, hill.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /* ---------------------------------------------------------------- rey del orbe */
+  function updateOrbHold(dt) {
+    if (phase !== "fight") return;
+    orbkingTimer -= dt;
+    for (var i = 0; i < roster.length; i++) {
+      var p = players[roster[i]];
+      if (!p || !p.alive || !p.power) continue;
+      p.orbMs += dt;
+      scores[p.id] = Math.floor(p.orbMs / 1000);
+    }
+    if (orbkingTimer <= 0) endMatch();
+  }
+
+  function drawMatchClock() {
+    if (phase !== "fight" && phase !== "fightIntro") return;
+    var totalSec = Math.max(0, Math.ceil(orbkingTimer / 1000));
+    var mm = Math.floor(totalSec / 60), ss = totalSec % 60;
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,.85)";
+    ctx.font = "bold 22px Chakra Petch, sans-serif";
+    ctx.textAlign = "center";
+    /* y=112, no 34: #topbar (avatares de colores, top:14px, 40px de alto) y #roundBanner
+       (top:64px, visible todo el fight) están encima del canvas ahí arriba — a y=34 el reloj
+       quedaba tapado por el primero. 112 despeja los dos con margen. */
+    ctx.fillText(mm + ":" + (ss < 10 ? "0" : "") + ss, W / 2, 112);
     ctx.restore();
   }
 
@@ -741,6 +872,16 @@ window.SNAIL_MODE = false;
       ctx.textAlign = "center";
       ctx.fillText(ac.getNickname(p.id), p.x, headY - 30);
     }
+
+    /* Contador de puntos de Rey de la Colina / Rey del Orbe, arriba del nombre. Sin gate de
+       snailMode: en estos modos es el marcador de la partida, no un adorno. */
+    if (gameMode === "koth" || gameMode === "orbking") {
+      ctx.fillStyle = gameMode === "koth" ? "rgba(255,194,71,.95)" : "rgba(157,255,79,.95)";
+      ctx.font = "bold 11px Chakra Petch, sans-serif";
+      ctx.textAlign = "center";
+      var scoreTxt = gameMode === "koth" ? (scores[p.id] || 0) + " / " + HILL_TARGET_SCORE : (scores[p.id] || 0) + "s";
+      ctx.fillText(scoreTxt, p.x, headY - 42);
+    }
   }
 
   /* ---------------------------------------------------------------- main loop */
@@ -764,10 +905,17 @@ window.SNAIL_MODE = false;
       for (var si = 0; si < idsToStep.length; si++) stepPlayer(players[idsToStep[si]], dt, damageEnabled);
       resolvePlayerCollisions(idsToStep);
       updateOrbs(dt);
+      if (gameMode === "koth") updateHill(dt);
+      else if (gameMode === "orbking") updateOrbHold(dt);
 
       if (phase === "fightIntro") {
         phaseTimer -= dt;
-        if (phaseTimer <= 0) { phase = "fight"; orbTimer = ORB_SPAWN_MS; Camera.zoomImpulse(0.04); broadcastPhase(); AudioManager.on.fightBegin(); }
+        if (phaseTimer <= 0) {
+          phase = "fight"; orbTimer = ORB_SPAWN_MS;
+          if (gameMode === "koth") { hill = null; hillTimer = HILL_APPEAR_DELAY_MS; }
+          else if (gameMode === "orbking") { orbkingTimer = ORBKING_MATCH_MS; }
+          Camera.zoomImpulse(0.04); broadcastPhase(); AudioManager.on.fightBegin();
+        }
       } else if (phase === "roundEnd") {
         phaseTimer -= dt;
         if (phaseTimer <= 0) nextRound();
@@ -781,6 +929,7 @@ window.SNAIL_MODE = false;
     Camera.begin(ctx, W, H);
     drawMap(currentMap, now, dt);
     drawOrb();
+    if (gameMode === "koth") drawHill();
     // plain for-loops here, not .forEach — a fresh closure allocated every single frame is
     // pure GC pressure with zero benefit, and this runs for every player every frame.
     if (phase === "lobby") {
@@ -792,6 +941,7 @@ window.SNAIL_MODE = false;
     Particles.draw(ctx);
     Camera.end(ctx);
 
+    if (gameMode === "orbking") drawMatchClock(); // relojito fijo en pantalla, no shakea con la cámara
     ScreenFX.drawVignette(ctx, W, H);
     ScreenFX.draw(ctx, W, H);
 
@@ -833,7 +983,7 @@ window.SNAIL_MODE = false;
     }
     if (data.t === "start" && device_id === ac.getMasterControllerDeviceId() && phase === "lobby") {
       window.SNAIL_MODE = !!data.snail;
-      startMatch(data.rounds);
+      startMatch(data.rounds, data.mode);
       return;
     }
     if (data.t === "restart" && device_id === ac.getMasterControllerDeviceId() && phase === "final") {
@@ -841,7 +991,9 @@ window.SNAIL_MODE = false;
       return;
     }
     if (data.t === "roundsPreview" && device_id === ac.getMasterControllerDeviceId() && phase === "lobby") {
-      ac.broadcast({ t: "roundsPreview", n: data.n });
+      // Reenvía también el modo elegido: mismo canal "el host está configurando el lobby,
+      // mantené a todos sincronizados" que ya existía para la cantidad de rondas.
+      ac.broadcast({ t: "roundsPreview", n: data.n, mode: data.mode });
     }
     if (data.t === "syncRequest") {
       // A phone that was locked/backgrounded missed whatever "phase" broadcast fired while it
