@@ -20,6 +20,28 @@ var Net = (function () {
   var roomRounds = null;
   var queued = null; // acción pedida antes de que abriera el socket
 
+  /* --- ping ---
+     Aparte del ping/pong de protocolo que usa el servidor para detectar sockets muertos (ver
+     HEARTBEAT_MS en server.js), ese nivel no es visible desde JS del lado del browser — no hay
+     forma de leer el RTT de un frame de control WebSocket. Por eso este es uno propio, a nivel
+     aplicación: mandamos un timestamp y medimos cuánto tarda en volver. */
+  var lastPing = null; // ms, null hasta la primera medición
+  var pingTimer = null;
+  var PING_INTERVAL_MS = 2000;
+
+  function sendPing() {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: "ping", ts: Date.now() }));
+  }
+  function startPingLoop() {
+    if (pingTimer) return;
+    sendPing();
+    pingTimer = setInterval(sendPing, PING_INTERVAL_MS);
+  }
+  function stopPingLoop() {
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    lastPing = null;
+  }
+
   /* --- reconexión ---
      El servidor entrega un token al entrar; guardándolo podemos volver al MISMO slot, con el
      puntaje y el lugar en el roster intactos, en vez de que un parpadeo de wifi te deje afuera
@@ -74,6 +96,7 @@ var Net = (function () {
         ws.send(JSON.stringify(queued));
         queued = null;
       }
+      startPingLoop();
       emit("open");
     };
 
@@ -85,6 +108,12 @@ var Net = (function () {
         return;
       }
       if (!msg || !msg.t) return;
+
+      if (msg.t === "pong") {
+        lastPing = Math.max(0, Date.now() - msg.ts);
+        emit("ping", lastPing);
+        return; // no hay nada más que hacer con este mensaje ni nada interesado en "pong" crudo
+      }
 
       if (msg.t === "joined") {
         myId = msg.id;
@@ -108,6 +137,7 @@ var Net = (function () {
     };
 
     ws.onclose = function () {
+      stopPingLoop();
       emit("close");
       /* Solo insistimos si estábamos en una sala: si nunca entramos a ninguna, no hay nada que
          recuperar y reintentar en loop sería ruido. */
@@ -193,6 +223,10 @@ var Net = (function () {
        tiene que mostrar "reconectando" en vez del lobby. */
     getSavedSession: loadSession,
     forget: clearSession,
+
+    getPing: function () {
+      return lastPing;
+    },
 
     getMyId: function () {
       return myId;

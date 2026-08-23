@@ -67,6 +67,26 @@
   #room { position: absolute; top: 14px; left: 18px; z-index: 5; color: #9aa3bd; font-size: 13px; letter-spacing: .08em; }
   #room b { color: #35f0e0; }
   #topbar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); gap: 10px; z-index: 5; }
+
+  /* A diferencia de #room/#topbar, este NO depende de #wrap.playing: tiene que verse desde la
+     home (antes de crear/unirse a sala) para que el jugador sepa su latencia al servidor incluso
+     mientras decide qué hacer, no recién cuando ya está jugando. */
+  #pingIndicator {
+    display: none;
+    position: absolute; top: 14px; left: 18px; z-index: 6;
+    font-size: 12px; letter-spacing: .05em; color: #9aa3bd;
+    align-items: center; gap: 5px;
+  }
+  #wrap.playing #pingIndicator { top: 38px; }
+  #pingIndicator.show { display: flex; }
+  #pingIndicator .dot { width: 7px; height: 7px; border-radius: 50%; background: #6b7394; flex: none; }
+  #pingIndicator.good .dot { background: #35f0a0; }
+  #pingIndicator.good b { color: #35f0a0; }
+  #pingIndicator.ok .dot { background: #f0c235; }
+  #pingIndicator.ok b { color: #f0c235; }
+  #pingIndicator.bad .dot { background: #ff5e7a; }
+  #pingIndicator.bad b { color: #ff5e7a; }
+  #pingIndicator b { color: #9aa3bd; font-weight: 600; }
   .avatar {
     width: 40px; height: 40px; border-radius: 50%; position: relative;
     border: 2px solid rgba(255,255,255,.25); box-shadow: 0 0 12px currentColor;
@@ -256,6 +276,25 @@
   .rosterRow.gone { opacity: .45; }
   .rosterRow .gonetag { color: #ffc247; font-size: 11px; }
 
+  /* --- modo local --- */
+  .localRow { display: flex; align-items: center; gap: 8px; }
+  .localRow .dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 8px currentColor; flex: none; }
+  .localRow input {
+    flex: 1; min-width: 0; padding: 6px 8px; font-size: 13px;
+    background: #11142a; border: 1px solid #2a3050; border-radius: 6px; color: #eaf0ff;
+  }
+  .localRow .src { color: #6b7394; font-size: 11px; white-space: nowrap; }
+  .localRow .rm {
+    flex: none; width: 22px; height: 22px; padding: 0; border-radius: 6px;
+    background: transparent; border: 1px solid #2a3050; color: #ff5e7a; box-shadow: none; font-size: 13px;
+  }
+  #localAddRow { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+  #localAddRow button {
+    padding: 6px 10px; font-size: 12px; background: transparent; color: #35f0e0;
+    border: 1px dashed #2a3050; box-shadow: none;
+  }
+  #localAddRow .none { color: #6b7394; font-size: 12px; padding: 6px 0; }
+
   /* Overlay de reconexión: tapa todo (incluido el canvas) porque mientras estás desconectado
      lo que se ve en pantalla es un estado congelado y engañoso. */
   #reconnect {
@@ -285,6 +324,7 @@
 <div id="wrap">
   <canvas id="c" width="960" height="540"></canvas>
   <div id="room">SALA <b id="roomCode">----</b></div>
+  <div id="pingIndicator"><span class="dot"></span><b id="pingMs">-- ms</b></div>
   <button id="endMatchBtn">Terminar partida</button>
   <div id="audioPanel">
     <button id="audioToggle" title="Audio">&#9834;</button>
@@ -366,6 +406,20 @@
       <div class="err" id="joinErr"></div>
     </div>
 
+    <div class="card" id="originCard" style="display:none">
+      <p class="sub">&iquest;C&oacute;mo quer&eacute;s jugar?</p>
+
+      <button type="button" class="modeOption" id="originOnlineBtn">
+        <strong>Online</strong>
+        <span class="desc">Sala con c&oacute;digo para jugar en red con otras PCs, servidor dedicado.</span>
+      </button>
+
+      <button type="button" class="modeOption" id="originLocalBtn">
+        <strong>Local</strong>
+        <span class="desc">Hasta 8 jugadores en esta misma PC: 2 con teclado y el resto con mandos conectados.</span>
+      </button>
+    </div>
+
     <div class="card" id="modeCard" style="display:none">
       <p class="sub">Eleg&iacute; el modo de juego:</p>
 
@@ -401,6 +455,16 @@
 
       <button id="modeConfirmBtn" style="width:100%; margin-top: 4px;">Crear sala</button>
       <div class="err" id="modeErr"></div>
+    </div>
+
+    <div class="card" id="localSetupCard" style="display:none">
+      <p class="sub">Sum&aacute; jugadores (hasta 8) con teclado o mandos conectados a esta PC:</p>
+      <div class="rosterList" id="localRoster"></div>
+      <div id="localAddRow"></div>
+      <button class="snail" id="localSnailBtn" role="switch" aria-checked="false">&#128012; Modo caracol (PCs lentas)</button>
+      <button id="localStartBtn" style="width:100%; margin-top: 10px;" disabled>Empezar partida</button>
+      <div class="err" id="localErr"></div>
+      <div class="hint">Teclado 1: A/D mover &middot; ESPACIO/W saltar &middot; J pi&ntilde;a &middot; K patada<br>Teclado 2: &larr;/&rarr; mover &middot; &uarr;/CTRL saltar &middot; . pi&ntilde;a &middot; / patada</div>
     </div>
 
     <div class="card" id="roomCard" style="display:none">
@@ -573,6 +637,7 @@
   var selectedMode = "rounds"; // "rounds" | "infinite" — elegido antes de crear la sala
   var finalShown = false;
   var lastMap = null; // último mapa recibido; el servidor solo lo manda cuando cambia
+  var roomOrigin = "online"; // "online" | "local" — elegido en originCard, antes de modeCard
 
   function $(id) { return document.getElementById(id); }
   // El color "real" de cada jugador lo asigna el servidor (ver server.js: pickColor) y llega en
@@ -582,27 +647,53 @@
   function nameFor(id) { return id === myId ? "Vos" : (names[id] || ("Jugador " + id)); }
 
   /* En modo online el servidor corre la simulación; acá Sim solo se usa por su lado guest
-     (interpolación + dibujo). En Práctica Libre, en cambio, Sim SÍ corre de verdad en el
-     navegador (ver más abajo) — por eso onPhaseChange está enchufado: es la única forma en que
-     Sim avisa "empezó una ronda nueva" cuando es él mismo el que decide cuándo pasa, en vez de
-     enterarse por un mensaje "round" del servidor como en el resto de este archivo. */
+     (interpolación + dibujo). En Práctica Libre y en modo Local, en cambio, Sim SÍ corre de
+     verdad en el navegador (ver más abajo) — por eso onPhaseChange está enchufado: es la única
+     forma en que Sim avisa "empezó una ronda nueva" / "terminó la partida" cuando es él mismo el
+     que decide cuándo pasa, en vez de enterarse por un mensaje del servidor como en el resto de
+     este archivo. */
   Sim.init({
     colorFor: colorFor, nameFor: nameFor,
     // Sin efecto en modo online real (el servidor tiene su propia copia de este mismo
-    // balance.js — ver online/sim-host.js). Acá importa solo para Práctica Libre, que sí hace
-    // correr este Sim de verdad en el navegador: antes usaba los valores por defecto de
-    // desktop/sim.js sin querer, así que el combate no se sentía igual que en una sala real.
+    // balance.js — ver online/sim-host.js). Acá importa solo para Práctica Libre y modo Local,
+    // que sí hacen correr este Sim de verdad en el navegador: antes usaba los valores por
+    // defecto de desktop/sim.js sin querer, así que el combate no se sentía igual que en una
+    // sala real.
     attacks: BALANCE.attacks,
     onPhaseChange: function (info) {
-      if (!practiceActive || info.t !== "roundStart") return;
-      var rb = $("roundBanner");
-      rb.textContent = "RONDA " + info.round + " — " + info.mapName;
-      rb.classList.add("show");
-      var ft = $("fightText");
-      ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
-      // Mismo hito que el modo Infinito online (cada 5 rondas vuelve el mapa inicial): acá el
-      // reveal usa datos reales, a diferencia del cliente guest, porque este Sim sí simula.
-      if (info.infinite && info.round % 5 === 0) showScoreReveal(Sim.getMatchStats());
+      if (!(practiceActive || localActive)) return;
+
+      if (info.t === "roundStart") {
+        var rb = $("roundBanner");
+        // Modo Local: mismo texto que arma el servidor en el "round" broadcast online (ver
+        // Net.on("round")) — acá no llega por mensaje, se arma con lo que ya tenemos a mano
+        // (selectedMode, fijado al confirmar modeCard). Práctica Libre sigue con su formato
+        // simple de siempre (sin total, sin chequeo de modo: solo existe "infinite" ahí).
+        if (localActive && selectedMode === "koth") rb.textContent = "REY DE LA COLINA — " + info.mapName;
+        else if (localActive && selectedMode === "orbking") rb.textContent = "REY DEL ORBE — " + info.mapName;
+        else if (localActive) {
+          var totalTxt = info.totalRounds == null ? "∞" : info.totalRounds;
+          rb.textContent = "RONDA " + info.round + " / " + totalTxt + " — " + info.mapName;
+        } else {
+          rb.textContent = "RONDA " + info.round + " — " + info.mapName;
+        }
+        rb.classList.add("show");
+        var ft = $("fightText");
+        ft.classList.remove("show"); void ft.offsetWidth; ft.classList.add("show");
+        // Mismo hito que el modo Infinito online (cada 5 rondas vuelve el mapa inicial): acá el
+        // reveal usa datos reales, a diferencia del cliente guest, porque este Sim sí simula.
+        if (info.infinite && info.round % 5 === 0) showScoreReveal(Sim.getMatchStats());
+        return;
+      }
+
+      // Práctica Libre fuerza modo "infinite", que nunca llega a endMatch() solo — así que esta
+      // rama es exclusiva de Local (rounds/koth/orbking sí terminan solos).
+      if (localActive && info.t === "final" && !finalShown) {
+        finalShown = true;
+        $("roundBanner").classList.remove("show");
+        hideScoreReveal();
+        showFinal(info.ranked, Sim.getScores());
+      }
     },
   });
 
@@ -761,7 +852,9 @@
         '<div class="sc">' + (scores[id] || 0) + ' pts</div>';
       rk.appendChild(row);
     });
-    var owner = Net.isOwner();
+    // En Local no hay anfitrión — todos están frente a la misma pantalla, así que el botón de
+    // revancha siempre se muestra ahí.
+    var owner = localActive || Net.isOwner();
     $("playAgainBtn").style.display = owner ? "" : "none";
     $("againWait").style.display = owner ? "none" : "block";
     $("finalScreen").classList.add("show");
@@ -1001,6 +1094,7 @@
     $("endMatchBtn").textContent = "Abandonar práctica";
     $("endMatchBtn").classList.add("show");
     $("wrap").classList.add("playing");
+    $("pingIndicator").classList.remove("show");
     stopLobbyBackground();
   }
 
@@ -1023,6 +1117,253 @@
     $("practiceThemeCard").style.display = "none";
     $("choiceCard").style.display = "block";
     startLobbyBackground();
+  }
+
+  /* ---------------------------------------------------------------- modo local (sin red) */
+  /* Mismo espíritu que Práctica Libre (Sim corre de verdad acá, no en un servidor) pero con
+     hasta 8 jugadores humanos en vez de vos + una IA. Dos fuentes de input conviven: dos
+     esquemas de teclado fijos (uno por jugador, no A/D+flechas los dos a la vez — se pisarían)
+     y mandos, uno por jugador adicional, leídos por polling desde frameLoop (la Gamepad API no
+     tiene eventos por botón, solo "conectado/desconectado"). */
+  var LOCAL_MAX = 8;
+  var localActive = false;
+  var localPlayers = []; // { id, name, color, source: {type:"kb",slot:1|2} | {type:"gp",index:N} }
+  var localGamepadPrev = {}; // playerId -> último estado {left,right,jump,punch,kick} leído, para mandar solo los cambios
+  var localSetupPollTimer = null;
+
+  function connectedGamepadIndexes() {
+    var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    var list = [];
+    for (var i = 0; i < pads.length; i++) if (pads[i]) list.push(i);
+    return list;
+  }
+  function localUsedGamepadIndexes() {
+    return localPlayers.filter(function (p) { return p.source.type === "gp"; }).map(function (p) { return p.source.index; });
+  }
+  function localHasKbSlot(slot) {
+    return localPlayers.some(function (p) { return p.source.type === "kb" && p.source.slot === slot; });
+  }
+  function nextFreeLocalId() {
+    for (var id = 0; id < LOCAL_MAX; id++) {
+      if (!localPlayers.some(function (p) { return p.id === id; })) return id;
+    }
+    return -1;
+  }
+  function addLocalPlayer(source) {
+    var id = nextFreeLocalId();
+    if (id === -1) return;
+    var label = source.type === "kb" ? ("Jugador " + (localPlayers.length + 1)) : ("Jugador " + (localPlayers.length + 1));
+    localPlayers.push({ id: id, name: label, color: PLAYER_COLORS[id % PLAYER_COLORS.length], source: source });
+    renderLocalRoster();
+    renderLocalAddRow();
+  }
+  function removeLocalPlayer(id) {
+    localPlayers = localPlayers.filter(function (p) { return p.id !== id; });
+    delete localGamepadPrev[id];
+    renderLocalRoster();
+    renderLocalAddRow();
+  }
+  function makeLocalAddBtn(label, onClick) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  /* Reconstruye la lista de jugadores ya sumados. Se llama solo ante cambios estructurales
+     (agregar/sacar un jugador) — NUNCA por un timer, porque innerHTML="" tira abajo los <input>
+     y con ellos el foco de quien está escribiendo un nombre en ese momento. */
+  function renderLocalRoster() {
+    var list = $("localRoster");
+    list.innerHTML = "";
+    localPlayers.forEach(function (p) {
+      var srcLabel = p.source.type === "kb" ? ("Teclado " + p.source.slot) : ("Mando " + (p.source.index + 1));
+      var row = document.createElement("div");
+      row.className = "localRow";
+      var dot = document.createElement("div");
+      dot.className = "dot"; dot.style.color = p.color; dot.style.background = p.color;
+      var input = document.createElement("input");
+      input.maxLength = 14; input.value = p.name;
+      input.addEventListener("input", function () { p.name = input.value.trim() || p.name; });
+      var src = document.createElement("span");
+      src.className = "src"; src.textContent = srcLabel;
+      var rm = document.createElement("button");
+      rm.type = "button"; rm.className = "rm"; rm.innerHTML = "&times;";
+      rm.addEventListener("click", function () { removeLocalPlayer(p.id); });
+      row.appendChild(dot); row.appendChild(input); row.appendChild(src); row.appendChild(rm);
+      list.appendChild(row);
+    });
+  }
+
+  /* A diferencia de renderLocalRoster, esto SÍ se llama por timer (ver startLocalSetupPoll): solo
+     toca los botones de "+ agregar", que no tienen estado editable que perder. Hace falta el
+     polling porque en Chrome un mando recién enchufado no aparece en getGamepads() hasta que se
+     le presiona algún botón — no hay forma de saberlo de otra manera que no sea re-consultar. */
+  function renderLocalAddRow() {
+    var addRow = $("localAddRow");
+    addRow.innerHTML = "";
+    if (localPlayers.length >= LOCAL_MAX) {
+      var full = document.createElement("div");
+      full.className = "none";
+      full.textContent = "Sala local completa (8/8).";
+      addRow.appendChild(full);
+      $("localStartBtn").disabled = false;
+      return;
+    }
+    var any = false;
+    if (!localHasKbSlot(1)) {
+      any = true;
+      addRow.appendChild(makeLocalAddBtn("+ Teclado 1", function () { addLocalPlayer({ type: "kb", slot: 1 }); }));
+    }
+    if (!localHasKbSlot(2)) {
+      any = true;
+      addRow.appendChild(makeLocalAddBtn("+ Teclado 2", function () { addLocalPlayer({ type: "kb", slot: 2 }); }));
+    }
+    var used = localUsedGamepadIndexes();
+    connectedGamepadIndexes().forEach(function (idx) {
+      if (used.indexOf(idx) !== -1) return;
+      any = true;
+      addRow.appendChild(makeLocalAddBtn("+ Mando " + (idx + 1), function () { addLocalPlayer({ type: "gp", index: idx }); }));
+    });
+    if (!any) {
+      var none = document.createElement("div");
+      none.className = "none";
+      none.textContent = "No hay más fuentes libres. Conectá un mando y presionale un botón para que el navegador lo detecte.";
+      addRow.appendChild(none);
+    }
+    $("localStartBtn").disabled = localPlayers.length < 2;
+  }
+
+  function startLocalSetupPoll() {
+    stopLocalSetupPoll();
+    localSetupPollTimer = setInterval(renderLocalAddRow, 800);
+  }
+  function stopLocalSetupPoll() {
+    if (localSetupPollTimer) { clearInterval(localSetupPollTimer); localSetupPollTimer = null; }
+  }
+  window.addEventListener("gamepadconnected", function () {
+    if ($("localSetupCard").style.display === "block") renderLocalAddRow();
+  });
+  window.addEventListener("gamepaddisconnected", function (e) {
+    // Un mando que se desenchufa a mitad de partida deja a su jugador sin forma de jugar — mejor
+    // sacarlo de la lista (en el setup) que dejarlo "congelado" en pantalla sin explicación.
+    var idx = e.gamepad.index;
+    var affected = localPlayers.filter(function (p) { return p.source.type === "gp" && p.source.index === idx; });
+    if (affected.length) {
+      localPlayers = localPlayers.filter(function (p) { return !(p.source.type === "gp" && p.source.index === idx); });
+      affected.forEach(function (p) { delete localGamepadPrev[p.id]; });
+      if ($("localSetupCard").style.display === "block") { renderLocalRoster(); renderLocalAddRow(); }
+    } else if ($("localSetupCard").style.display === "block") {
+      renderLocalAddRow();
+    }
+  });
+
+  function startLocalMatch() {
+    if (localPlayers.length < 2) {
+      $("localErr").textContent = "Sumá al menos 2 jugadores.";
+      return;
+    }
+    localActive = true;
+    finalShown = false;
+    hideScoreReveal();
+    names = {}; colors = {};
+    localPlayers.forEach(function (p) { names[p.id] = p.name; colors[p.id] = p.color; });
+    myId = null;
+    localGamepadPrev = {};
+
+    Sim.resetToLobby();
+    localPlayers.forEach(function (p) { Sim.addPlayer(p.id); });
+    Sim.startMatch(totalRoundsPick, snailOn, { mode: selectedMode });
+
+    stopLocalSetupPoll();
+    $("originCard").style.display = "none";
+    $("modeCard").style.display = "none";
+    $("localSetupCard").style.display = "none";
+    $("backLink").style.display = "none";
+    $("room").innerHTML = "<b>LOCAL</b>";
+    $("endMatchBtn").textContent = "Salir del modo local";
+    $("endMatchBtn").classList.add("show");
+    $("wrap").classList.add("playing");
+    $("pingIndicator").classList.remove("show");
+    stopLobbyBackground();
+  }
+
+  /* "Jugar de nuevo" en local: mismo grupo, mismo modo/rondas, sin volver a pasar por el setup —
+     es el mismo sillón, no hace falta re-armar la sala. */
+  function restartLocalMatch() {
+    finalShown = false;
+    hideScoreReveal();
+    $("finalScreen").classList.remove("show");
+    $("roundBanner").classList.remove("show");
+    localGamepadPrev = {};
+    Sim.resetToLobby();
+    localPlayers.forEach(function (p) { Sim.addPlayer(p.id); });
+    Sim.startMatch(totalRoundsPick, snailOn, { mode: selectedMode });
+  }
+
+  function exitLocal() {
+    localActive = false;
+    Sim.resetToLobby();
+    myId = null;
+    names = {}; colors = {};
+    hideScoreReveal();
+    $("wrap").classList.remove("playing");
+    $("roundBanner").classList.remove("show");
+    $("endMatchBtn").classList.remove("show");
+    $("endMatchBtn").textContent = "Terminar partida";
+    $("room").innerHTML = ROOM_HTML_DEFAULT;
+    $("finalScreen").classList.remove("show");
+    $("choiceCard").style.display = "block";
+    startLobbyBackground();
+  }
+
+  /* Segundo esquema de teclado, para el jugador 2 local — no pisa ninguna tecla del esquema
+     principal (KEYS, más abajo). ArrowUp Y Control saltan (dos opciones, como el esquema 1 tiene
+     espacio Y W), "." y "/" pegan/patean porque están al lado de las flechas en un teclado en
+     inglés/es estándar. */
+  var KEYS2 = {
+    arrowleft: "left", arrowright: "right", arrowup: "jump", control: "jump",
+    ".": "punch", "/": "kick",
+  };
+
+  /* Deadzone del stick y mapeo de botones "estándar" (Standard Gamepad, W3C): 0=abajo(A/Cruz)
+     salta, 2=izquierda(X/Cuadrado) pi&ntilde;a, 1=derecha(B/C&iacute;rculo) patada — mismo criterio
+     que un beat-em-up clásico: salto en el botón inferior, ataque liviano en el de al lado. */
+  var GP_DEADZONE = 0.35;
+  var GP_BTN_JUMP = 0, GP_BTN_PUNCH = 2, GP_BTN_KICK = 1;
+  var GP_BTN_DPAD_LEFT = 14, GP_BTN_DPAD_RIGHT = 15;
+
+  function readGamepadState(gp) {
+    var axis = gp.axes[0] || 0;
+    var dpadL = gp.buttons[GP_BTN_DPAD_LEFT] && gp.buttons[GP_BTN_DPAD_LEFT].pressed;
+    var dpadR = gp.buttons[GP_BTN_DPAD_RIGHT] && gp.buttons[GP_BTN_DPAD_RIGHT].pressed;
+    return {
+      left: axis < -GP_DEADZONE || !!dpadL,
+      right: axis > GP_DEADZONE || !!dpadR,
+      jump: !!(gp.buttons[GP_BTN_JUMP] && gp.buttons[GP_BTN_JUMP].pressed),
+      punch: !!(gp.buttons[GP_BTN_PUNCH] && gp.buttons[GP_BTN_PUNCH].pressed),
+      kick: !!(gp.buttons[GP_BTN_KICK] && gp.buttons[GP_BTN_KICK].pressed),
+    };
+  }
+
+  /* Un frame de polling por jugador con mando: solo manda a Sim.handleInput() las ACCIONES que
+     cambiaron desde el frame anterior (igual que keydown/keyup, que solo disparan en el flanco,
+     no mientras la tecla sigue apretada). Si el mando se desconecta a mitad de partida (a
+     diferencia del setup, acá no sacamos al jugador — sería injusto perderlo en medio de una
+     ronda) soltamos todo lo que tuviera apretado para que el muñeco no quede caminando solo. */
+  function pollLocalGamepads() {
+    var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    localPlayers.forEach(function (p) {
+      if (p.source.type !== "gp") return;
+      var gp = pads[p.source.index];
+      var prev = localGamepadPrev[p.id] || { left: false, right: false, jump: false, punch: false, kick: false };
+      var cur = gp ? readGamepadState(gp) : { left: false, right: false, jump: false, punch: false, kick: false };
+      ["left", "right", "jump", "punch", "kick"].forEach(function (action) {
+        if (cur[action] !== prev[action]) Sim.handleInput(p.id, action, cur[action]);
+      });
+      localGamepadPrev[p.id] = cur;
+    });
   }
 
   /* ---------------------------------------------------------------- personalización del stick */
@@ -1132,6 +1473,15 @@
       return;
     }
 
+    if (localActive) {
+      pollLocalGamepads();
+      Sim.step(frameDt);
+      renderTopbar();
+      Sim.draw(ctx, now, frameDt);
+      requestAnimationFrame(frameLoop);
+      return;
+    }
+
     var frame = Sim.guestFrame(now, frameDt);
     if (frame) {
       var isPlaying = frame.phase !== "lobby";
@@ -1207,6 +1557,7 @@
       Sim.resetGuest();
       lastMap = null;
     }
+    refreshPingUI();
   });
 
   Net.on("reconnecting", function (info) {
@@ -1335,6 +1686,23 @@
     Sim.guestApplySnapshot(data);
   });
 
+  /* Solo tiene sentido mostrar el ping en una partida online real: en práctica libre y en modo
+     Local no hay servidor de por medio durante el juego, así que el número sería el ping al
+     server ocioso en el lobby, no el que importa para el juego. */
+  function refreshPingUI() {
+    var el = $("pingIndicator");
+    var ms = Net.getPing();
+    if (practiceActive || localActive || ms === null) {
+      el.classList.remove("show");
+      return;
+    }
+    el.classList.add("show");
+    el.classList.remove("good", "ok", "bad");
+    el.classList.add(ms < 60 ? "good" : ms < 150 ? "ok" : "bad");
+    $("pingMs").textContent = ms + " ms";
+  }
+  Net.on("ping", refreshPingUI);
+
   Net.on("err", function (msg) {
     var target = "mainErr";
     if ($("joinCard").style.display === "block") target = "joinErr";
@@ -1346,6 +1714,7 @@
     /* Si hay sesión guardada, Net ya está reintentando y el overlay de "reconectando" cuenta la
        historia: mostrar además un error rojo sería alarmismo. Solo avisamos cuando de verdad
        no hay nada que recuperar. */
+    $("pingIndicator").classList.remove("show");
     if (Net.getSavedSession()) return;
     $("roomErr").textContent = "Se perdió la conexión con el servidor. Recargá la página.";
     $("mainErr").textContent = "Sin conexión con el servidor.";
@@ -1363,12 +1732,37 @@
   }
   function sendAction(action, down) {
     // Práctica libre no tiene servidor: el input maneja Sim directo en vez de viajar por Net.
+    // Modo Local se resuelve ANTES de llegar acá (ver los handlers de abajo): ahí una sola tecla
+    // puede pertenecer a un jugador distinto según qué esquema de teclado tenga asignado, así
+    // que hace falta saber el id antes de llamar a Sim.handleInput.
     if (practiceActive) Sim.handleInput(PRACTICE_ME, action, down);
     else Net.sendInput(action, down);
   }
+  function localPlayerForKbSlot(slot) {
+    for (var i = 0; i < localPlayers.length; i++) {
+      var p = localPlayers[i];
+      if (p.source.type === "kb" && p.source.slot === slot) return p.id;
+    }
+    return null;
+  }
   window.addEventListener("keydown", function (e) {
     if (isTyping()) return;
-    var action = KEYS[e.key.toLowerCase()];
+    var key = e.key.toLowerCase();
+    if (localActive) {
+      var a1 = KEYS[key], a2 = KEYS2[key];
+      if (!a1 && !a2) return;
+      e.preventDefault();
+      if (a1) {
+        var id1 = localPlayerForKbSlot(1);
+        if (id1 !== null && !(e.repeat && a1 !== "left" && a1 !== "right")) Sim.handleInput(id1, a1, true);
+      }
+      if (a2) {
+        var id2 = localPlayerForKbSlot(2);
+        if (id2 !== null && !(e.repeat && a2 !== "left" && a2 !== "right")) Sim.handleInput(id2, a2, true);
+      }
+      return;
+    }
+    var action = KEYS[key];
     if (!action) return;
     e.preventDefault();
     if (e.repeat && action !== "left" && action !== "right") return;
@@ -1376,13 +1770,28 @@
   });
   window.addEventListener("keyup", function (e) {
     if (isTyping()) return;
-    var action = KEYS[e.key.toLowerCase()];
+    var key = e.key.toLowerCase();
+    if (localActive) {
+      var a1 = KEYS[key], a2 = KEYS2[key];
+      if (a1 === "left" || a1 === "right") {
+        var id1 = localPlayerForKbSlot(1);
+        if (id1 !== null) Sim.handleInput(id1, a1, false);
+      }
+      if (a2 === "left" || a2 === "right") {
+        var id2 = localPlayerForKbSlot(2);
+        if (id2 !== null) Sim.handleInput(id2, a2, false);
+      }
+      return;
+    }
+    var action = KEYS[key];
     if (action !== "left" && action !== "right") return;
     sendAction(action, false);
   });
 
   // Clic izquierdo = piña, clic derecho = patada — solo mientras hay una partida en pantalla,
-  // para no robarle el clic derecho (menú contextual) a la pantalla de lobby/menús.
+  // para no robarle el clic derecho (menú contextual) a la pantalla de lobby/menús. En Local
+  // queda atado al jugador de Teclado 1 (mismo criterio que online/práctica: el mouse siempre
+  // complementa al teclado principal, nunca a uno con mando).
   function isPlayingNow() { return $("wrap").classList.contains("playing"); }
   window.addEventListener("contextmenu", function (e) {
     if (isPlayingNow()) e.preventDefault();
@@ -1390,15 +1799,34 @@
   window.addEventListener("mousedown", function (e) {
     if (!isPlayingNow() || isTyping()) return;
     if (e.button !== 0 && e.button !== 2) return; // solo izquierdo/derecho, ignorar el del medio
-    sendAction(e.button === 0 ? "punch" : "kick", true);
+    var action = e.button === 0 ? "punch" : "kick";
+    if (localActive) {
+      var id1 = localPlayerForKbSlot(1);
+      if (id1 !== null) Sim.handleInput(id1, action, true);
+      return;
+    }
+    sendAction(action, true);
   });
 
   /* ---------------------------------------------------------------- wiring del lobby */
   $("createBtn").addEventListener("click", function () {
     $("mainErr").textContent = "";
     $("choiceCard").style.display = "none";
-    $("modeCard").style.display = "block";
+    $("originCard").style.display = "block";
     $("backLink").style.display = "inline";
+  });
+
+  $("originOnlineBtn").addEventListener("click", function () {
+    roomOrigin = "online";
+    $("originCard").style.display = "none";
+    $("modeCard").style.display = "block";
+    $("modeConfirmBtn").textContent = "Crear sala";
+  });
+  $("originLocalBtn").addEventListener("click", function () {
+    roomOrigin = "local";
+    $("originCard").style.display = "none";
+    $("modeCard").style.display = "block";
+    $("modeConfirmBtn").textContent = "Siguiente";
   });
 
   $("joinShowBtn").addEventListener("click", function () {
@@ -1437,6 +1865,19 @@
       $("practiceCard").style.display = "block";
       return;
     }
+    // modeCard → originCard, y localSetupCard → modeCard: son pasos de la MISMA decisión
+    // ("crear sala"), igual que práctica arriba — un solo paso atrás, no directo al inicio.
+    if ($("localSetupCard").style.display === "block") {
+      stopLocalSetupPoll();
+      $("localSetupCard").style.display = "none";
+      $("modeCard").style.display = "block";
+      return;
+    }
+    if ($("modeCard").style.display === "block") {
+      $("modeCard").style.display = "none";
+      $("originCard").style.display = "block";
+      return;
+    }
     if ($("roomCard").style.display === "block") {
       Net.leave();
       myId = null;
@@ -1446,6 +1887,7 @@
       colors = {};
     }
     $("joinCard").style.display = "none";
+    $("originCard").style.display = "none";
     $("modeCard").style.display = "none";
     $("practiceCard").style.display = "none";
     $("roomCard").style.display = "none";
@@ -1489,6 +1931,15 @@
 
   $("modeConfirmBtn").addEventListener("click", function () {
     $("modeErr").textContent = "";
+    if (roomOrigin === "local") {
+      $("modeCard").style.display = "none";
+      $("localSetupCard").style.display = "block";
+      localPlayers = [];
+      renderLocalRoster();
+      renderLocalAddRow();
+      startLocalSetupPoll();
+      return;
+    }
     Net.create($("nickInputMain").value.trim() || "Anfitrión", selectedMode, totalRoundsPick, myColor);
   });
 
@@ -1507,9 +1958,22 @@
     this.classList.toggle("on", snailOn);
     this.setAttribute("aria-checked", String(snailOn));
   });
+  $("localSnailBtn").addEventListener("click", function () {
+    snailOn = !snailOn;
+    this.classList.toggle("on", snailOn);
+    this.setAttribute("aria-checked", String(snailOn));
+  });
+  $("localStartBtn").addEventListener("click", startLocalMatch);
   $("startBtn").addEventListener("click", function () { Net.start(snailOn); });
-  $("endMatchBtn").addEventListener("click", function () { if (practiceActive) exitPractice(); else Net.endMatch(); });
-  $("playAgainBtn").addEventListener("click", function () { Net.again(); });
+  $("endMatchBtn").addEventListener("click", function () {
+    if (practiceActive) exitPractice();
+    else if (localActive) exitLocal();
+    else Net.endMatch();
+  });
+  $("playAgainBtn").addEventListener("click", function () {
+    if (localActive) restartLocalMatch();
+    else Net.again();
+  });
 
   selectPracticeDifficulty("medium"); // sincroniza practiceDifficulty con el botón ya marcado "selected" en el HTML
 

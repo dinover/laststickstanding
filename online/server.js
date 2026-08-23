@@ -547,6 +547,15 @@ function handleMessage(ws, raw) {
   }
   if (!msg || typeof msg.t !== "string") return;
 
+  /* --- medición de latencia, disponible en cualquier momento (lobby, sala, partida) ---
+     Eco puro: el cliente manda su propio timestamp y nosotros se lo devolvemos intacto, así
+     el RTT lo calcula él mismo (Date.now() acá vs. en el cliente pueden no estar sincronizados,
+     pero no hace falta — solo importa el delta de ida y vuelta del lado del cliente). */
+  if (msg.t === "ping") {
+    send(ws, { t: "pong", ts: msg.ts });
+    return;
+  }
+
   /* --- fuera de sala --- */
   if (msg.t === "create") {
     if (ws._room) return;
