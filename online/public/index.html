@@ -87,6 +87,25 @@
   #pingIndicator.bad .dot { background: #ff5e7a; }
   #pingIndicator.bad b { color: #ff5e7a; }
   #pingIndicator b { color: #9aa3bd; font-weight: 600; }
+
+  /* Scoreboard del modo Por victorias: solo color + puntaje, nada de nombres — el cartel de
+     ronda ya no repite "primero a N" (ver Net.on("round")/onPhaseChange), así que este es el
+     único lugar donde se ve en vivo cuánto le falta a cada uno. Orden fijo por roster (no por
+     puntaje): si se reordenara por quién va ganando, los colores saltarían de fila cada vez que
+     cambia el puntaje — mismo criterio que ya usa el reveal de infinito. */
+  #winsScoreboard {
+    display: none;
+    position: absolute; top: 62px; left: 18px; z-index: 5;
+    flex-direction: column; gap: 4px;
+  }
+  #wrap.playing #winsScoreboard.show { display: flex; }
+  #winsScoreboard .row {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 14px; font-weight: 600; color: #eaf0ff;
+  }
+  #winsScoreboard .dot {
+    width: 11px; height: 11px; border-radius: 50%; box-shadow: 0 0 8px currentColor; flex: none;
+  }
   .avatar {
     width: 40px; height: 40px; border-radius: 50%; position: relative;
     border: 2px solid rgba(255,255,255,.25); box-shadow: 0 0 12px currentColor;
@@ -325,6 +344,7 @@
   <canvas id="c" width="960" height="540"></canvas>
   <div id="room">SALA <b id="roomCode">----</b></div>
   <div id="pingIndicator"><span class="dot"></span><b id="pingMs">-- ms</b></div>
+  <div id="winsScoreboard"></div>
   <button id="endMatchBtn">Terminar partida</button>
   <div id="audioPanel">
     <button id="audioToggle" title="Audio">&#9834;</button>
@@ -421,17 +441,17 @@
     </div>
 
     <div class="card" id="modeCard" style="display:none">
-      <p class="sub">Eleg&iacute; el modo de juego:</p>
+      <p class="sub">Eleg&iacute; el modo de juego. La cantidad de rondas (o de victorias, seg&uacute;n el modo) se configura despu&eacute;s, ya dentro de la sala.</p>
 
       <button type="button" class="modeOption selected" id="modeRoundsBtn">
         <strong>Por rondas</strong>
         <span class="desc">Vos eleg&iacute;s cu&aacute;ntas rondas se juegan. Termina sola al llegar a la &uacute;ltima.</span>
       </button>
-      <div class="roundsRow" id="roundsPickRow">
-        <button class="ghost" id="minusBtn" type="button">&minus;</button>
-        <span id="roundsN">3</span> rondas
-        <button class="ghost" id="plusBtn" type="button">+</button>
-      </div>
+
+      <button type="button" class="modeOption" id="modeWinsBtn">
+        <strong>Por victorias</strong>
+        <span class="desc">Se juega ronda tras ronda sin l&iacute;mite. Gana el primero en ACUMULAR la cantidad de rondas ganadas que elijas.</span>
+      </button>
 
       <button type="button" class="modeOption" id="modeInfiniteBtn">
         <strong>Infinito</strong>
@@ -458,9 +478,15 @@
     </div>
 
     <div class="card" id="localSetupCard" style="display:none">
+      <p class="sub" id="localModeSummary" style="margin:0 0 10px"></p>
       <p class="sub">Sum&aacute; jugadores (hasta 8) con teclado o mandos conectados a esta PC:</p>
       <div class="rosterList" id="localRoster"></div>
       <div id="localAddRow"></div>
+      <div class="roundsRow" id="localRoundsRow" style="display:none">
+        <button class="ghost" id="localMinusBtn" type="button">&minus;</button>
+        <span id="localRoundsN">3</span> rondas
+        <button class="ghost" id="localPlusBtn" type="button">+</button>
+      </div>
       <button class="snail" id="localSnailBtn" role="switch" aria-checked="false">&#128012; Modo caracol (PCs lentas)</button>
       <button id="localStartBtn" style="width:100%; margin-top: 10px;" disabled>Empezar partida</button>
       <div class="err" id="localErr"></div>
@@ -644,7 +670,18 @@
   // cada "lobby". El fallback por índice de slot solo se usa antes de recibir ese mensaje, o en
   // Práctica Libre, donde no hay servidor.
   function colorFor(id) { return colors[id] || PLAYER_COLORS[id % PLAYER_COLORS.length]; }
-  function nameFor(id) { return id === myId ? "Vos" : (names[id] || ("Jugador " + id)); }
+  function nameFor(id) { return names[id] || ("Jugador " + id); }
+
+  /* Un solo lugar para el resumen "qué se está por jugar", compartido entre el lobby online
+     (roomCard, vía Net.on("lobby")) y el setup de modo Local (localSetupCard) — antes solo
+     existía inline dentro del handler de "lobby" y modo Local no tenía nada parecido. */
+  function modeSummaryText(mode, rounds) {
+    if (mode === "infinite") return "♾️ Modo infinito — el marcador no se reinicia entre rondas";
+    if (mode === "koth") return "⛰️ Rey de la Colina — el primero en llegar a 100 puntos gana";
+    if (mode === "orbking") return "🔮 Rey del Orbe — 2 minutos, gana quien más tiempo sostuvo un power";
+    if (mode === "wins") return "🏆 Por victorias — primero en ganar " + rounds + (rounds === 1 ? " ronda" : " rondas");
+    return "🎯 Por rondas — " + rounds + (rounds === 1 ? " ronda" : " rondas");
+  }
 
   /* En modo online el servidor corre la simulación; acá Sim solo se usa por su lado guest
      (interpolación + dibujo). En Práctica Libre y en modo Local, en cambio, Sim SÍ corre de
@@ -664,6 +701,10 @@
       if (!(practiceActive || localActive)) return;
 
       if (info.t === "roundStart") {
+        // Mismo criterio que Net.on("round") online: si la ronda anterior terminó con el reveal
+        // de estadísticas todavía en pantalla, se corta acá — no tiene sentido que sobreviva a
+        // la ronda para la que se calculó.
+        hideScoreReveal();
         var rb = $("roundBanner");
         // Modo Local: mismo texto que arma el servidor en el "round" broadcast online (ver
         // Net.on("round")) — acá no llega por mensaje, se arma con lo que ya tenemos a mano
@@ -671,7 +712,12 @@
         // simple de siempre (sin total, sin chequeo de modo: solo existe "infinite" ahí).
         if (localActive && selectedMode === "koth") rb.textContent = "REY DE LA COLINA — " + info.mapName;
         else if (localActive && selectedMode === "orbking") rb.textContent = "REY DEL ORBE — " + info.mapName;
-        else if (localActive) {
+        else if (localActive && selectedMode === "wins") {
+          // El objetivo de victorias y el puntaje en vivo ya los muestra el scoreboard de la
+          // izquierda (ver renderWinsScoreboard) — acá alcanza con el número de ronda, nada de
+          // repetir "primero a N" ni el nombre del mapa en un cartel que se hacía enorme.
+          rb.textContent = "RONDA " + info.round;
+        } else if (localActive) {
           var totalTxt = info.totalRounds == null ? "∞" : info.totalRounds;
           rb.textContent = "RONDA " + info.round + " / " + totalTxt + " — " + info.mapName;
         } else {
@@ -714,13 +760,30 @@
     });
   }
 
+  /* Solo color + puntaje, sin nombre — pensado para leerse de reojo mientras se juega, no como
+     un roster. Se llama una vez por frame junto a renderTopbar() en los tres caminos de render
+     (online guest, Local, Práctica); acá mismo decide si corresponde mostrarse: solo tiene
+     sentido en modo "wins", donde el cartel de ronda ya no repite el objetivo/puntaje (ver
+     Net.on("round") / onPhaseChange) porque este scoreboard pasó a ser la única fuente. */
+  function renderWinsScoreboard() {
+    var el = $("winsScoreboard");
+    var mode = practiceActive ? "infinite" : localActive ? selectedMode : Net.getMode();
+    if (mode !== "wins") { el.classList.remove("show"); return; }
+    el.classList.add("show");
+    var scores = Sim.getScores();
+    el.innerHTML = Sim.getRoster().map(function (id) {
+      var color = colorFor(id);
+      return '<div class="row"><div class="dot" style="color:' + color + ';background:' + color + '"></div>' + (scores[id] || 0) + '</div>';
+    }).join("");
+  }
+
   function renderRoster(list, ownerId) {
     $("roster").innerHTML = list.map(function (p) {
       var tag = p.id === ownerId ? ' <span class="tag">(anfitri&oacute;n)</span>' : "";
       var gone = p.connected === false;
       if (gone) tag += ' <span class="gonetag">(reconectando&hellip;)</span>';
       return '<div class="rosterRow' + (gone ? " gone" : "") + '"><div class="dot" style="color:' + colorFor(p.id) + ';background:' + colorFor(p.id) + '"></div>' +
-        (p.id === myId ? "Vos" : escapeHtml(p.name)) + tag + "</div>";
+        escapeHtml(p.name) + tag + "</div>";
     }).join("");
   }
 
@@ -730,47 +793,76 @@
 
   /* ---------------------------------------------------------------- reveal de puntajes (modo infinito) */
   var TYPE_CHAR_MS = 42; // milisegundos por letra
-  var TYPE_PAUSE_MS = 300; // pausa entre segmentos (jugador→separador, línea 1→línea 2)
-  var SCORE_REVEAL_HOLD_MS = 2000; // cuánto queda arriba después de terminar de tipear
+  var TYPE_PAUSE_MS = 300; // pausa entre segmentos (jugador→separador, línea 1→línea 2, y entre cada dato)
+  var SCORE_REVEAL_HOLD_MS = 2000; // cuánto queda arriba después de terminar de tipear (sin ningún dato)
+  var STAT_HOLD_MS = 1600; // cuánto queda cada dato en pantalla antes de pasar al siguiente
 
-  /* Categorías del dato random del final ("para darle más color al juego"). Cada ronda-5 se
-     sortea UNA, entre las que tengan algún valor mayor a 0 — así no sale siempre la misma y
-     nunca dice "Fulano hizo 0 patadas" cuando recién arranca la partida. */
+  /* Categorías del dato random del final ("para darle más color al juego"). Antes se sorteaba
+     UNA sola por reveal; ahora se muestran TODAS las que tengan algún valor mayor a 0, de a una
+     por vez en la línea 2 (ver showScoreReveal) — así cada ronda-5 cuenta varias cosas en vez de
+     una sola, sin que el cartel se vuelva un bloque de texto ilegible. El orden sale barajado
+     para que no sea siempre el mismo.
+
+     Los textos son un chiste, no un reporte técnico: el número va TEJIDO en la frase (nunca
+     entre paréntesis) y cada uno describe la escena a su manera — el que tira patadas/piñas se
+     cuenta desde SU lado ("no bajó los puños"), el que se cae o el que se come golpes se cuenta
+     desde el lado de la víctima ("le llenaron la cara de dedos"). */
   var STAT_CATEGORIES = [
-    { key: "kicks", label: function (n, v) { return n + " tiró más patadas (" + v + ")"; } },
-    { key: "punches", label: function (n, v) { return n + " tiró más piñas (" + v + ")"; } },
-    { key: "falls", label: function (n, v) { return n + " se cayó más veces (" + v + ")"; } },
-    { key: "hitsLanded", label: function (n, v) { return n + " conectó más golpes (" + v + ")"; } },
-    { key: "hitsTaken", label: function (n, v) { return n + " recibió más golpes (" + v + ")"; } },
+    { key: "kicks", label: function (n, v) { return n + " repartió " + v + " patadas por todo el mapa"; } },
+    { key: "punches", label: function (n, v) { return n + " no bajó los puños: tiró " + v + " piñas"; } },
+    { key: "falls", label: function (n, v) { return n + " le tiene alergia a las plataformas, se cayó " + v + " veces"; } },
+    { key: "hitsLanded", label: function (n, v) { return n + " no perdonó ni una: conectó " + v + " golpes limpios"; } },
+    { key: "hitsTaken", label: function (n, v) { return "a " + n + " le llenaron la cara de dedos, se comió " + v + " golpes"; } },
   ];
 
-  function pickRandomStat(stats, ids) {
+  function pickStatsSequence(stats, ids) {
     var order = STAT_CATEGORIES.slice();
     for (var i = order.length - 1; i > 0; i--) { // barajado simple, para no probar siempre en el mismo orden
       var j = Math.floor(Math.random() * (i + 1));
       var tmp = order[i]; order[i] = order[j]; order[j] = tmp;
     }
-    for (var c = 0; c < order.length; c++) {
-      var cat = order[c], bestId = null, bestN = 0;
+    var seq = [];
+    order.forEach(function (cat) {
+      var bestId = null, bestN = 0;
       ids.forEach(function (id) {
         var n = (stats && stats[id] && stats[id][cat.key]) || 0;
         if (n > bestN) { bestN = n; bestId = id; }
       });
-      if (bestId !== null) return { text: cat.label(nameFor(bestId), bestN), color: colorFor(bestId) };
-    }
-    return null; // nadie hizo nada todavía (ronda 5 con muy poca acción) — no forzamos una línea vacía
+      // nadie hizo nada todavía en esta categoría (ronda 5 con muy poca acción) — no forzamos
+      // una línea vacía, simplemente no entra en la secuencia.
+      if (bestId !== null) seq.push({ text: cat.label(nameFor(bestId), bestN), color: colorFor(bestId) });
+    });
+    return seq;
   }
 
   var scoreRevealTimers = [];
+  /* Referencia ÚNICA capturada acá y nunca más buscada por id: appendChild() mueve libremente
+     un nodo YA DESCONECTADO del documento (lo vuelve a conectar donde lo mandes), pero
+     getElementById() no puede encontrarlo mientras está desconectado — con $("scoreRevealCursor")
+     repetido en cada llamada, apenas detachCursor() lo sacaba de su padre (para no perderlo bajo
+     un textContent="") quedaba huérfano e ilocalizable para siempre, y el cursor desaparecía
+     después de la primera revelación aunque ya no tirara error. */
+  var scoreRevealCursorEl = $("scoreRevealCursor");
 
   function clearScoreRevealTimers() {
     scoreRevealTimers.forEach(clearTimeout);
     scoreRevealTimers = [];
   }
 
+  /* scoreRevealCursorEl es UN solo elemento del DOM que scheduleTypeSegment mueve de lado a
+     lado (línea 1, línea 2, entre datos de la secuencia) con appendChild — nunca se clona. Por
+     eso ninguna limpieza puede usar `container.textContent = ""`: eso borra TODOS los hijos, y
+     si el cursor estaba adentro en ese momento (algo que pasa seguido: es lo normal apenas
+     termina de tipear algo) lo destruye para siempre. Antes de cualquier textContent="" hay que
+     sacarlo primero (quitarlo de su padre, no borrarlo) para que siga vivo y reutilizable. */
+  function detachCursor() {
+    if (scoreRevealCursorEl.parentNode) scoreRevealCursorEl.parentNode.removeChild(scoreRevealCursorEl);
+  }
+
   function hideScoreReveal() {
     clearScoreRevealTimers();
     $("scoreReveal").classList.remove("show");
+    detachCursor();
     $("scoreRevealLine1").textContent = "";
     $("scoreRevealLine2").textContent = "";
   }
@@ -784,7 +876,6 @@
      encadenar el siguiente segmento. */
   function scheduleTypeSegment(container, text, startDelay, color) {
     var span = null; // compartido por los N closures de abajo: una sola instancia por segmento
-    var cursor = $("scoreRevealCursor");
     for (var i = 0; i < text.length; i++) {
       var t = setTimeout((function (ch) {
         return function () {
@@ -794,7 +885,7 @@
             container.appendChild(span);
           }
           span.textContent += ch;
-          container.appendChild(cursor);
+          container.appendChild(scoreRevealCursorEl); // reconecta el MISMO nodo, esté donde esté ahora
         };
       })(text[i]), startDelay + i * TYPE_CHAR_MS);
       scoreRevealTimers.push(t);
@@ -802,9 +893,18 @@
     return startDelay + text.length * TYPE_CHAR_MS;
   }
 
+  /* Vacía `container` en `atTime` — el "borrado" entre un dato y el siguiente de la secuencia.
+     Un timeout más, no una animación: mismo criterio que scheduleTypeSegment (hideScoreReveal
+     puede cortarlo en cualquier punto sin dejar nada colgado). */
+  function scheduleClear(container, atTime) {
+    var t = setTimeout(function () { detachCursor(); container.textContent = ""; }, atTime);
+    scoreRevealTimers.push(t);
+  }
+
   function showScoreReveal(stats) {
     clearScoreRevealTimers();
     var line1 = $("scoreRevealLine1"), line2 = $("scoreRevealLine2");
+    detachCursor();
     line1.textContent = ""; line2.textContent = "";
     $("scoreReveal").classList.add("show");
 
@@ -826,16 +926,24 @@
       t += TYPE_PAUSE_MS;
     });
 
-    // Dato random al terminar, en una segunda línea — llega en msg.stats, NO desde
+    // Datos random al terminar, en una segunda línea — llegan en msg.stats, NO desde
     // Sim.getMatchStats() (eso leería los contadores del Sim LOCAL del cliente, que nunca
     // simula nada y siempre da cero; los reales vienen del servidor en el broadcast "round").
-    var stat = pickRandomStat(stats, ids);
-    if (stat) {
-      t += TYPE_PAUSE_MS;
-      t = scheduleTypeSegment(line2, stat.text, t, stat.color);
+    // Se muestran TODOS los que haya, de a uno: se tipea el primero, se lo deja leer
+    // STAT_HOLD_MS, se borra y entra el siguiente — así una sola revelación cuenta varias cosas
+    // en vez de una sola al azar.
+    var statSeq = pickStatsSequence(stats, ids);
+    if (statSeq.length) {
+      statSeq.forEach(function (stat, idx) {
+        t += TYPE_PAUSE_MS;
+        if (idx > 0) scheduleClear(line2, t);
+        t = scheduleTypeSegment(line2, stat.text, t, stat.color);
+        t += STAT_HOLD_MS;
+      });
+      scoreRevealTimers.push(setTimeout(hideScoreReveal, t));
+    } else {
+      scoreRevealTimers.push(setTimeout(hideScoreReveal, t + SCORE_REVEAL_HOLD_MS));
     }
-
-    scoreRevealTimers.push(setTimeout(hideScoreReveal, t + SCORE_REVEAL_HOLD_MS));
   }
 
   function showFinal(ranked, scores) {
@@ -869,6 +977,7 @@
   var practiceDifficulty = "medium";
   var practiceAiAccum = 0;
   var practiceAiPathCommitted = false; // ver practiceAiTick: evita que un salto al azar arrastre a la IA a un hueco
+  var practiceAiNeedsDoubleJump = false; // el hop elegido por el pathfinding requiere el segundo salto
   var ROOM_HTML_DEFAULT = $("room").innerHTML;
 
   var PRACTICE_DIFFS = {
@@ -886,14 +995,21 @@
   }
 
   var PATHFIND_FALL_MARGIN = 40; // solape horizontal tolerado para "se puede caer de una a otra"
-  var PATHFIND_JUMP_RISE = 230;  // altura máx. aprox. de un salto (JUMP_V=-20.5, GRAVITY_UP=0.95)
+  var PATHFIND_JUMP_RISE = 230;  // altura máx. aprox. de un solo salto (JUMP_V=-20.5, GRAVITY_UP=0.95)
+  /* El segundo salto (JUMP_V2 en desktop/sim.js) llega, por diseño, a la MITAD de la altura del
+     primero — mismo criterio acá: sumarle esa mitad da el alcance total de un salto doble. Antes
+     el grafo no lo contemplaba en absoluto, así que la IA trataba cualquier plataforma más alta
+     que un salto simple como "inalcanzable" y se quedaba quieta debajo — aunque tuviera el doble
+     salto disponible como cualquier jugador. */
+  var PATHFIND_DOUBLE_JUMP_RISE = PATHFIND_JUMP_RISE * 1.5; // 345
 
   /* Grafo de "a qué otra plataforma se puede llegar desde acá": cayendo (si hay solape
-     horizontal razonable y la otra está más abajo) o saltando (si está más arriba pero dentro
-     de la altura de salto). No modela el arco exacto del salto ni el drift al caer, pero
-     alcanza para que la IA elija un camino real en vez de tirarse a un borde cualquiera sin
-     saber qué hay del otro lado — que es justo lo que la dejaba cayendo al vacío en mapas
-     generados con huecos de verdad. */
+     horizontal razonable y la otra está más abajo) o saltando (si está más arriba, con un salto
+     simple o, si hace falta, con el doble). Cada arista lleva un flag `dbl` que dice si ese hop
+     necesita el segundo salto — bfsNextHop lo propaga para que practiceAiTick sepa si tiene que
+     pedirlo. No modela el arco exacto del salto ni el drift al caer, pero alcanza para que la IA
+     elija un camino real en vez de tirarse a un borde cualquiera sin saber qué hay del otro lado
+     — que es justo lo que la dejaba cayendo al vacío en mapas generados con huecos de verdad. */
   function buildPlatformGraph(plats) {
     var adj = [];
     for (var i = 0; i < plats.length; i++) {
@@ -903,33 +1019,37 @@
         var a = plats[i], b = plats[j];
         var overlap = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
         if (overlap < -PATHFIND_FALL_MARGIN) continue; // ni cerca en X, no hay forma de llegar
-        if (b.y > a.y) adj[i].push(j); // b está más abajo: se llega cayendo
-        else if (a.y - b.y <= PATHFIND_JUMP_RISE) adj[i].push(j); // b más arriba pero saltable
+        if (b.y > a.y) { adj[i].push({ to: j, dbl: false }); continue; } // b está más abajo: se llega cayendo
+        var rise = a.y - b.y;
+        if (rise <= PATHFIND_JUMP_RISE) adj[i].push({ to: j, dbl: false });
+        else if (rise <= PATHFIND_DOUBLE_JUMP_RISE) adj[i].push({ to: j, dbl: true });
       }
     }
     return adj;
   }
 
-  /* BFS de `from` a `to`: devuelve el índice del PRIMER salto del camino más corto, o -1 si no
-     hay ninguno — en ese caso la IA no se tira a lo loco, se queda quieta antes que arriesgarse
-     a un hueco sin fondo. */
+  /* BFS de `from` a `to`: devuelve el PRIMER salto del camino más corto ({hop, dbl}), o
+     hop === -1 si no hay ninguno — en ese caso la IA no se tira a lo loco, se queda quieta antes
+     que arriesgarse a un hueco sin fondo. `dbl` viaja pegado al PRIMER hop del camino (no al
+     último): es el único que practiceAiTick va a ejecutar antes de recalcular. */
   function bfsNextHop(adj, from, to) {
-    if (from < 0 || to < 0 || from === to) return -1;
+    if (from < 0 || to < 0 || from === to) return { hop: -1, dbl: false };
     var visited = {}; visited[from] = true;
-    var queue = [{ node: from, hop: -1 }];
+    var queue = [{ node: from, hop: -1, dbl: false }];
     for (var qi = 0; qi < queue.length; qi++) {
       var cur = queue[qi];
       var neighbors = adj[cur.node];
       for (var k = 0; k < neighbors.length; k++) {
-        var nb = neighbors[k];
+        var edge = neighbors[k], nb = edge.to;
         if (visited[nb]) continue;
         visited[nb] = true;
         var hop = cur.hop === -1 ? nb : cur.hop;
-        if (nb === to) return hop;
-        queue.push({ node: nb, hop: hop });
+        var dbl = cur.hop === -1 ? edge.dbl : cur.dbl;
+        if (nb === to) return { hop: hop, dbl: dbl };
+        queue.push({ node: nb, hop: hop, dbl: dbl });
       }
     }
-    return -1;
+    return { hop: -1, dbl: false };
   }
 
   /* Re-evaluada cada `decisionMs` según la dificultad (no cada frame, así la IA "piensa" a
@@ -952,6 +1072,7 @@
       Sim.handleInput(PRACTICE_AI, "left", false);
       Sim.handleInput(PRACTICE_AI, "right", false);
       practiceAiPathCommitted = false;
+      practiceAiNeedsDoubleJump = false;
       return;
     }
 
@@ -967,16 +1088,18 @@
     var meIdx = platformIndexAt(plats, me);
 
     if (aiIdx >= 0 && meIdx >= 0 && aiIdx !== meIdx) {
-      var nextIdx = bfsNextHop(buildPlatformGraph(plats), aiIdx, meIdx);
-      if (nextIdx >= 0) {
-        var cur = plats[aiIdx], target = plats[nextIdx];
+      var path = bfsNextHop(buildPlatformGraph(plats), aiIdx, meIdx);
+      if (path.hop >= 0) {
+        var cur = plats[aiIdx], target = plats[path.hop];
         var goRight = (target.x + target.w / 2) > (cur.x + cur.w / 2);
         wantRight = goRight; wantLeft = !goRight;
         wantJump = target.y < cur.y; // el próximo salto del camino está más arriba
         practiceAiPathCommitted = true;
+        practiceAiNeedsDoubleJump = path.dbl;
       } else {
         // Sin camino conocido: mejor quedarse quieta que arriesgarse a un hueco sin fondo.
         practiceAiPathCommitted = false;
+        practiceAiNeedsDoubleJump = false;
       }
     } else if (aiIdx < 0) {
       /* En el aire. Solo se ajusta hacia el rival si venimos de un salto/caída REALMENTE
@@ -987,6 +1110,7 @@
     } else {
       // Misma plataforma (o el rival también está en el aire): combate normal, terreno conocido.
       practiceAiPathCommitted = false;
+      practiceAiNeedsDoubleJump = false;
       ambientJumpOk = true;
       if (absDx > cfg.chaseSlack) {
         wantRight = dx > 0; wantLeft = dx < 0;
@@ -1001,6 +1125,11 @@
 
     if (ai.grounded && (wantJump || (ambientJumpOk && Math.random() < cfg.jumpChance))) {
       Sim.handleInput(PRACTICE_AI, "jump", true);
+    } else if (!ai.grounded && practiceAiNeedsDoubleJump && !ai.doubleJumped) {
+      // El hop elegido por el pathfinding necesita el segundo salto (ver buildPlatformGraph):
+      // ya despegó del suelo, ahora hay que pedirlo mientras sigue en el aire.
+      Sim.handleInput(PRACTICE_AI, "jump", true);
+      practiceAiNeedsDoubleJump = false; // gastado — no insistir cada tick de ahí al aterrizaje
     }
 
     var attacks = Sim.getAttacks();
@@ -1080,7 +1209,9 @@
     practiceActive = true;
     practiceAiAccum = 0;
     myId = PRACTICE_ME;
-    names = {}; names[PRACTICE_AI] = "NPC";
+    // Antes nameFor() mostraba "Vos" para myId sin necesidad de esto — ahora que nameFor()
+    // siempre devuelve el nombre real, práctica necesita el propio, igual que online.
+    names = {}; names[PRACTICE_ME] = $("nickInputMain").value.trim() || "Jugador"; names[PRACTICE_AI] = "NPC";
     colors = {}; if (myColor) colors[PRACTICE_ME] = myColor;
     finalShown = false;
     hideScoreReveal();
@@ -1468,6 +1599,7 @@
       practiceAiTick(frameDt);
       Sim.step(frameDt);
       renderTopbar();
+      renderWinsScoreboard();
       Sim.draw(ctx, now, frameDt);
       requestAnimationFrame(frameLoop);
       return;
@@ -1477,6 +1609,7 @@
       pollLocalGamepads();
       Sim.step(frameDt);
       renderTopbar();
+      renderWinsScoreboard();
       Sim.draw(ctx, now, frameDt);
       requestAnimationFrame(frameLoop);
       return;
@@ -1498,6 +1631,7 @@
       $("endMatchBtn").classList.toggle("show", showEndMatch);
 
       renderTopbar();
+      renderWinsScoreboard();
 
       if (frame.phase === "final" && !finalShown) {
         finalShown = true;
@@ -1604,21 +1738,16 @@
     var owner = Net.isOwner();
     $("ownerControls").style.display = owner ? "block" : "none";
     $("waitOwner").style.display = owner ? "none" : "block";
-    /* El modo queda fijo desde que se crea la sala, pero la CANTIDAD de rondas sí se puede
-       seguir ajustando acá mientras se espera a que se sumen amigos (setRounds). El servidor es
-       la autoridad: este texto y el picker siempre reflejan msg.rounds, nunca un valor local
-       optimista, así que un guest ve el número cambiar en vivo apenas el anfitrión lo toca. */
-    $("modeSummary").textContent = msg.mode === "infinite"
-      ? "♾️ Modo infinito — el marcador no se reinicia entre rondas"
-      : msg.mode === "koth"
-        ? "⛰️ Rey de la Colina — el primero en llegar a 100 puntos gana"
-        : msg.mode === "orbking"
-          ? "🔮 Rey del Orbe — 2 minutos, gana quien más tiempo sostuvo un power"
-          : "🎯 Por rondas — " + msg.rounds + (msg.rounds === 1 ? " ronda" : " rondas");
+    /* El modo queda fijo desde que se crea la sala, pero la CANTIDAD de rondas (o de victorias,
+       en modo "wins") sí se puede seguir ajustando acá mientras se espera a que se sumen amigos
+       (setRounds). El servidor es la autoridad: este texto y el picker siempre reflejan
+       msg.rounds, nunca un valor local optimista, así que un guest ve el número cambiar en vivo
+       apenas el anfitrión lo toca. */
+    $("modeSummary").textContent = modeSummaryText(msg.mode, msg.rounds);
 
-    var roundsMode = msg.mode === "rounds";
-    $("roomRoundsRow").style.display = roundsMode ? "flex" : "none";
-    if (roundsMode) {
+    var showRoundsRow = msg.mode === "rounds" || msg.mode === "wins";
+    $("roomRoundsRow").style.display = showRoundsRow ? "flex" : "none";
+    if (showRoundsRow) {
       roomRoundsPick = msg.rounds;
       $("roomRoundsN").textContent = msg.rounds;
     }
@@ -1643,11 +1772,20 @@
   });
 
   Net.on("round", function (msg) {
+    // Si la ronda anterior terminó mientras el reveal de estadísticas todavía estaba tipeando o
+    // mostrando algo (podía pasar: la ronda 5 se resuelve rápido y la 6 ya arrancó con las
+    // estadísticas de la 5 todavía en pantalla), lo cortamos ACÁ, apenas se sabe que hay ronda
+    // nueva — no tiene sentido que sobrevivan a la ronda para la que se calcularon.
+    hideScoreReveal();
     var rb = $("roundBanner");
     if (msg.mode === "koth") {
       rb.textContent = "REY DE LA COLINA — " + msg.mapName;
     } else if (msg.mode === "orbking") {
       rb.textContent = "REY DEL ORBE — " + msg.mapName;
+    } else if (msg.mode === "wins") {
+      // El objetivo de victorias y el puntaje en vivo ya los muestra el scoreboard de la
+      // izquierda (ver renderWinsScoreboard) — acá alcanza con el número de ronda.
+      rb.textContent = "RONDA " + msg.round;
     } else {
       // totalRounds llega null cuando el modo es infinito (ver onPhaseChange en server.js).
       var totalTxt = msg.totalRounds == null ? "∞" : msg.totalRounds;
@@ -1906,27 +2044,39 @@
   });
 
   /* ---- selección de modo (antes de crear la sala) ---- */
+  // La cantidad de rondas (o de victorias) YA NO se elige acá — esta pantalla es solo "qué modo",
+  // el número se configura después, dentro de la sala (roomCard) o del setup Local
+  // (localSetupCard), donde cada uno tiene su propio picker que reusa las mismas ids de siempre.
   function selectMode(mode) {
     selectedMode = mode;
     $("modeRoundsBtn").classList.toggle("selected", mode === "rounds");
+    $("modeWinsBtn").classList.toggle("selected", mode === "wins");
     $("modeInfiniteBtn").classList.toggle("selected", mode === "infinite");
     $("modeKothBtn").classList.toggle("selected", mode === "koth");
     $("modeOrbkingBtn").classList.toggle("selected", mode === "orbking");
-    $("roundsPickRow").style.display = mode === "rounds" ? "flex" : "none";
   }
   $("modeRoundsBtn").addEventListener("click", function () { selectMode("rounds"); });
+  $("modeWinsBtn").addEventListener("click", function () { selectMode("wins"); });
   $("modeInfiniteBtn").addEventListener("click", function () { selectMode("infinite"); });
   $("modeKothBtn").addEventListener("click", function () { selectMode("koth"); });
   $("modeOrbkingBtn").addEventListener("click", function () { selectMode("orbking"); });
   selectMode("rounds"); // sincroniza selectedMode con el estado inicial que ya muestra el HTML
 
-  $("minusBtn").addEventListener("click", function () {
+  // Picker de rondas/victorias del setup Local — el modeCard ya no tiene uno propio (ver el
+  // comentario de selectMode más arriba); acá es donde totalRoundsPick se vuelve editable, y
+  // solo cuando corresponde (renderLocalModeSummary lo muestra/oculta según selectedMode).
+  function renderLocalModeSummary() {
+    $("localModeSummary").textContent = modeSummaryText(selectedMode, totalRoundsPick);
+    $("localRoundsRow").style.display = (selectedMode === "rounds" || selectedMode === "wins") ? "flex" : "none";
+    $("localRoundsN").textContent = totalRoundsPick;
+  }
+  $("localMinusBtn").addEventListener("click", function () {
     totalRoundsPick = Math.max(1, totalRoundsPick - 1);
-    $("roundsN").textContent = totalRoundsPick;
+    renderLocalModeSummary();
   });
-  $("plusBtn").addEventListener("click", function () {
+  $("localPlusBtn").addEventListener("click", function () {
     totalRoundsPick = Math.min(20, totalRoundsPick + 1);
-    $("roundsN").textContent = totalRoundsPick;
+    renderLocalModeSummary();
   });
 
   $("modeConfirmBtn").addEventListener("click", function () {
@@ -1937,6 +2087,7 @@
       localPlayers = [];
       renderLocalRoster();
       renderLocalAddRow();
+      renderLocalModeSummary();
       startLocalSetupPoll();
       return;
     }

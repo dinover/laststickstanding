@@ -121,15 +121,19 @@ function freeCode() {
 
 /* "rounds" reproduce el único modo que existía: el anfitrión elige cuántas rondas. "infinite"
    se juega ronda a ronda sin límite, con el puntaje acumulando desde la ronda 1; cada 5 rondas
-   vuelve al mapa inicial (ver nextRound() en desktop/sim.js). "koth" es Rey de la Colina: una
-   sola ronda sin eliminación, la gana quien llegue primero a 100 puntos de círculo (ver
-   updateHill() en desktop/sim.js). "orbking" es Rey del Orbe: partida a reloj de 2 minutos,
+   vuelve al mapa inicial (ver nextRound() en desktop/sim.js). "wins" también se juega sin tope
+   de rondas, pero corta sola apenas alguien GANA la cantidad de rondas que el anfitrión eligió
+   (reusa el mismo campo room.rounds que "rounds", solo que ahí es un objetivo de victorias, no
+   una cantidad fija — ver el comentario de startMatch() en desktop/sim.js). "koth" es Rey de la
+   Colina: una sola ronda sin eliminación, la gana quien llegue primero a 100 puntos de círculo
+   (ver updateHill() en desktop/sim.js). "orbking" es Rey del Orbe: partida a reloj de 2 minutos,
    también sin eliminación, gana quien más tiempo sostuvo un power activo (ver updateOrbHold()).
    "Historia" (modo contra IA) todavía no existe — el cliente ni lo ofrece — así que cualquier
-   valor que no sea "infinite"/"koth"/"orbking" cae en "rounds" por default, no solo por si
-   alguien manda basura sino porque es el modo que ya estaba andando en producción. */
+   valor que no sea "infinite"/"wins"/"koth"/"orbking" cae en "rounds" por default, no solo por
+   si alguien manda basura sino porque es el modo que ya estaba andando en producción. */
 function normalizeMode(raw) {
   if (raw === "infinite") return "infinite";
+  if (raw === "wins") return "wins";
   if (raw === "koth") return "koth";
   if (raw === "orbking") return "orbking";
   return "rounds";
@@ -145,7 +149,7 @@ function createRoom(mode, rounds) {
     ownerId: null,
     host: null, // { sim, takeSfx }
     mode: normalizeMode(mode),
-    rounds: Math.max(1, Math.min(20, Number(rounds) || 3)), // solo se usa si mode === "rounds"
+    rounds: Math.max(1, Math.min(20, Number(rounds) || 3)), // solo se usa si mode === "rounds" | "wins"
     timer: null,
     last: 0,
     accum: 0,
@@ -211,7 +215,10 @@ function onPhaseChange(room, evt) {
       totalRounds: Number.isFinite(evt.totalRounds) ? evt.totalRounds : null,
       mapName: evt.mapName,
       infinite: !!evt.infinite,
-      mode: room.mode, // "rounds" | "infinite" | "koth" — el cliente lo usa para el texto del cartel
+      mode: room.mode, // "rounds" | "infinite" | "wins" | "koth" | "orbking" — el cliente lo usa para el texto del cartel
+      // room.rounds: en "rounds" es la cantidad total, en "wins" el objetivo de victorias — acá
+      // no se puede derivar de totalRounds (Infinity/null en ambos "infinite" y "wins").
+      rounds: room.rounds,
       stats: room.host.sim.getMatchStats(),
     });
   }
@@ -612,9 +619,10 @@ function handleMessage(ws, raw) {
        que poder seguir ajustándolo mientras espera a que se sumen amigos — capaz crea la sala
        para 3 y termina siendo para 6. Solo tiene efecto en el lobby: una vez que la partida
        arrancó, room.rounds queda congelado en lo que ya se usó para startMatch(). No aplica a
-       "infinite" (ahí no hay cantidad de rondas que fijar). */
+       "infinite" (ahí no hay cantidad de rondas que fijar) — "wins" sí, aunque ahí el mismo
+       número signifique "victorias para ganar" en vez de "rondas totales". */
     if (room.ownerId !== id) return;
-    if (room.mode !== "rounds") return;
+    if (room.mode !== "rounds" && room.mode !== "wins") return;
     if (room.host.sim.getPhase() !== "lobby") return;
     room.rounds = Math.max(1, Math.min(20, Number(msg.rounds) || room.rounds));
     pushLobby(room); // así todos ven el número actualizado en el resumen del lobby, no solo el anfitrión

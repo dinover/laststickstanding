@@ -100,9 +100,21 @@ var Sim = (function () {
   var phaseTimer = 0;
   var snailMode = false;
   /* "fixed" reproduce el comportamiento histórico (termina al llegar a totalRounds), y es lo
-     único que usan los builds de escritorio y Steam. "infinite" es exclusivo del build web —
-     ver online/server.js — y solo se activa pasando opts.mode a startMatch(). */
-  var roundsMode = "fixed"; // "fixed" | "infinite"
+     único que usan los builds de escritorio y Steam. "infinite" y "wins" son exclusivos del
+     build web — ver online/server.js — y solo se activan pasando opts.mode a startMatch().
+     "wins" no tiene totalRounds (queda en Infinity, como "infinite"): termina sola apenas
+     alguien acumula winTarget rondas ganadas (ver checkRoundEnd()/nextRound()). */
+  var roundsMode = "fixed"; // "fixed" | "infinite" | "wins"
+  var winTarget = 3; // solo tiene efecto con roundsMode === "wins"
+  /* El build de escritorio (desktop/game.html) llama a startMatch(rounds, snail) SIN opts, y ahí
+     el puntaje histórico reparte puntos de POSICIÓN a todo el mundo cada ronda (ver
+     checkRoundEnd): último eliminado 1 punto, anteúltimo 2, etc. El build web SIEMPRE manda
+     opts.mode (aunque sea "rounds") y puntúa distinto: 1 punto para quien ganó la ronda, nada
+     para el resto — así "rondas" e "infinito" funcionan como un contador directo de "cuántas
+     rondas ganaste", que es lo que "wins" necesita de por sí para su corte por winTarget. Se
+     deriva de la MISMA señal que ya distingue "es el build web" en gameMode/roundsMode acá
+     arriba, no un flag nuevo que haya que acordarse de pasar en cada call site. */
+  var winnerOnlyScoring = false;
   /* "normal" reproduce el juego de siempre (eliminación decide la ronda). "koth" y "orbking"
      son exclusivos del build web — ver online/server.js — y comparten que eliminate() reaparece
      al jugador en vez de sacarlo de la ronda (ver noElimination()/su rama al principio de la
@@ -184,7 +196,15 @@ var Sim = (function () {
 
   function nextRound() {
     currentRound++;
-    if (roundsMode !== "infinite" && currentRound > totalRounds) { endMatch(); return; }
+    if (roundsMode === "fixed" && currentRound > totalRounds) { endMatch(); return; }
+    /* "wins": no hay tope de rondas — se corta apenas alguien llega a winTarget victorias, y eso
+       ya quedó decidido en checkRoundEnd() (ahí es donde se suma la victoria de la ronda que
+       recién terminó). Chequear acá, antes de armar la ronda siguiente, evita que arranque una
+       ronda de más después de que alguien ya cumplió el objetivo. */
+    if (roundsMode === "wins" && roster.some(function (id) { return (scores[id] || 0) >= winTarget; })) {
+      endMatch();
+      return;
+    }
     /* Modo infinito: cada 5 rondas (5, 10, 15…) vuelve al mapa inicial, igual que la ronda 1.
        El puntaje NUNCA se resetea acá — sigue acumulando desde la ronda 1 hasta que el
        anfitrión corta la partida con forceEndMatch(). Con un terreno fijado (Práctica Libre)
@@ -270,10 +290,18 @@ var Sim = (function () {
     var alive = roster.filter(function (id) { return players[id] && players[id].alive; });
     if (alive.length <= 1) {
       if (alive.length === 1) eliminationOrder.push(alive[0]);
-      eliminationOrder.forEach(function (id, idx) {
-        var placement = idx + 1;
-        scores[id] = (scores[id] || 0) + placement;
-      });
+      if (winnerOnlyScoring) {
+        // Build web: 1 punto para quien ganó la ronda (el último de eliminationOrder), nada
+        // para el resto — ver el comentario de winnerOnlyScoring más arriba.
+        var winnerId = eliminationOrder[eliminationOrder.length - 1];
+        if (winnerId !== undefined) scores[winnerId] = (scores[winnerId] || 0) + 1;
+      } else {
+        // Build de escritorio: puntaje histórico de posición, todos suman algo cada ronda.
+        eliminationOrder.forEach(function (id, idx) {
+          var placement = idx + 1;
+          scores[id] = (scores[id] || 0) + placement;
+        });
+      }
       phase = "roundEnd";
       phaseTimer = 2600;
       orb = null;
@@ -338,6 +366,13 @@ var Sim = (function () {
   var ORB_TYPES = null; // resolved lazily, POWER_COLORS comes from stickman.js
   function orbTypes() { return ORB_TYPES || (ORB_TYPES = Object.keys(POWER_COLORS)); }
 
+  /* Un glyph por tipo de power, dibujado ADENTRO del orbe (ver drawOrb) para que se distinga
+     cuál es cuál de un vistazo, sin tener que memorizar qué color es cada poder. Emoji y no un
+     path SVG a mano: ya es el idioma que usa el resto de la UI del build web (♾️ ⛰️ 🔮 en los
+     modos, 🐌 caracol) y con reach/reduceOpacity da un ícono reconocible con cero mantenimiento
+     de paths nuevos. */
+  var ORB_GLYPHS = { fuego: "🔥", hielo: "❄️", tierra: "🛡️", aire: "⚡" };
+
   function spawnOrb() {
     var plats = currentMap.platforms;
     var pl = plats[Math.floor(Math.random() * plats.length)];
@@ -378,6 +413,19 @@ var Sim = (function () {
     ctx.beginPath(); ctx.arc(orb.x, y, 10, 0, Math.PI * 2); ctx.fill();
     if (!snailMode) ctx.shadowBlur = 0;
     ctx.restore();
+
+    // Alfa baja a propósito: es un acento adentro del brillo del orbe, no un sticker encima —
+    // demasiado opaco compite con el glow en vez de fundirse con él.
+    var glyph = ORB_GLYPHS[orb.type];
+    if (glyph) {
+      ctx.save();
+      ctx.globalAlpha = 0.65;
+      ctx.font = "13px 'Segoe UI Emoji','Noto Color Emoji',sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(glyph, orb.x, y + 1);
+      ctx.restore();
+    }
   }
 
   /* ---------------------------------------------------------------- rey del orbe */
@@ -644,6 +692,17 @@ var Sim = (function () {
       ctx.font = "10px Chakra Petch, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(nameFor(p.id), p.x, headY - 30);
+
+      // Mismo glyph que el orbe (ver drawOrb): mientras el power sigue activo, arriba del
+      // nombre, para que se sepa de un vistazo quién tiene qué sin tener que memorizar colores.
+      var glyph = p.power && ORB_GLYPHS[p.power.type];
+      if (glyph) {
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        ctx.font = "12px 'Segoe UI Emoji','Noto Color Emoji',sans-serif";
+        ctx.fillText(glyph, p.x, headY - 42);
+        ctx.restore();
+      }
     }
 
     /* Contador de puntos de Rey de la Colina / Rey del Orbe, arriba del nombre. Sin gate de
@@ -698,19 +757,27 @@ var Sim = (function () {
 
   /* opts es nuevo y opcional: sin él (como llaman desktop/game.html y steam/game.html, con
      solo 2 argumentos) el comportamiento es EXACTAMENTE el de siempre — modo "fixed", 1..20
-     rondas clampeadas. Solo el build web pasa { mode: "infinite" } o { mode: "koth" }, y solo
-     Práctica Libre además pasa { biome: "volcan" } (o el id que sea) para fijar el fondo+música.
-     Rey de la Colina y Rey del Orbe son una sola ronda que nunca termina por eliminación (ver
-     eliminate()/noElimination()). Colina usa el archetype "colina" de world.js (mucho más
-     terreno que los demás) salvo que Práctica Libre ya haya forzado uno propio; Orbe juega en
-     mapas normales (no necesita más terreno, el reloj de 2 min ya limita la partida). Los dos
-     arrancan con el marcador en 0 como cualquier otro modo — acá scores[id] son puntos del
-     círculo o segundos con power, no puntaje de ronda. */
+     rondas clampeadas. Solo el build web pasa { mode: "infinite" }, { mode: "wins" } o
+     { mode: "koth" }, y solo Práctica Libre además pasa { biome: "volcan" } (o el id que sea)
+     para fijar el fondo+música. Rey de la Colina y Rey del Orbe son una sola ronda que nunca
+     termina por eliminación (ver eliminate()/noElimination()). Colina usa el archetype "colina"
+     de world.js (mucho más terreno que los demás) salvo que Práctica Libre ya haya forzado uno
+     propio; Orbe juega en mapas normales (no necesita más terreno, el reloj de 2 min ya limita
+     la partida). Los dos arrancan con el marcador en 0 como cualquier otro modo — acá scores[id]
+     son puntos del círculo o segundos con power, no puntaje de ronda.
+
+     "wins" reusa el mismo parámetro `rounds` que "fixed", pero con otro significado: no es la
+     cantidad de rondas que se van a jugar (eso queda sin tope, ver totalRounds acá abajo), sino
+     cuántas rondas GANADAS hacen falta para cortar la partida (winTarget). Evita agregar un
+     parámetro nuevo solo para esto — el cliente ya sabe, por opts.mode, cuál de los dos sentidos
+     usar al mostrar el picker. */
   function startMatch(rounds, snail, opts) {
     opts = opts || {};
     gameMode = opts.mode === "koth" ? "koth" : opts.mode === "orbking" ? "orbking" : "normal";
-    roundsMode = opts.mode === "infinite" ? "infinite" : "fixed";
-    totalRounds = noElimination() ? 1 : (roundsMode === "infinite" ? Infinity : Math.max(1, Math.min(20, rounds || 3)));
+    roundsMode = opts.mode === "infinite" ? "infinite" : opts.mode === "wins" ? "wins" : "fixed";
+    totalRounds = noElimination() ? 1 : (roundsMode === "fixed" ? Math.max(1, Math.min(20, rounds || 3)) : Infinity);
+    winTarget = Math.max(1, Math.min(20, rounds || 3));
+    winnerOnlyScoring = opts.mode !== undefined;
     snailMode = !!snail;
     forcedArchetype = opts.mapArchetype || (gameMode === "koth" ? "colina" : null);
     forcedBiome = opts.biome || null;
