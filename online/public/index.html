@@ -125,7 +125,22 @@
   }
   #endMatchBtn.show { display: block; }
 
-  #audioPanel { position: absolute; top: 14px; right: 18px; z-index: 6; }
+  /* Esquina superior derecha: idioma + audio, en una fila. #audioPanel pasa a position:relative
+     porque #audioMenu se ancla a él (top:42px/right:0) — antes era el propio absolute el que
+     hacía de contenedor, ahora ese rol lo toma #topRight. */
+  #topRight { position: absolute; top: 14px; right: 18px; z-index: 6; display: flex; align-items: center; gap: 8px; }
+  #audioPanel { position: relative; }
+  /* Banderas en SVG y no emoji a propósito: Windows no trae glifos de bandera, así que 🇦🇷/🇬🇧
+     saldrían como las letras "AR"/"GB" en la mayoría de las PCs donde se juega esto. */
+  #langBtn {
+    width: 34px; height: 34px; border-radius: 50%; border: 1px solid #2a3050; background: rgba(10,12,24,.6);
+    padding: 0; cursor: pointer; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #langBtn svg { width: 22px; height: 22px; border-radius: 50%; display: block; }
+  /* Solo en los menús: dentro de la partida el HUD ya está cargado y cambiar de idioma en
+     medio de una ronda no tiene ningún caso de uso — se vuelve al menú y se cambia ahí. */
+  #wrap.playing #langBtn { display: none; }
   #audioToggle {
     width: 34px; height: 34px; border-radius: 50%; border: 1px solid #2a3050; background: rgba(10,12,24,.6);
     color: #9aa3bd; cursor: pointer; font-size: 15px; padding: 0; line-height: 1;
@@ -342,23 +357,26 @@
 <body>
 <div id="wrap">
   <canvas id="c" width="960" height="540"></canvas>
-  <div id="room">SALA <b id="roomCode">----</b></div>
+  <div id="room"><span data-i18n="hud.room">SALA</span> <b id="roomCode">----</b></div>
   <div id="pingIndicator"><span class="dot"></span><b id="pingMs">-- ms</b></div>
   <div id="winsScoreboard"></div>
-  <button id="endMatchBtn">Terminar partida</button>
-  <div id="audioPanel">
-    <button id="audioToggle" title="Audio">&#9834;</button>
-    <div id="audioMenu">
-      <label>SFX <input type="range" id="sfxRange" min="0" max="1" step="0.01" /></label>
-      <label>M&uacute;sica <input type="range" id="musicRange" min="0" max="1" step="0.01" /></label>
-      <label>Master <input type="range" id="masterRange" min="0" max="1" step="0.01" /></label>
-      <div class="muteRow"><span>Silenciar</span><button id="muteBtn">OFF</button></div>
+  <button id="endMatchBtn" data-i18n="hud.endMatch">Terminar partida</button>
+  <div id="topRight">
+    <button id="langBtn" type="button" title="Idioma / Language"></button>
+    <div id="audioPanel">
+      <button id="audioToggle" title="Audio">&#9834;</button>
+      <div id="audioMenu">
+        <label><span>SFX</span> <input type="range" id="sfxRange" min="0" max="1" step="0.01" /></label>
+        <label><span data-i18n="audio.music">M&uacute;sica</span> <input type="range" id="musicRange" min="0" max="1" step="0.01" /></label>
+        <label><span>Master</span> <input type="range" id="masterRange" min="0" max="1" step="0.01" /></label>
+        <div class="muteRow"><span data-i18n="audio.mute">Silenciar</span><button id="muteBtn">OFF</button></div>
+      </div>
     </div>
   </div>
   <div id="topbar"></div>
   <div id="roundBanner"></div>
   <div id="scoreReveal">
-    <span class="label">PUNTAJES</span>
+    <span class="label" data-i18n="hud.scores">PUNTAJES</span>
     <div id="scoreRevealLine1" class="revealLine"></div>
     <div id="scoreRevealLine2" class="revealLine"></div>
     <span class="cursor" id="scoreRevealCursor"></span>
@@ -371,130 +389,130 @@
 
   <div id="lobby">
     <h1>LAST STICK STANDING</h1>
-    <p class="sub">Modo online &mdash; servidor dedicado, todos con la misma latencia.</p>
+    <p class="sub" data-i18n="lobby.sub">Modo online &mdash; servidor dedicado, todos con la misma latencia.</p>
 
     <div class="card" id="choiceCard">
       <div class="nameRow">
-        <input id="nickInputMain" maxlength="14" placeholder="Tu nombre" />
-        <button type="button" class="ghost" id="customizeBtn" title="Personalizar tu stick">&#127912;</button>
+        <input id="nickInputMain" maxlength="14" placeholder="Tu nombre" data-i18n-ph="lobby.yourName" />
+        <button type="button" class="ghost" id="customizeBtn" title="Personalizar tu stick" data-i18n-title="lobby.customizeTitle">&#127912;</button>
       </div>
       <div class="rolePick">
-        <button id="createBtn">Crear sala</button>
-        <button class="ghost" id="joinShowBtn">Unirme a una sala</button>
+        <button id="createBtn" data-i18n="lobby.create">Crear sala</button>
+        <button class="ghost" id="joinShowBtn" data-i18n="lobby.join">Unirme a una sala</button>
       </div>
-      <button class="ghost" id="practiceBtn" style="width:100%; margin-top:10px;">Pr&aacute;ctica libre</button>
+      <button class="ghost" id="practiceBtn" style="width:100%; margin-top:10px;" data-i18n="lobby.practice">Pr&aacute;ctica libre</button>
       <div class="err" id="mainErr"></div>
     </div>
 
     <div class="card" id="customizeCard" style="display:none">
-      <p class="sub">Person&aacute;lizá tu stick:</p>
+      <p class="sub" data-i18n="lobby.customizeSub">Person&aacute;lizá tu stick:</p>
       <div id="customizePreviewWrap"><canvas id="customizePreview" width="200" height="230"></canvas></div>
-      <input id="customizeNameInput" maxlength="14" placeholder="Tu nombre" />
+      <input id="customizeNameInput" maxlength="14" placeholder="Tu nombre" data-i18n-ph="lobby.yourName" />
       <div class="swatchGrid" id="swatchGrid"></div>
-      <button id="customizeSaveBtn" style="width:100%">Guardar</button>
-      <a class="back" id="customizeBackLink" href="#">&lsaquo; volver</a>
+      <button id="customizeSaveBtn" style="width:100%" data-i18n="lobby.save">Guardar</button>
+      <a class="back" id="customizeBackLink" href="#" data-i18n="lobby.back">&lsaquo; volver</a>
     </div>
 
     <div class="card" id="practiceCard" style="display:none">
-      <p class="sub">Eleg&iacute; la dificultad del rival:</p>
+      <p class="sub" data-i18n="practice.pickDiff">Eleg&iacute; la dificultad del rival:</p>
 
       <button type="button" class="modeOption selected" id="diffEasyBtn">
-        <strong>F&aacute;cil</strong>
-        <span class="desc">Reacciona lento y no siempre aprovecha los huecos. Para entrar en calor.</span>
+        <strong data-i18n="practice.easy">F&aacute;cil</strong>
+        <span class="desc" data-i18n="practice.easyDesc">Reacciona lento y no siempre aprovecha los huecos. Para entrar en calor.</span>
       </button>
       <button type="button" class="modeOption" id="diffMediumBtn">
-        <strong>Media</strong>
-        <span class="desc">Persigue y golpea con criterio, sin ser implacable.</span>
+        <strong data-i18n="practice.medium">Media</strong>
+        <span class="desc" data-i18n="practice.mediumDesc">Persigue y golpea con criterio, sin ser implacable.</span>
       </button>
       <button type="button" class="modeOption" id="diffHardBtn">
-        <strong>Dif&iacute;cil</strong>
-        <span class="desc">Reacciona r&aacute;pido, cuida el borde de la plataforma y ataca apenas puede.</span>
+        <strong data-i18n="practice.hard">Dif&iacute;cil</strong>
+        <span class="desc" data-i18n="practice.hardDesc">Reacciona r&aacute;pido, cuida el borde de la plataforma y ataca apenas puede.</span>
       </button>
 
-      <button id="practiceNextBtn" style="width:100%; margin-top: 4px;">Siguiente</button>
+      <button id="practiceNextBtn" style="width:100%; margin-top: 4px;" data-i18n="lobby.next">Siguiente</button>
     </div>
 
     <div class="card" id="practiceThemeCard" style="display:none">
-      <p class="sub">&iquest;Qu&eacute; mapa quer&eacute;s practicar? (se repite en cada ronda)</p>
+      <p class="sub" data-i18n="practice.pickMap">&iquest;Qu&eacute; mapa quer&eacute;s practicar? (se repite en cada ronda)</p>
       <div class="themeGrid" id="themeGrid"></div>
-      <button id="practiceConfirmBtn" style="width:100%; margin-top: 4px;">Empezar pr&aacute;ctica</button>
+      <button id="practiceConfirmBtn" style="width:100%; margin-top: 4px;" data-i18n="practice.start">Empezar pr&aacute;ctica</button>
     </div>
 
     <div class="card" id="joinCard" style="display:none">
-      <input id="codeInput" maxlength="4" placeholder="C&Oacute;DIGO DE SALA" />
-      <button id="joinBtn" style="width:100%">Conectar</button>
+      <input id="codeInput" maxlength="4" placeholder="C&Oacute;DIGO DE SALA" data-i18n-ph="join.codePlaceholder" />
+      <button id="joinBtn" style="width:100%" data-i18n="join.connect">Conectar</button>
       <div class="err" id="joinErr"></div>
     </div>
 
     <div class="card" id="originCard" style="display:none">
-      <p class="sub">&iquest;C&oacute;mo quer&eacute;s jugar?</p>
+      <p class="sub" data-i18n="origin.q">&iquest;C&oacute;mo quer&eacute;s jugar?</p>
 
       <button type="button" class="modeOption" id="originOnlineBtn">
-        <strong>Online</strong>
-        <span class="desc">Sala con c&oacute;digo para jugar en red con otras PCs, servidor dedicado.</span>
+        <strong data-i18n="origin.online">Online</strong>
+        <span class="desc" data-i18n="origin.onlineDesc">Sala con c&oacute;digo para jugar en red con otras PCs, servidor dedicado.</span>
       </button>
 
       <button type="button" class="modeOption" id="originLocalBtn">
-        <strong>Local</strong>
-        <span class="desc">Hasta 8 jugadores en esta misma PC: 2 con teclado y el resto con mandos conectados.</span>
+        <strong data-i18n="origin.local">Local</strong>
+        <span class="desc" data-i18n="origin.localDesc">Hasta 8 jugadores en esta misma PC: 2 con teclado y el resto con mandos conectados.</span>
       </button>
     </div>
 
     <div class="card" id="modeCard" style="display:none">
-      <p class="sub">Eleg&iacute; el modo de juego. La cantidad de rondas (o de victorias, seg&uacute;n el modo) se configura despu&eacute;s, ya dentro de la sala.</p>
+      <p class="sub" data-i18n="mode.pick">Eleg&iacute; el modo de juego. La cantidad de rondas (o de victorias, seg&uacute;n el modo) se configura despu&eacute;s, ya dentro de la sala.</p>
 
       <button type="button" class="modeOption selected" id="modeRoundsBtn">
-        <strong>Por rondas</strong>
-        <span class="desc">Vos eleg&iacute;s cu&aacute;ntas rondas se juegan. Termina sola al llegar a la &uacute;ltima.</span>
+        <strong data-i18n="mode.rounds">Por rondas</strong>
+        <span class="desc" data-i18n="mode.roundsDesc">Vos eleg&iacute;s cu&aacute;ntas rondas se juegan. Termina sola al llegar a la &uacute;ltima.</span>
       </button>
 
       <button type="button" class="modeOption" id="modeWinsBtn">
-        <strong>Por victorias</strong>
-        <span class="desc">Se juega ronda tras ronda sin l&iacute;mite. Gana el primero en ACUMULAR la cantidad de rondas ganadas que elijas.</span>
+        <strong data-i18n="mode.wins">Por victorias</strong>
+        <span class="desc" data-i18n="mode.winsDesc">Se juega ronda tras ronda sin l&iacute;mite. Gana el primero en ACUMULAR la cantidad de rondas ganadas que elijas.</span>
       </button>
 
       <button type="button" class="modeOption" id="modeInfiniteBtn">
-        <strong>Infinito</strong>
-        <span class="desc">Ronda tras ronda sin l&iacute;mite. El marcador acumula desde la primera ronda; cada 5 rondas vuelve al mapa inicial. El anfitri&oacute;n la corta cuando quiere.</span>
+        <strong data-i18n="mode.infinite">Infinito</strong>
+        <span class="desc" data-i18n="mode.infiniteDesc">Ronda tras ronda sin l&iacute;mite. El marcador acumula desde la primera ronda; cada 5 rondas vuelve al mapa inicial. El anfitri&oacute;n la corta cuando quiere.</span>
       </button>
 
       <button type="button" class="modeOption" id="modeKothBtn">
-        <strong>Rey de la Colina</strong>
-        <span class="desc">Un c&iacute;rculo aparece en el mapa cada tanto: qued&aacute;te adentro para sumar puntos. El primero en llegar a 100 gana. Nadie se elimina — si te tiran, volv&eacute;s a caer al mapa.</span>
+        <strong data-i18n="mode.koth">Rey de la Colina</strong>
+        <span class="desc" data-i18n="mode.kothDesc">Un c&iacute;rculo aparece en el mapa cada tanto: qued&aacute;te adentro para sumar puntos. El primero en llegar a 100 gana. Nadie se elimina — si te tiran, volv&eacute;s a caer al mapa.</span>
       </button>
 
       <button type="button" class="modeOption" id="modeOrbkingBtn">
-        <strong>Rey del Orbe</strong>
-        <span class="desc">Partida a reloj (2 minutos). Agarr&aacute; los orbes de poder y mantenelos activos: gana quien acumul&oacute; m&aacute;s tiempo con un power encima. Tampoco se elimina a nadie.</span>
+        <strong data-i18n="mode.orbking">Rey del Orbe</strong>
+        <span class="desc" data-i18n="mode.orbkingDesc">Partida a reloj (2 minutos). Agarr&aacute; los orbes de poder y mantenelos activos: gana quien acumul&oacute; m&aacute;s tiempo con un power encima. Tampoco se elimina a nadie.</span>
       </button>
 
       <button type="button" class="modeOption" disabled>
-        <strong>Historia <span class="soon">PR&Oacute;XIMAMENTE</span></strong>
-        <span class="desc">Un jugador contra la IA.</span>
+        <strong><span data-i18n="mode.story">Historia</span> <span class="soon" data-i18n="mode.storySoon">PR&Oacute;XIMAMENTE</span></strong>
+        <span class="desc" data-i18n="mode.storyDesc">Un jugador contra la IA.</span>
       </button>
 
-      <button id="modeConfirmBtn" style="width:100%; margin-top: 4px;">Crear sala</button>
+      <button id="modeConfirmBtn" style="width:100%; margin-top: 4px;" data-i18n="lobby.create">Crear sala</button>
       <div class="err" id="modeErr"></div>
     </div>
 
     <div class="card" id="localSetupCard" style="display:none">
       <p class="sub" id="localModeSummary" style="margin:0 0 10px"></p>
-      <p class="sub">Sum&aacute; jugadores (hasta 8) con teclado o mandos conectados a esta PC:</p>
+      <p class="sub" data-i18n="local.addPlayers">Sum&aacute; jugadores (hasta 8) con teclado o mandos conectados a esta PC:</p>
       <div class="rosterList" id="localRoster"></div>
       <div id="localAddRow"></div>
       <div class="roundsRow" id="localRoundsRow" style="display:none">
         <button class="ghost" id="localMinusBtn" type="button">&minus;</button>
-        <span id="localRoundsN">3</span> rondas
+        <span id="localRoundsN">3</span> <span data-i18n="word.rounds">rondas</span>
         <button class="ghost" id="localPlusBtn" type="button">+</button>
       </div>
-      <button class="snail" id="localSnailBtn" role="switch" aria-checked="false">&#128012; Modo caracol (PCs lentas)</button>
-      <button id="localStartBtn" style="width:100%; margin-top: 10px;" disabled>Empezar partida</button>
+      <button class="snail" id="localSnailBtn" role="switch" aria-checked="false" data-i18n="common.snail">&#128012; Modo caracol (PCs lentas)</button>
+      <button id="localStartBtn" style="width:100%; margin-top: 10px;" disabled data-i18n="common.startMatch">Empezar partida</button>
       <div class="err" id="localErr"></div>
-      <div class="hint">Teclado 1: A/D mover &middot; ESPACIO/W saltar &middot; J pi&ntilde;a &middot; K patada<br>Teclado 2: &larr;/&rarr; mover &middot; &uarr;/CTRL saltar &middot; . pi&ntilde;a &middot; / patada</div>
+      <div class="hint" data-i18n-html="local.hint">Teclado 1: A/D mover &middot; ESPACIO/W saltar &middot; J pi&ntilde;a &middot; K patada<br>Teclado 2: &larr;/&rarr; mover &middot; &uarr;/CTRL saltar &middot; . pi&ntilde;a &middot; / patada</div>
     </div>
 
     <div class="card" id="roomCard" style="display:none">
-      <p class="sub">Compart&iacute; este c&oacute;digo con tus amigos:</p>
+      <p class="sub" data-i18n="room.share">Compart&iacute; este c&oacute;digo con tus amigos:</p>
       <div class="codeShow" id="showCode">----</div>
       <div class="rosterList" id="roster"></div>
       <p class="sub" id="modeSummary" style="margin:0 0 16px"></p>
@@ -502,33 +520,33 @@
       <div id="ownerControls" style="display:none">
         <div class="roundsRow" id="roomRoundsRow" style="display:none">
           <button class="ghost" id="roomMinusBtn" type="button">&minus;</button>
-          <span id="roomRoundsN">3</span> rondas
+          <span id="roomRoundsN">3</span> <span data-i18n="word.rounds">rondas</span>
           <button class="ghost" id="roomPlusBtn" type="button">+</button>
         </div>
-        <button class="snail" id="snailBtn" role="switch" aria-checked="false">&#128012; Modo caracol (PCs lentas)</button>
-        <button id="startBtn" style="width:100%; margin-top: 10px;">Empezar partida</button>
+        <button class="snail" id="snailBtn" role="switch" aria-checked="false" data-i18n="common.snail">&#128012; Modo caracol (PCs lentas)</button>
+        <button id="startBtn" style="width:100%; margin-top: 10px;" data-i18n="common.startMatch">Empezar partida</button>
       </div>
-      <p class="sub" id="waitOwner" style="display:none; margin:0">Esperando a que el anfitri&oacute;n empiece&hellip;</p>
+      <p class="sub" id="waitOwner" style="display:none; margin:0" data-i18n="room.waitOwner">Esperando a que el anfitri&oacute;n empiece&hellip;</p>
 
-      <div class="hint">A/D mover &middot; ESPACIO/W saltar &middot; J/clic izq. pi&ntilde;a &middot; K/clic der. patada</div>
+      <div class="hint" data-i18n="room.hint">A/D mover &middot; ESPACIO/W saltar &middot; J/clic izq. pi&ntilde;a &middot; K/clic der. patada</div>
       <div class="err" id="roomErr"></div>
     </div>
 
-    <a class="back" id="backLink" href="#" style="display:none">&lsaquo; volver</a>
+    <a class="back" id="backLink" href="#" style="display:none" data-i18n="lobby.back">&lsaquo; volver</a>
   </div>
 
   <div id="reconnect">
     <div class="spinner"></div>
-    <h2>RECONECTANDO</h2>
-    <p id="reconnectMsg">Se cort&oacute; la conexi&oacute;n. Volvemos a tu lugar en la partida&hellip;</p>
-    <button id="reconnectGiveUp" class="ghost" style="display:none">Volver al inicio</button>
+    <h2 data-i18n="rec.title">RECONECTANDO</h2>
+    <p id="reconnectMsg" data-i18n="rec.msgDefault">Se cort&oacute; la conexi&oacute;n. Volvemos a tu lugar en la partida&hellip;</p>
+    <button id="reconnectGiveUp" class="ghost" style="display:none" data-i18n="rec.backHome">Volver al inicio</button>
   </div>
 
   <div id="finalScreen">
-    <h1 id="winnerTitle">GANADOR</h1>
+    <h1 id="winnerTitle" data-i18n="final.winner">GANADOR</h1>
     <div id="ranking"></div>
-    <button id="playAgainBtn">Jugar de nuevo</button>
-    <div id="againWait">Esperando al anfitri&oacute;n&hellip;</div>
+    <button id="playAgainBtn" data-i18n="final.playAgain">Jugar de nuevo</button>
+    <div id="againWait" data-i18n="final.waitHost">Esperando al anfitri&oacute;n&hellip;</div>
   </div>
 </div>
 
@@ -543,6 +561,352 @@
 (function () {
   "use strict";
   AudioManager.armUnlock();
+
+  /* ---------------------------------------------------------------- i18n */
+  /* Dos idiomas: "es" (rioplatense, el original) e "en". El texto estático del HTML se marca con
+     data-i18n / data-i18n-ph (placeholder) / data-i18n-title / data-i18n-html (cuando el valor
+     lleva markup, p.ej. un <br>), y applyStaticI18n() lo rellena; el texto dinámico pasa por
+     t(key, params). Las claves del diccionario ES son la fuente de verdad: si a EN le falta
+     alguna, t() cae en ES antes que mostrar la clave cruda. */
+  var LANG_KEY = "lss-lang";
+  var STRINGS = {
+    es: {
+      "hud.room": "SALA",
+      "hud.scores": "PUNTAJES",
+      "hud.endMatch": "Terminar partida",
+      "hud.leavePractice": "Abandonar práctica",
+      "hud.leaveLocal": "Salir del modo local",
+      "hud.practiceTitle": "PRÁCTICA LIBRE",
+      "hud.localTitle": "LOCAL",
+      "hud.round": "RONDA {n}",
+      "hud.roundOf": "RONDA {n} / {total} — {map}",
+      "hud.roundSimple": "RONDA {n} — {map}",
+      "hud.koth": "REY DE LA COLINA — {map}",
+      "hud.orbking": "REY DEL ORBE — {map}",
+
+      "audio.music": "Música",
+      "audio.mute": "Silenciar",
+
+      "lobby.sub": "Modo online — servidor dedicado, todos con la misma latencia.",
+      "lobby.yourName": "Tu nombre",
+      "lobby.customizeTitle": "Personalizar tu stick",
+      "lobby.customizeSub": "Personalizá tu stick:",
+      "lobby.create": "Crear sala",
+      "lobby.join": "Unirme a una sala",
+      "lobby.practice": "Práctica libre",
+      "lobby.next": "Siguiente",
+      "lobby.back": "‹ volver",
+      "lobby.save": "Guardar",
+
+      "practice.pickDiff": "Elegí la dificultad del rival:",
+      "practice.easy": "Fácil",
+      "practice.easyDesc": "Reacciona lento y no siempre aprovecha los huecos. Para entrar en calor.",
+      "practice.medium": "Media",
+      "practice.mediumDesc": "Persigue y golpea con criterio, sin ser implacable.",
+      "practice.hard": "Difícil",
+      "practice.hardDesc": "Reacciona rápido, cuida el borde de la plataforma y ataca apenas puede.",
+      "practice.pickMap": "¿Qué mapa querés practicar? (se repite en cada ronda)",
+      "practice.start": "Empezar práctica",
+
+      "join.codePlaceholder": "CÓDIGO DE SALA",
+      "join.connect": "Conectar",
+      "join.connecting": "Conectando…",
+      "join.needCode": "Ingresá el código de 4 letras.",
+
+      "origin.q": "¿Cómo querés jugar?",
+      "origin.online": "Online",
+      "origin.onlineDesc": "Sala con código para jugar en red con otras PCs, servidor dedicado.",
+      "origin.local": "Local",
+      "origin.localDesc": "Hasta 8 jugadores en esta misma PC: 2 con teclado y el resto con mandos conectados.",
+
+      "mode.pick": "Elegí el modo de juego. La cantidad de rondas (o de victorias, según el modo) se configura después, ya dentro de la sala.",
+      "mode.rounds": "Por rondas",
+      "mode.roundsDesc": "Vos elegís cuántas rondas se juegan. Termina sola al llegar a la última.",
+      "mode.wins": "Por victorias",
+      "mode.winsDesc": "Se juega ronda tras ronda sin límite. Gana el primero en ACUMULAR la cantidad de rondas ganadas que elijas.",
+      "mode.infinite": "Infinito",
+      "mode.infiniteDesc": "Ronda tras ronda sin límite. El marcador acumula desde la primera ronda; cada 5 rondas vuelve al mapa inicial. El anfitrión la corta cuando quiere.",
+      "mode.koth": "Rey de la Colina",
+      "mode.kothDesc": "Un círculo aparece en el mapa cada tanto: quedáte adentro para sumar puntos. El primero en llegar a 100 gana. Nadie se elimina — si te tiran, volvés a caer al mapa.",
+      "mode.orbking": "Rey del Orbe",
+      "mode.orbkingDesc": "Partida a reloj (2 minutos). Agarrá los orbes de poder y mantenelos activos: gana quien acumuló más tiempo con un power encima. Tampoco se elimina a nadie.",
+      "mode.story": "Historia",
+      "mode.storySoon": "PRÓXIMAMENTE",
+      "mode.storyDesc": "Un jugador contra la IA.",
+
+      "summary.rounds": "🎯 Por rondas — {n} {word}",
+      "summary.wins": "🏆 Por victorias — primero en ganar {n} {word}",
+      "summary.infinite": "♾️ Modo infinito — el marcador no se reinicia entre rondas",
+      "summary.koth": "⛰️ Rey de la Colina — el primero en llegar a 100 puntos gana",
+      "summary.orbking": "🔮 Rey del Orbe — 2 minutos, gana quien más tiempo sostuvo un power",
+      "word.round": "ronda",
+      "word.rounds": "rondas",
+
+      "common.snail": "🐌 Modo caracol (PCs lentas)",
+      "common.startMatch": "Empezar partida",
+
+      "local.addPlayers": "Sumá jugadores (hasta 8) con teclado o mandos conectados a esta PC:",
+      "local.hint": "Teclado 1: A/D mover · ESPACIO/W saltar · J piña · K patada<br>Teclado 2: ←/→ mover · ↑/CTRL saltar · . piña · / patada",
+      "local.full": "Sala local completa (8/8).",
+      "local.noSources": "No hay más fuentes libres. Conectá un mando y presionale un botón para que el navegador lo detecte.",
+      "local.needTwo": "Sumá al menos 2 jugadores.",
+      "local.keyboard": "Teclado {n}",
+      "local.gamepad": "Mando {n}",
+      "local.addKeyboard": "+ Teclado {n}",
+      "local.addGamepad": "+ Mando {n}",
+
+      "room.share": "Compartí este código con tus amigos:",
+      "room.waitOwner": "Esperando a que el anfitrión empiece…",
+      "room.hint": "A/D mover · ESPACIO/W saltar · J/clic izq. piña · K/clic der. patada",
+      "room.hostTag": "(anfitrión)",
+      "room.goneTag": "(reconectando…)",
+      "room.defaultHost": "Anfitrión",
+
+      "player.n": "Jugador {n}",
+      "player.default": "Jugador",
+      "player.npc": "NPC",
+
+      "rec.title": "RECONECTANDO",
+      "rec.msgDefault": "Se cortó la conexión. Volvemos a tu lugar en la partida…",
+      "rec.resuming": "Volviendo a tu partida…",
+      "rec.retrying": "Se cortó la conexión. Volviendo a tu lugar en la partida… (intento {i} de {n})",
+      "rec.gaveUp": "No pudimos reconectar. El servidor puede estar caído o la partida ya terminó.",
+      "rec.backHome": "Volver al inicio",
+
+      "final.winner": "GANADOR",
+      "final.wins": "{name} GANA",
+      "final.noWinner": "SIN GANADOR",
+      "final.playAgain": "Jugar de nuevo",
+      "final.waitHost": "Esperando al anfitrión…",
+      "final.pts": "pts",
+
+      "err.generic": "Error.",
+      "err.prevGone": "La partida anterior ya no está disponible.",
+      "err.connLost": "Se perdió la conexión con el servidor. Recargá la página.",
+      "err.noConn": "Sin conexión con el servidor.",
+      "err.started": "Esa partida ya empezó.",
+      "err.full": "La sala está llena (8 jugadores).",
+      "err.notRegistered": "Esa partida ya no te tiene registrado.",
+      "err.noCodes": "No hay códigos de sala libres, probá de nuevo.",
+      "err.noRoom": "No existe una sala con ese código.",
+
+      "stat.kicks": "{name} repartió {v} patadas por todo el mapa",
+      "stat.punches": "{name} no bajó los puños: tiró {v} piñas",
+      "stat.falls": "{name} le tiene alergia a las plataformas, se cayó {v} veces",
+      "stat.hitsLanded": "{name} no perdonó ni una: conectó {v} golpes limpios",
+      "stat.hitsTaken": "a {name} le llenaron la cara de dedos, se comió {v} golpes",
+
+      "theme.random": "Aleatorio",
+      "biome.bosque": "Bosque",
+      "biome.ruinas": "Ruinas",
+      "biome.volcan": "Volcán",
+      "biome.neon": "Neón",
+      "biome.nieve": "Nieve",
+    },
+    en: {
+      "hud.room": "ROOM",
+      "hud.scores": "SCORES",
+      "hud.endMatch": "End match",
+      "hud.leavePractice": "Leave practice",
+      "hud.leaveLocal": "Exit local mode",
+      "hud.practiceTitle": "FREE PRACTICE",
+      "hud.localTitle": "LOCAL",
+      "hud.round": "ROUND {n}",
+      "hud.roundOf": "ROUND {n} / {total} — {map}",
+      "hud.roundSimple": "ROUND {n} — {map}",
+      "hud.koth": "KING OF THE HILL — {map}",
+      "hud.orbking": "ORB KING — {map}",
+
+      "audio.music": "Music",
+      "audio.mute": "Mute",
+
+      "lobby.sub": "Online mode — dedicated server, everyone on the same latency.",
+      "lobby.yourName": "Your name",
+      "lobby.customizeTitle": "Customize your stick",
+      "lobby.customizeSub": "Customize your stick:",
+      "lobby.create": "Create room",
+      "lobby.join": "Join a room",
+      "lobby.practice": "Free practice",
+      "lobby.next": "Next",
+      "lobby.back": "‹ back",
+      "lobby.save": "Save",
+
+      "practice.pickDiff": "Choose your opponent's difficulty:",
+      "practice.easy": "Easy",
+      "practice.easyDesc": "Reacts slowly and doesn't always take the openings. Good for warming up.",
+      "practice.medium": "Medium",
+      "practice.mediumDesc": "Chases and strikes with intent, without being relentless.",
+      "practice.hard": "Hard",
+      "practice.hardDesc": "Reacts fast, watches the platform edge and attacks the moment it can.",
+      "practice.pickMap": "Which map do you want to practice on? (it repeats every round)",
+      "practice.start": "Start practice",
+
+      "join.codePlaceholder": "ROOM CODE",
+      "join.connect": "Connect",
+      "join.connecting": "Connecting…",
+      "join.needCode": "Enter the 4-letter code.",
+
+      "origin.q": "How do you want to play?",
+      "origin.online": "Online",
+      "origin.onlineDesc": "A room with a code to play over the network with other PCs, dedicated server.",
+      "origin.local": "Local",
+      "origin.localDesc": "Up to 8 players on this same PC: 2 on the keyboard and the rest on connected controllers.",
+
+      "mode.pick": "Choose the game mode. The number of rounds (or wins, depending on the mode) is set later, inside the room.",
+      "mode.rounds": "By rounds",
+      "mode.roundsDesc": "You choose how many rounds are played. It ends on its own at the last one.",
+      "mode.wins": "By wins",
+      "mode.winsDesc": "Round after round with no limit. First to ACCUMULATE the number of round wins you choose takes it.",
+      "mode.infinite": "Endless",
+      "mode.infiniteDesc": "Round after round with no limit. The score carries over from round one; every 5 rounds the starting map comes back. The host ends it whenever they want.",
+      "mode.koth": "King of the Hill",
+      "mode.kothDesc": "A circle shows up on the map every so often: stay inside it to score. First to 100 wins. Nobody is eliminated — if you get knocked off, you drop back onto the map.",
+      "mode.orbking": "Orb King",
+      "mode.orbkingDesc": "Timed match (2 minutes). Grab the power orbs and keep them active: whoever racked up the most time holding a power wins. Nobody is eliminated here either.",
+      "mode.story": "Story",
+      "mode.storySoon": "COMING SOON",
+      "mode.storyDesc": "One player against the AI.",
+
+      "summary.rounds": "🎯 By rounds — {n} {word}",
+      "summary.wins": "🏆 By wins — first to win {n} {word}",
+      "summary.infinite": "♾️ Endless mode — the score doesn't reset between rounds",
+      "summary.koth": "⛰️ King of the Hill — first to 100 points wins",
+      "summary.orbking": "🔮 Orb King — 2 minutes, whoever held a power the longest wins",
+      "word.round": "round",
+      "word.rounds": "rounds",
+
+      "common.snail": "🐌 Snail mode (slow PCs)",
+      "common.startMatch": "Start match",
+
+      "local.addPlayers": "Add players (up to 8) with the keyboard or controllers connected to this PC:",
+      "local.hint": "Keyboard 1: A/D move · SPACE/W jump · J punch · K kick<br>Keyboard 2: ←/→ move · ↑/CTRL jump · . punch · / kick",
+      "local.full": "Local room full (8/8).",
+      "local.noSources": "No free input sources left. Plug in a controller and press any button on it so the browser detects it.",
+      "local.needTwo": "Add at least 2 players.",
+      "local.keyboard": "Keyboard {n}",
+      "local.gamepad": "Controller {n}",
+      "local.addKeyboard": "+ Keyboard {n}",
+      "local.addGamepad": "+ Controller {n}",
+
+      "room.share": "Share this code with your friends:",
+      "room.waitOwner": "Waiting for the host to start…",
+      "room.hint": "A/D move · SPACE/W jump · J/left click punch · K/right click kick",
+      "room.hostTag": "(host)",
+      "room.goneTag": "(reconnecting…)",
+      "room.defaultHost": "Host",
+
+      "player.n": "Player {n}",
+      "player.default": "Player",
+      "player.npc": "NPC",
+
+      "rec.title": "RECONNECTING",
+      "rec.msgDefault": "The connection dropped. Getting you back to your spot in the match…",
+      "rec.resuming": "Getting you back into your match…",
+      "rec.retrying": "The connection dropped. Getting you back to your spot in the match… (attempt {i} of {n})",
+      "rec.gaveUp": "We couldn't reconnect. The server may be down or the match already ended.",
+      "rec.backHome": "Back to start",
+
+      "final.winner": "WINNER",
+      "final.wins": "{name} WINS",
+      "final.noWinner": "NO WINNER",
+      "final.playAgain": "Play again",
+      "final.waitHost": "Waiting for the host…",
+      "final.pts": "pts",
+
+      "err.generic": "Error.",
+      "err.prevGone": "The previous match is no longer available.",
+      "err.connLost": "Lost the connection to the server. Reload the page.",
+      "err.noConn": "No connection to the server.",
+      "err.started": "That match already started.",
+      "err.full": "The room is full (8 players).",
+      "err.notRegistered": "That match no longer has you registered.",
+      "err.noCodes": "No room codes available, try again.",
+      "err.noRoom": "There's no room with that code.",
+
+      "stat.kicks": "{name} spread {v} kicks all over the map",
+      "stat.punches": "{name} never dropped their fists: threw {v} punches",
+      "stat.falls": "{name} is allergic to platforms, fell {v} times",
+      "stat.hitsLanded": "{name} showed no mercy: landed {v} clean hits",
+      "stat.hitsTaken": "{name} got their face rearranged, ate {v} hits",
+
+      "theme.random": "Random",
+      "biome.bosque": "Forest",
+      "biome.ruinas": "Ruins",
+      "biome.volcan": "Volcano",
+      "biome.neon": "Neon",
+      "biome.nieve": "Snow",
+    },
+  };
+
+  /* Los nombres de mapa llegan ya armados como "<Layout> · <Bioma>" (ver generateMap en world.js
+     y el MAP0 de sim.js), tanto por la red como del Sim local. En vez de cambiar el protocolo
+     para mandar ids, se traduce el string partiéndolo por el separador fijo " · " — lo que no
+     esté en la tabla queda tal cual, así un mapa nuevo nunca rompe el cartel. */
+  var MAP_NAMES_EN = {
+    "Plataforma Inicial": "Starting Platform",
+    "Arena Central": "Central Arena", "Círculo de Combate": "Combat Circle", "Coliseo": "Colosseum",
+    "Puente Roto": "Broken Bridge", "El Abismo": "The Abyss", "Cruce Peligroso": "Dangerous Crossing",
+    "Torre Ascendente": "Rising Tower", "Escalinata al Cielo": "Stairway to the Sky", "Ascenso": "Ascent",
+    "Zigzag": "Zigzag", "Senda Quebrada": "Broken Path", "Diagonal": "Diagonal",
+    "Islas Gemelas": "Twin Islands", "Frente a Frente": "Face to Face", "Doble Bastión": "Double Bastion",
+    "El Anillo": "The Ring", "Círculo Exterior": "Outer Circle", "Corona": "Crown",
+    "El Cráter": "The Crater", "La Fosa": "The Pit", "Filo del Vacío": "Edge of the Void",
+    "La Pirámide": "The Pyramid", "Templo Escalonado": "Stepped Temple", "Zigurat": "Ziggurat",
+    "La Colina": "The Hill", "Cumbre Disputada": "Contested Summit", "El Trono": "The Throne",
+    "Sector Desconocido": "Unknown Sector",
+    "Bosque": "Forest", "Ruinas": "Ruins", "Volcán": "Volcano", "Neón": "Neon", "Nieve": "Snow",
+  };
+
+  var FLAG_SVG = {
+    // España: bandas rojo/amarillo/rojo con la amarilla al doble de alto (proporción 1:2:1).
+    es: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="6" y="0" fill="#AA151B"/><rect width="24" height="12" y="6" fill="#F1BF00"/><rect width="24" height="6" y="18" fill="#AA151B"/></svg>',
+    en: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" fill="#012169"/><path d="M0 0L24 24M24 0L0 24" stroke="#fff" stroke-width="5"/><path d="M0 0L24 24M24 0L0 24" stroke="#C8102E" stroke-width="2.5"/><path d="M12 0V24M0 12H24" stroke="#fff" stroke-width="8"/><path d="M12 0V24M0 12H24" stroke="#C8102E" stroke-width="4.5"/></svg>',
+  };
+
+  function detectLang() {
+    var saved;
+    try { saved = localStorage.getItem(LANG_KEY); } catch (e) { /* incógnito */ }
+    if (saved === "es" || saved === "en") return saved;
+    // Por defecto el idioma del navegador: cualquier variante de español (es, es-AR, es-419…)
+    // cae en "es"; todo lo demás en "en".
+    var nav = (navigator.languages && navigator.languages[0]) || navigator.language || "en";
+    return String(nav).toLowerCase().indexOf("es") === 0 ? "es" : "en";
+  }
+
+  var lang = detectLang();
+
+  function t(key, params) {
+    var s = (STRINGS[lang] && STRINGS[lang][key]);
+    if (s === undefined) s = STRINGS.es[key];
+    if (s === undefined) return key;
+    if (!params) return s;
+    return s.replace(/\{(\w+)\}/g, function (m, k) {
+      return params[k] !== undefined ? params[k] : m;
+    });
+  }
+
+  // "ronda"/"rondas" según el número, para los resúmenes de modo.
+  function roundWord(n) { return t(n === 1 ? "word.round" : "word.rounds"); }
+
+  function translateMapName(name) {
+    if (!name || lang === "es") return name || "";
+    return String(name).split(" · ").map(function (part) {
+      return MAP_NAMES_EN[part] || part;
+    }).join(" · ");
+  }
+
+  function applyStaticI18n() {
+    document.documentElement.lang = lang;
+    var nodes = document.querySelectorAll("[data-i18n]");
+    for (var i = 0; i < nodes.length; i++) nodes[i].textContent = t(nodes[i].getAttribute("data-i18n"));
+    nodes = document.querySelectorAll("[data-i18n-html]");
+    for (i = 0; i < nodes.length; i++) nodes[i].innerHTML = t(nodes[i].getAttribute("data-i18n-html"));
+    nodes = document.querySelectorAll("[data-i18n-ph]");
+    for (i = 0; i < nodes.length; i++) nodes[i].placeholder = t(nodes[i].getAttribute("data-i18n-ph"));
+    nodes = document.querySelectorAll("[data-i18n-title]");
+    for (i = 0; i < nodes.length; i++) nodes[i].title = t(nodes[i].getAttribute("data-i18n-title"));
+    $("langBtn").innerHTML = FLAG_SVG[lang];
+  }
 
   var canvas = document.getElementById("c");
   var ctx = canvas.getContext("2d");
@@ -664,23 +1028,27 @@
   var finalShown = false;
   var lastMap = null; // último mapa recibido; el servidor solo lo manda cuando cambia
   var roomOrigin = "online"; // "online" | "local" — elegido en originCard, antes de modeCard
+  /* Último "lobby" recibido y último final mostrado: los guarda setLang() para poder rearmar en
+     el otro idioma lo que ya está en pantalla, sin esperar a que el servidor los reenvíe. */
+  var lastLobbyMsg = null;
+  var lastFinal = null;
 
   function $(id) { return document.getElementById(id); }
   // El color "real" de cada jugador lo asigna el servidor (ver server.js: pickColor) y llega en
   // cada "lobby". El fallback por índice de slot solo se usa antes de recibir ese mensaje, o en
   // Práctica Libre, donde no hay servidor.
   function colorFor(id) { return colors[id] || PLAYER_COLORS[id % PLAYER_COLORS.length]; }
-  function nameFor(id) { return names[id] || ("Jugador " + id); }
+  function nameFor(id) { return names[id] || t("player.n", { n: id }); }
 
   /* Un solo lugar para el resumen "qué se está por jugar", compartido entre el lobby online
      (roomCard, vía Net.on("lobby")) y el setup de modo Local (localSetupCard) — antes solo
      existía inline dentro del handler de "lobby" y modo Local no tenía nada parecido. */
   function modeSummaryText(mode, rounds) {
-    if (mode === "infinite") return "♾️ Modo infinito — el marcador no se reinicia entre rondas";
-    if (mode === "koth") return "⛰️ Rey de la Colina — el primero en llegar a 100 puntos gana";
-    if (mode === "orbking") return "🔮 Rey del Orbe — 2 minutos, gana quien más tiempo sostuvo un power";
-    if (mode === "wins") return "🏆 Por victorias — primero en ganar " + rounds + (rounds === 1 ? " ronda" : " rondas");
-    return "🎯 Por rondas — " + rounds + (rounds === 1 ? " ronda" : " rondas");
+    if (mode === "infinite") return t("summary.infinite");
+    if (mode === "koth") return t("summary.koth");
+    if (mode === "orbking") return t("summary.orbking");
+    if (mode === "wins") return t("summary.wins", { n: rounds, word: roundWord(rounds) });
+    return t("summary.rounds", { n: rounds, word: roundWord(rounds) });
   }
 
   /* En modo online el servidor corre la simulación; acá Sim solo se usa por su lado guest
@@ -710,18 +1078,19 @@
         // Net.on("round")) — acá no llega por mensaje, se arma con lo que ya tenemos a mano
         // (selectedMode, fijado al confirmar modeCard). Práctica Libre sigue con su formato
         // simple de siempre (sin total, sin chequeo de modo: solo existe "infinite" ahí).
-        if (localActive && selectedMode === "koth") rb.textContent = "REY DE LA COLINA — " + info.mapName;
-        else if (localActive && selectedMode === "orbking") rb.textContent = "REY DEL ORBE — " + info.mapName;
+        var mapTxt = translateMapName(info.mapName);
+        if (localActive && selectedMode === "koth") rb.textContent = t("hud.koth", { map: mapTxt });
+        else if (localActive && selectedMode === "orbking") rb.textContent = t("hud.orbking", { map: mapTxt });
         else if (localActive && selectedMode === "wins") {
           // El objetivo de victorias y el puntaje en vivo ya los muestra el scoreboard de la
           // izquierda (ver renderWinsScoreboard) — acá alcanza con el número de ronda, nada de
           // repetir "primero a N" ni el nombre del mapa en un cartel que se hacía enorme.
-          rb.textContent = "RONDA " + info.round;
+          rb.textContent = t("hud.round", { n: info.round });
         } else if (localActive) {
           var totalTxt = info.totalRounds == null ? "∞" : info.totalRounds;
-          rb.textContent = "RONDA " + info.round + " / " + totalTxt + " — " + info.mapName;
+          rb.textContent = t("hud.roundOf", { n: info.round, total: totalTxt, map: mapTxt });
         } else {
-          rb.textContent = "RONDA " + info.round + " — " + info.mapName;
+          rb.textContent = t("hud.roundSimple", { n: info.round, map: mapTxt });
         }
         rb.classList.add("show");
         var ft = $("fightText");
@@ -744,6 +1113,54 @@
   });
 
   /* ---------------------------------------------------------------- UI helpers */
+  /* El rótulo de la esquina ("SALA XXXX" / "PRÁCTICA LIBRE" / "LOCAL") y el botón de salir
+     dependen del modo en curso, así que no alcanza con un data-i18n fijo: se rearman acá, y
+     setLang() los vuelve a llamar para que cambien de idioma sin salir de la partida. */
+  function updateSessionLabels() {
+    if (practiceActive) {
+      $("room").innerHTML = "<b></b>";
+      $("room").firstChild.textContent = t("hud.practiceTitle");
+      $("endMatchBtn").textContent = t("hud.leavePractice");
+    } else if (localActive) {
+      $("room").innerHTML = "<b></b>";
+      $("room").firstChild.textContent = t("hud.localTitle");
+      $("endMatchBtn").textContent = t("hud.leaveLocal");
+    } else {
+      $("room").innerHTML = ROOM_HTML_DEFAULT; // trae de vuelta el <span data-i18n="hud.room">
+      var span = $("room").querySelector("[data-i18n]");
+      if (span) span.textContent = t("hud.room");
+      $("roomCode").textContent = Net.getCode() || "----";
+      $("endMatchBtn").textContent = t("hud.endMatch");
+    }
+  }
+
+  /* Cambio de idioma en caliente: además del texto estático, hay que rearmar todo lo que se
+     generó por JS y sigue en pantalla. Lo que no se puede recomponer sin el mensaje original
+     (el cartel de ronda, que llega en un "round" puntual) se deja como está y se corrige solo
+     en la ronda siguiente — no vale la pena guardar estado extra por un cartel que dura 2 s. */
+  function setLang(next) {
+    if (next === lang) return;
+    lang = next;
+    try { localStorage.setItem(LANG_KEY, lang); } catch (e) { /* incógnito */ }
+    applyStaticI18n();
+    updateSessionLabels();
+    updateModeConfirmLabel();
+    relabelAutoLocalNames();
+
+    if (lastLobbyMsg) {
+      $("modeSummary").textContent = modeSummaryText(lastLobbyMsg.mode, lastLobbyMsg.rounds);
+      renderRoster(lastLobbyMsg.players, lastLobbyMsg.owner);
+    }
+    if ($("localSetupCard").style.display === "block") {
+      renderLocalModeSummary();
+      renderLocalRoster();
+      renderLocalAddRow();
+    }
+    // Solo si está a la vista: showFinal() vuelve a mostrar la pantalla, así que llamarlo con un
+    // final viejo ya cerrado la reabriría encima de la partida en curso.
+    if (lastFinal && $("finalScreen").classList.contains("show")) showFinal(lastFinal.ranked, lastFinal.scores);
+  }
+
   function renderTopbar() {
     var bar = $("topbar");
     bar.innerHTML = "";
@@ -779,9 +1196,9 @@
 
   function renderRoster(list, ownerId) {
     $("roster").innerHTML = list.map(function (p) {
-      var tag = p.id === ownerId ? ' <span class="tag">(anfitri&oacute;n)</span>' : "";
+      var tag = p.id === ownerId ? ' <span class="tag">' + escapeHtml(t("room.hostTag")) + '</span>' : "";
       var gone = p.connected === false;
-      if (gone) tag += ' <span class="gonetag">(reconectando&hellip;)</span>';
+      if (gone) tag += ' <span class="gonetag">' + escapeHtml(t("room.goneTag")) + '</span>';
       return '<div class="rosterRow' + (gone ? " gone" : "") + '"><div class="dot" style="color:' + colorFor(p.id) + ';background:' + colorFor(p.id) + '"></div>' +
         escapeHtml(p.name) + tag + "</div>";
     }).join("");
@@ -808,11 +1225,11 @@
      cuenta desde SU lado ("no bajó los puños"), el que se cae o el que se come golpes se cuenta
      desde el lado de la víctima ("le llenaron la cara de dedos"). */
   var STAT_CATEGORIES = [
-    { key: "kicks", label: function (n, v) { return n + " repartió " + v + " patadas por todo el mapa"; } },
-    { key: "punches", label: function (n, v) { return n + " no bajó los puños: tiró " + v + " piñas"; } },
-    { key: "falls", label: function (n, v) { return n + " le tiene alergia a las plataformas, se cayó " + v + " veces"; } },
-    { key: "hitsLanded", label: function (n, v) { return n + " no perdonó ni una: conectó " + v + " golpes limpios"; } },
-    { key: "hitsTaken", label: function (n, v) { return "a " + n + " le llenaron la cara de dedos, se comió " + v + " golpes"; } },
+    { key: "kicks", label: function (n, v) { return t("stat.kicks", { name: n, v: v }); } },
+    { key: "punches", label: function (n, v) { return t("stat.punches", { name: n, v: v }); } },
+    { key: "falls", label: function (n, v) { return t("stat.falls", { name: n, v: v }); } },
+    { key: "hitsLanded", label: function (n, v) { return t("stat.hitsLanded", { name: n, v: v }); } },
+    { key: "hitsTaken", label: function (n, v) { return t("stat.hitsTaken", { name: n, v: v }); } },
   ];
 
   function pickStatsSequence(stats, ids) {
@@ -947,8 +1364,11 @@
   }
 
   function showFinal(ranked, scores) {
+    lastFinal = { ranked: ranked, scores: scores }; // para que setLang() pueda rearmarlo traducido
     var winner = ranked[0];
-    $("winnerTitle").textContent = winner !== undefined ? (nameFor(winner).toUpperCase() + " GANA") : "SIN GANADOR";
+    $("winnerTitle").textContent = winner !== undefined
+      ? t("final.wins", { name: nameFor(winner).toUpperCase() })
+      : t("final.noWinner");
     var rk = $("ranking");
     rk.innerHTML = "";
     ranked.forEach(function (id, i) {
@@ -957,7 +1377,7 @@
       row.innerHTML = '<div class="pos">#' + (i + 1) + '</div>' +
         '<div class="dot" style="color:' + colorFor(id) + ';background:' + colorFor(id) + '"></div>' +
         '<div class="nm">' + escapeHtml(nameFor(id)) + '</div>' +
-        '<div class="sc">' + (scores[id] || 0) + ' pts</div>';
+        '<div class="sc">' + (scores[id] || 0) + ' ' + escapeHtml(t("final.pts")) + '</div>';
       rk.appendChild(row);
     });
     // En Local no hay anfitrión — todos están frente a la misma pantalla, así que el botón de
@@ -1154,12 +1574,12 @@
 
   /* ---- tarjetas de tema (bioma): snapshots reales, no un <select> de texto ---- */
   var THEME_CHOICES = [
-    { id: "", label: "Aleatorio" },
-    { id: "bosque", label: "Bosque" },
-    { id: "ruinas", label: "Ruinas" },
-    { id: "volcan", label: "Volcán" },
-    { id: "neon", label: "Neón" },
-    { id: "nieve", label: "Nieve" },
+    { id: "", key: "theme.random" },
+    { id: "bosque", key: "biome.bosque" },
+    { id: "ruinas", key: "biome.ruinas" },
+    { id: "volcan", key: "biome.volcan" },
+    { id: "neon", key: "biome.neon" },
+    { id: "nieve", key: "biome.nieve" },
   ];
   var practiceBiome = "";
   var THEME_THUMB_W = 160, THEME_THUMB_H = 90;
@@ -1192,7 +1612,8 @@
 
       var lbl = document.createElement("span");
       lbl.className = "lbl";
-      lbl.textContent = choice.label;
+      lbl.setAttribute("data-i18n", choice.key); // así applyStaticI18n lo reetiqueta al cambiar de idioma
+      lbl.textContent = t(choice.key);
       tile.appendChild(lbl);
 
       tile.addEventListener("click", function () {
@@ -1211,7 +1632,7 @@
     myId = PRACTICE_ME;
     // Antes nameFor() mostraba "Vos" para myId sin necesidad de esto — ahora que nameFor()
     // siempre devuelve el nombre real, práctica necesita el propio, igual que online.
-    names = {}; names[PRACTICE_ME] = $("nickInputMain").value.trim() || "Jugador"; names[PRACTICE_AI] = "NPC";
+    names = {}; names[PRACTICE_ME] = $("nickInputMain").value.trim() || t("player.default"); names[PRACTICE_AI] = t("player.npc");
     colors = {}; if (myColor) colors[PRACTICE_ME] = myColor;
     finalShown = false;
     hideScoreReveal();
@@ -1221,8 +1642,7 @@
     Sim.addPlayer(PRACTICE_AI);
     Sim.startMatch(1, false, { mode: "infinite", biome: practiceBiome || null });
 
-    $("room").innerHTML = "<b>PRÁCTICA LIBRE</b>";
-    $("endMatchBtn").textContent = "Abandonar práctica";
+    updateSessionLabels();
     $("endMatchBtn").classList.add("show");
     $("wrap").classList.add("playing");
     $("pingIndicator").classList.remove("show");
@@ -1240,8 +1660,7 @@
     $("wrap").classList.remove("playing");
     $("roundBanner").classList.remove("show");
     $("endMatchBtn").classList.remove("show");
-    $("endMatchBtn").textContent = "Terminar partida";
-    $("room").innerHTML = ROOM_HTML_DEFAULT;
+    updateSessionLabels();
     // Explícito, no solo "mostrar choiceCard": si quedó alguna tarjeta de práctica visible de
     // un paso anterior, sin esto se ve por encima/al lado de choiceCard en vez de en su lugar.
     $("practiceCard").style.display = "none";
@@ -1280,11 +1699,20 @@
     }
     return -1;
   }
+  /* `auto` marca los nombres que todavía son el default generado ("Jugador 3"): son los únicos
+     que setLang() puede reescribir al cambiar de idioma. Apenas alguien escribe el suyo, el flag
+     se apaga y el nombre queda intocable. */
+  function localAutoName(i) { return t("player.n", { n: i + 1 }); }
+  function relabelAutoLocalNames() {
+    localPlayers.forEach(function (p, i) { if (p.auto) p.name = localAutoName(i); });
+  }
   function addLocalPlayer(source) {
     var id = nextFreeLocalId();
     if (id === -1) return;
-    var label = source.type === "kb" ? ("Jugador " + (localPlayers.length + 1)) : ("Jugador " + (localPlayers.length + 1));
-    localPlayers.push({ id: id, name: label, color: PLAYER_COLORS[id % PLAYER_COLORS.length], source: source });
+    localPlayers.push({
+      id: id, name: localAutoName(localPlayers.length), auto: true,
+      color: PLAYER_COLORS[id % PLAYER_COLORS.length], source: source,
+    });
     renderLocalRoster();
     renderLocalAddRow();
   }
@@ -1309,14 +1737,16 @@
     var list = $("localRoster");
     list.innerHTML = "";
     localPlayers.forEach(function (p) {
-      var srcLabel = p.source.type === "kb" ? ("Teclado " + p.source.slot) : ("Mando " + (p.source.index + 1));
+      var srcLabel = p.source.type === "kb"
+        ? t("local.keyboard", { n: p.source.slot })
+        : t("local.gamepad", { n: p.source.index + 1 });
       var row = document.createElement("div");
       row.className = "localRow";
       var dot = document.createElement("div");
       dot.className = "dot"; dot.style.color = p.color; dot.style.background = p.color;
       var input = document.createElement("input");
       input.maxLength = 14; input.value = p.name;
-      input.addEventListener("input", function () { p.name = input.value.trim() || p.name; });
+      input.addEventListener("input", function () { p.name = input.value.trim() || p.name; p.auto = false; });
       var src = document.createElement("span");
       src.className = "src"; src.textContent = srcLabel;
       var rm = document.createElement("button");
@@ -1337,7 +1767,7 @@
     if (localPlayers.length >= LOCAL_MAX) {
       var full = document.createElement("div");
       full.className = "none";
-      full.textContent = "Sala local completa (8/8).";
+      full.textContent = t("local.full");
       addRow.appendChild(full);
       $("localStartBtn").disabled = false;
       return;
@@ -1345,22 +1775,22 @@
     var any = false;
     if (!localHasKbSlot(1)) {
       any = true;
-      addRow.appendChild(makeLocalAddBtn("+ Teclado 1", function () { addLocalPlayer({ type: "kb", slot: 1 }); }));
+      addRow.appendChild(makeLocalAddBtn(t("local.addKeyboard", { n: 1 }), function () { addLocalPlayer({ type: "kb", slot: 1 }); }));
     }
     if (!localHasKbSlot(2)) {
       any = true;
-      addRow.appendChild(makeLocalAddBtn("+ Teclado 2", function () { addLocalPlayer({ type: "kb", slot: 2 }); }));
+      addRow.appendChild(makeLocalAddBtn(t("local.addKeyboard", { n: 2 }), function () { addLocalPlayer({ type: "kb", slot: 2 }); }));
     }
     var used = localUsedGamepadIndexes();
     connectedGamepadIndexes().forEach(function (idx) {
       if (used.indexOf(idx) !== -1) return;
       any = true;
-      addRow.appendChild(makeLocalAddBtn("+ Mando " + (idx + 1), function () { addLocalPlayer({ type: "gp", index: idx }); }));
+      addRow.appendChild(makeLocalAddBtn(t("local.addGamepad", { n: idx + 1 }), function () { addLocalPlayer({ type: "gp", index: idx }); }));
     });
     if (!any) {
       var none = document.createElement("div");
       none.className = "none";
-      none.textContent = "No hay más fuentes libres. Conectá un mando y presionale un botón para que el navegador lo detecte.";
+      none.textContent = t("local.noSources");
       addRow.appendChild(none);
     }
     $("localStartBtn").disabled = localPlayers.length < 2;
@@ -1392,7 +1822,7 @@
 
   function startLocalMatch() {
     if (localPlayers.length < 2) {
-      $("localErr").textContent = "Sumá al menos 2 jugadores.";
+      $("localErr").textContent = t("local.needTwo");
       return;
     }
     localActive = true;
@@ -1412,8 +1842,7 @@
     $("modeCard").style.display = "none";
     $("localSetupCard").style.display = "none";
     $("backLink").style.display = "none";
-    $("room").innerHTML = "<b>LOCAL</b>";
-    $("endMatchBtn").textContent = "Salir del modo local";
+    updateSessionLabels();
     $("endMatchBtn").classList.add("show");
     $("wrap").classList.add("playing");
     $("pingIndicator").classList.remove("show");
@@ -1442,8 +1871,7 @@
     $("wrap").classList.remove("playing");
     $("roundBanner").classList.remove("show");
     $("endMatchBtn").classList.remove("show");
-    $("endMatchBtn").textContent = "Terminar partida";
-    $("room").innerHTML = ROOM_HTML_DEFAULT;
+    updateSessionLabels();
     $("finalScreen").classList.remove("show");
     $("choiceCard").style.display = "block";
     startLobbyBackground();
@@ -1580,7 +2008,7 @@
   $("customizeBtn").addEventListener("click", openCustomize);
   $("customizeBackLink").addEventListener("click", function (e) { e.preventDefault(); closeCustomize(); });
   $("customizeSaveBtn").addEventListener("click", function () {
-    var nm = $("customizeNameInput").value.trim() || "Jugador";
+    var nm = $("customizeNameInput").value.trim() || t("player.default");
     myColor = customizePreviewColor;
     profile = { name: nm, color: myColor };
     saveProfile(profile);
@@ -1696,12 +2124,12 @@
 
   Net.on("reconnecting", function (info) {
     $("reconnect").classList.add("show");
-    $("reconnectMsg").textContent = "Se cortó la conexión. Volviendo a tu lugar en la partida… (intento " + info.intento + " de " + info.de + ")";
+    $("reconnectMsg").textContent = t("rec.retrying", { i: info.intento, n: info.de });
     $("reconnectGiveUp").style.display = "none";
   });
 
   Net.on("reconnectGaveUp", function () {
-    $("reconnectMsg").textContent = "No pudimos reconectar. El servidor puede estar caído o la partida ya terminó.";
+    $("reconnectMsg").textContent = t("rec.gaveUp");
     $("reconnectGiveUp").style.display = "inline-block";
   });
 
@@ -1715,7 +2143,7 @@
     $("joinCard").style.display = "none";
     $("modeCard").style.display = "none";
     $("choiceCard").style.display = "block";
-    $("mainErr").textContent = "La partida anterior ya no está disponible.";
+    $("mainErr").textContent = t("err.prevGone");
     myId = null;
     finalShown = false;
     names = {};
@@ -1731,6 +2159,7 @@
   });
 
   Net.on("lobby", function (msg) {
+    lastLobbyMsg = msg; // para que setLang() pueda rearmar roster y resumen sin esperar otro "lobby"
     names = {};
     colors = {};
     msg.players.forEach(function (p) { names[p.id] = p.name; if (p.color) colors[p.id] = p.color; });
@@ -1778,18 +2207,19 @@
     // nueva — no tiene sentido que sobrevivan a la ronda para la que se calcularon.
     hideScoreReveal();
     var rb = $("roundBanner");
+    var mapTxt = translateMapName(msg.mapName);
     if (msg.mode === "koth") {
-      rb.textContent = "REY DE LA COLINA — " + msg.mapName;
+      rb.textContent = t("hud.koth", { map: mapTxt });
     } else if (msg.mode === "orbking") {
-      rb.textContent = "REY DEL ORBE — " + msg.mapName;
+      rb.textContent = t("hud.orbking", { map: mapTxt });
     } else if (msg.mode === "wins") {
       // El objetivo de victorias y el puntaje en vivo ya los muestra el scoreboard de la
       // izquierda (ver renderWinsScoreboard) — acá alcanza con el número de ronda.
-      rb.textContent = "RONDA " + msg.round;
+      rb.textContent = t("hud.round", { n: msg.round });
     } else {
       // totalRounds llega null cuando el modo es infinito (ver onPhaseChange en server.js).
       var totalTxt = msg.totalRounds == null ? "∞" : msg.totalRounds;
-      rb.textContent = "RONDA " + msg.round + " / " + totalTxt + " — " + msg.mapName;
+      rb.textContent = t("hud.roundOf", { n: msg.round, total: totalTxt, map: mapTxt });
     }
     rb.classList.add("show");
     var ft = $("fightText");
@@ -1841,11 +2271,22 @@
   }
   Net.on("ping", refreshPingUI);
 
+  /* El servidor manda un `code` estable además del `msg` en castellano (ver handleMessage en
+     server.js). Se traduce por code; el msg queda de fallback para un servidor viejo o un código
+     que este cliente todavía no conozca — así un deploy a medias nunca deja el cartel vacío. */
+  var SERVER_ERR_KEYS = {
+    started: "err.started",
+    full: "err.full",
+    notRegistered: "err.notRegistered",
+    noCodes: "err.noCodes",
+    noRoom: "err.noRoom",
+  };
   Net.on("err", function (msg) {
     var target = "mainErr";
     if ($("joinCard").style.display === "block") target = "joinErr";
     else if ($("modeCard").style.display === "block") target = "modeErr";
-    $(target).textContent = msg.msg || "Error.";
+    var key = msg.code && SERVER_ERR_KEYS[msg.code];
+    $(target).textContent = key ? t(key) : (msg.msg || t("err.generic"));
   });
 
   Net.on("close", function () {
@@ -1854,8 +2295,8 @@
        no hay nada que recuperar. */
     $("pingIndicator").classList.remove("show");
     if (Net.getSavedSession()) return;
-    $("roomErr").textContent = "Se perdió la conexión con el servidor. Recargá la página.";
-    $("mainErr").textContent = "Sin conexión con el servidor.";
+    $("roomErr").textContent = t("err.connLost");
+    $("mainErr").textContent = t("err.noConn");
   });
 
   /* ---------------------------------------------------------------- input */
@@ -1954,17 +2395,23 @@
     $("backLink").style.display = "inline";
   });
 
+  /* En online el botón cierra el flujo ("Crear sala"); en local todavía queda el setup de
+     jugadores, así que dice "Siguiente". setLang() lo vuelve a pedir para que el cambio de
+     idioma no lo pise con el data-i18n fijo del HTML. */
+  function updateModeConfirmLabel() {
+    $("modeConfirmBtn").textContent = roomOrigin === "local" ? t("lobby.next") : t("lobby.create");
+  }
   $("originOnlineBtn").addEventListener("click", function () {
     roomOrigin = "online";
     $("originCard").style.display = "none";
     $("modeCard").style.display = "block";
-    $("modeConfirmBtn").textContent = "Crear sala";
+    updateModeConfirmLabel();
   });
   $("originLocalBtn").addEventListener("click", function () {
     roomOrigin = "local";
     $("originCard").style.display = "none";
     $("modeCard").style.display = "block";
-    $("modeConfirmBtn").textContent = "Siguiente";
+    updateModeConfirmLabel();
   });
 
   $("joinShowBtn").addEventListener("click", function () {
@@ -2036,11 +2483,11 @@
   $("joinBtn").addEventListener("click", function () {
     var code = $("codeInput").value;
     if (!code || code.trim().length < 4) {
-      $("joinErr").textContent = "Ingresá el código de 4 letras.";
+      $("joinErr").textContent = t("join.needCode");
       return;
     }
-    $("joinErr").textContent = "Conectando…";
-    Net.join(code, $("nickInputMain").value.trim() || "Jugador", myColor);
+    $("joinErr").textContent = t("join.connecting");
+    Net.join(code, $("nickInputMain").value.trim() || t("player.default"), myColor);
   });
 
   /* ---- selección de modo (antes de crear la sala) ---- */
@@ -2091,7 +2538,7 @@
       startLocalSetupPoll();
       return;
     }
-    Net.create($("nickInputMain").value.trim() || "Anfitrión", selectedMode, totalRoundsPick, myColor);
+    Net.create($("nickInputMain").value.trim() || t("room.defaultHost"), selectedMode, totalRoundsPick, myColor);
   });
 
   // Rondas dentro de la sala (modo "rounds"): cada click pide el cambio al servidor; el
@@ -2149,12 +2596,20 @@
     });
   })();
 
+  /* Idioma: se aplica ANTES que nada para que no se llegue a ver un parpadeo del castellano del
+     HTML cuando el navegador está en inglés. El botón alterna entre los dos únicos idiomas. */
+  applyStaticI18n();
+  $("langBtn").addEventListener("click", function () {
+    setLang(lang === "es" ? "en" : "es");
+    AudioManager.on.uiClick();
+  });
+
   /* Si esta pestaña ya estaba en una partida (F5 accidental, o el navegador que recarga solo),
      no mostramos el lobby: mostramos "reconectando" mientras Net intenta volver al slot. Si el
      servidor dice que no, rejoinFailed nos devuelve al lobby limpio. */
   if (Net.getSavedSession()) {
     $("reconnect").classList.add("show");
-    $("reconnectMsg").textContent = "Volviendo a tu partida…";
+    $("reconnectMsg").textContent = t("rec.resuming");
   }
 
   Net.connect();

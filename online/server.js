@@ -399,10 +399,13 @@ function pickColor(room, wantedRaw) {
   return PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)]; // no debería pasar: MAX_PLAYERS === PLAYER_COLORS.length
 }
 
+/* Cada error viaja con un `code` estable ADEMÁS del texto: el cliente traduce por code (ver
+   SERVER_ERR_KEYS en online/public/index.html) y usa el `msg` solo de fallback. El texto se
+   mantiene en castellano acá a propósito — es lo que ve un cliente viejo todavía cacheado. */
 function joinRoom(room, ws, nick, colorRaw) {
-  if (room.host.sim.getPhase() !== "lobby") return { err: "Esa partida ya empezó." };
+  if (room.host.sim.getPhase() !== "lobby") return { err: "Esa partida ya empezó.", code: "started" };
   const id = freeSlot(room);
-  if (id === null) return { err: "La sala está llena (8 jugadores)." };
+  if (id === null) return { err: "La sala está llena (8 jugadores).", code: "full" };
 
   /* Token de reconexión: identifica a ESTE jugador si se le corta la conexión. Va al cliente
      una sola vez y él lo guarda; no viaja en ningún otro mensaje. Sin esto, cualquiera que
@@ -439,7 +442,7 @@ function rejoinRoom(room, ws, token) {
   for (const p of room.players.values()) {
     if (p.token && token && p.token === token) { player = p; break; }
   }
-  if (!player) return { err: "Esa partida ya no te tiene registrado." };
+  if (!player) return { err: "Esa partida ya no te tiene registrado.", code: "notRegistered" };
 
   const old = player.ws;
   if (old && old !== ws) {
@@ -571,11 +574,11 @@ function handleMessage(ws, raw) {
        un cambio de modo con gente ya conectada) y hace que "Crear sala" sea, en los hechos, el
        mismo paso donde antes el anfitrión elegía las rondas dentro del lobby. */
     const room = createRoom(msg.mode, msg.rounds);
-    if (!room) return send(ws, { t: "err", msg: "No hay códigos de sala libres, probá de nuevo." });
+    if (!room) return send(ws, { t: "err", msg: "No hay códigos de sala libres, probá de nuevo.", code: "noCodes" });
     const res = joinRoom(room, ws, msg.nick, msg.color);
     if (res.err) {
       destroyRoom(room);
-      send(ws, { t: "err", msg: res.err });
+      send(ws, { t: "err", msg: res.err, code: res.code });
     }
     return;
   }
@@ -596,9 +599,9 @@ function handleMessage(ws, raw) {
     if (ws._room) return;
     const code = String(msg.code || "").toUpperCase().trim();
     const room = rooms.get(code);
-    if (!room) return send(ws, { t: "err", msg: "No existe una sala con ese código." });
+    if (!room) return send(ws, { t: "err", msg: "No existe una sala con ese código.", code: "noRoom" });
     const res = joinRoom(room, ws, msg.nick, msg.color);
-    if (res.err) send(ws, { t: "err", msg: res.err });
+    if (res.err) send(ws, { t: "err", msg: res.err, code: res.code });
     return;
   }
 
