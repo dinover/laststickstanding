@@ -139,6 +139,10 @@ function normalizeMode(raw) {
   return "rounds";
 }
 
+/* mode/rounds son solo el valor INICIAL de la sala: desde que existe el mensaje "setMode", el
+   anfitrión los cambia dentro del lobby, con gente ya conectada. El cliente propio ya no manda
+   ninguno de los dos al crear (cae en "rounds" / 3), pero el parámetro se mantiene para que un
+   cliente viejo cacheado que todavía los mande siga funcionando igual. */
 function createRoom(mode, rounds) {
   const code = freeCode();
   if (!code) return null;
@@ -569,10 +573,10 @@ function handleMessage(ws, raw) {
   /* --- fuera de sala --- */
   if (msg.t === "create") {
     if (ws._room) return;
-    /* El modo y la cantidad de rondas se deciden ACÁ, antes de crear la sala — no se pueden
-       cambiar después. Es una decisión de producto: simplifica la sala (nada de reconciliar
-       un cambio de modo con gente ya conectada) y hace que "Crear sala" sea, en los hechos, el
-       mismo paso donde antes el anfitrión elegía las rondas dentro del lobby. */
+    /* Crear la sala ya no decide NADA de la partida: nace en "rounds"/3 y el anfitrión elige
+       modo y cantidad adentro del lobby (setMode/setRounds) mientras se van sumando los demás.
+       Antes el modo se fijaba acá y era inmutable, así que para cambiarlo había que rehacer la
+       sala y repartir un código nuevo — justo lo contrario de "entren que ya arreglamos". */
     const room = createRoom(msg.mode, msg.rounds);
     if (!room) return send(ws, { t: "err", msg: "No hay códigos de sala libres, probá de nuevo.", code: "noCodes" });
     const res = joinRoom(room, ws, msg.nick, msg.color);
@@ -617,6 +621,21 @@ function handleMessage(ws, raw) {
     return;
   }
 
+  if (msg.t === "setMode") {
+    /* El modo de la sala ahora se elige acá adentro, no al crearla. Solo el anfitrión y solo
+       en el lobby: una vez que arrancó la partida, room.mode ya viajó a startMatch() y lo
+       usan tanto la simulación como el cartel de cada ronda, así que cambiarlo a mitad de
+       camino dejaría el cliente mostrando un modo y el servidor corriendo otro.
+       normalizeMode() cubre cualquier valor raro cayendo en "rounds", igual que al crear. */
+    if (room.ownerId !== id) return;
+    if (room.host.sim.getPhase() !== "lobby") return;
+    const next = normalizeMode(msg.mode);
+    if (next === room.mode) return;
+    room.mode = next;
+    pushLobby(room); // todos ven el cambio en vivo, no solo el que lo tocó
+    return;
+  }
+
   if (msg.t === "setRounds") {
     /* Corregido: originalmente "rounds" se fijaba solo al crear la sala. El anfitrión tiene
        que poder seguir ajustándolo mientras espera a que se sumen amigos — capaz crea la sala
@@ -637,7 +656,11 @@ function handleMessage(ws, raw) {
     if (room.host.sim.getPhase() !== "lobby") return;
     room.lastMapKey = null; // fuerza que el primer snapshot lleve el mapa entero
     // room.mode/room.rounds ya están fijados (room.rounds puede haber cambiado via setRounds).
-    room.host.sim.startMatch(room.rounds, !!msg.snail, { mode: room.mode });
+    /* El segundo parámetro es el "modo caracol" de desktop/sim.js (menos partículas y sombras
+       para máquinas lentas). El cliente web ya no lo ofrece: la simulación corre acá, no en la
+       PC del jugador, así que apagar efectos del lado del servidor no le ahorraba nada a nadie.
+       El parámetro sigue en sim.js porque el build de escritorio sí lo usa. */
+    room.host.sim.startMatch(room.rounds, false, { mode: room.mode });
     broadcast(room, { t: "started" });
     startLoop(room);
     return;

@@ -238,6 +238,12 @@
   #lobby {
     position: relative; z-index: 3; width: min(480px, 92vw); text-align: center;
     color: #eaf0ff; display: flex; flex-direction: column; align-items: center; gap: 22px;
+    /* Red de seguridad: el <body> es overflow:hidden, así que lo que no entra en la pantalla no
+       se puede alcanzar — y la tarjeta de sala creció (roster de hasta 8 + selector de modo).
+       En una pantalla holgada esto no hace nada; en uno de 720p o en un notebook 16:10 chico
+       evita que "Empezar partida" quede abajo del borde y no haya forma de llegar. */
+    max-height: 100vh; overflow-y: auto; padding: 14px 0; box-sizing: border-box;
+    scrollbar-width: thin; scrollbar-color: #2a3050 transparent;
   }
   #lobby h1 { font-size: 28px; color: #35f0e0; text-shadow: 0 0 16px rgba(53,240,224,.5); margin: 0; letter-spacing: .04em; }
   #lobby p.sub { color: #9aa3bd; font-size: 13px; margin: 0 0 16px; line-height: 1.5; }
@@ -258,14 +264,30 @@
   .modeOption.selected { border-color: #35f0e0; box-shadow: 0 0 0 1px #35f0e0 inset; }
   .modeOption.selected strong { color: #35f0e0; }
   .modeOption .soon { font-size: 10px; color: #ffc247; margin-left: 6px; letter-spacing: .04em; }
+
+  /* Versión compacta del mismo selector, para usar DENTRO de la sala (y del setup local): la
+     lista de arriba, con una descripción por modo, mide ~450 px y no entra en una tarjeta que
+     ya tiene código, roster de hasta 8 y controles (el body es overflow:hidden, así que lo que
+     no entra no se puede scrollear: desaparece). Acá cada modo es un chip y la explicación la
+     da el resumen de una línea que ya existía debajo (summary.*), más el title al pasar el
+     mouse. Lo ven todos, no solo el anfitrión: el invitado no puede tocarlo (.readonly) pero sí
+     necesita ver a qué se está por jugar mientras el otro decide. */
+  .modeChips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 0 0 10px; }
+  .modeChips button {
+    padding: 7px 11px; font-size: 12px; font-weight: 400; box-shadow: none;
+    background: #12162a; color: #9aa3bd; border: 1px solid #2a3050;
+  }
+  .modeChips button.selected { border-color: #35f0e0; color: #35f0e0; box-shadow: 0 0 0 1px #35f0e0 inset; }
+  .modeChips button .soon { font-size: 9px; color: #ffc247; margin-left: 5px; letter-spacing: .04em; }
+  .modeChips.readonly { pointer-events: none; }
+  .modeChips.readonly button:not(.selected) { opacity: .4; }
+  .modeLabel { color: #6b7394; font-size: 11px; letter-spacing: .04em; margin: 0 0 8px; }
   button, input, select {
     font-family: inherit; font-size: 14px; border-radius: 8px; border: 1px solid #2a3050;
     background: #12162a; color: #eaf0ff; padding: 13px 16px;
   }
   button { cursor: pointer; background: #35f0e0; color: #05060d; font-weight: 700; border: none; box-shadow: 0 0 16px rgba(53,240,224,.3); }
   button.ghost { background: transparent; color: #eaf0ff; border: 1px solid #2a3050; box-shadow: none; }
-  button.snail { background: transparent; color: #9aa3bd; border: 1px solid #2a3050; box-shadow: none; margin-top: 10px; width: 100%; }
-  button.snail.on { color: #35f0e0; border-color: #35f0e0; }
   button:disabled { opacity: .5; cursor: default; box-shadow: none; }
   input { width: 100%; box-sizing: border-box; margin-bottom: 14px; text-align: center; letter-spacing: .08em; }
 
@@ -302,9 +324,15 @@
   .themeTile.selected { border-color: #35f0e0; box-shadow: 0 0 0 1px #35f0e0 inset; }
   .themeTile.selected .lbl { color: #35f0e0; }
   input#codeInput { text-transform: uppercase; }
-  .codeShow { font-size: 40px; letter-spacing: .18em; color: #35f0e0; text-shadow: 0 0 20px rgba(53,240,224,.5); margin: 16px 0; }
-  .rosterList { display: flex; flex-direction: column; gap: 8px; margin: 18px 0; text-align: left; }
-  .rosterRow { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .codeShow { font-size: 40px; letter-spacing: .18em; color: #35f0e0; text-shadow: 0 0 20px rgba(53,240,224,.5); margin: 12px 0 10px; }
+  .rosterList { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; text-align: left; }
+  /* Con la sala llena, una sola columna de roster son ~190 px de alto y, con el selector de
+     modo ya adentro de la tarjeta, el botón de empezar se iba abajo del borde en 720p. A partir
+     del quinto jugador el roster se parte en dos columnas (ver renderRoster). */
+  .rosterList.wide { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+  .rosterRow { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
+  .rosterRow .dot { flex: none; }
+  .rosterList.wide .rosterRow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rosterRow .dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
   .rosterRow .tag { color: #6b7394; font-size: 11px; }
   .rosterRow.gone { opacity: .45; }
@@ -349,7 +377,7 @@
   #reconnect button { margin-top: 8px; }
   .roundsRow { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 4px 0 20px; }
   .roundsRow button { padding: 7px 13px; }
-  .hint { font-size: 11px; color: #6b7394; letter-spacing: .04em; margin-top: 16px; }
+  .hint { font-size: 11px; color: #6b7394; letter-spacing: .04em; margin-top: 12px; }
   .err { color: #ff5e7a; font-size: 12px; min-height: 16px; margin-top: 8px; }
   a.back { color: #6b7394; font-size: 12px; text-decoration: none; margin-top: 2px; display: inline-block; }
 </style>
@@ -360,7 +388,7 @@
   <div id="room"><span data-i18n="hud.room">SALA</span> <b id="roomCode">----</b></div>
   <div id="pingIndicator"><span class="dot"></span><b id="pingMs">-- ms</b></div>
   <div id="winsScoreboard"></div>
-  <button id="endMatchBtn" data-i18n="hud.endMatch">Terminar partida</button>
+  <button id="endMatchBtn" data-i18n="hud.endMatch">Cortarla ac&aacute;</button>
   <div id="topRight">
     <button id="langBtn" type="button" title="Idioma / Language"></button>
     <div id="audioPanel">
@@ -389,7 +417,7 @@
 
   <div id="lobby">
     <h1>LAST STICK STANDING</h1>
-    <p class="sub" data-i18n="lobby.sub">Modo online &mdash; servidor dedicado, todos con la misma latencia.</p>
+    <p class="sub" data-i18n="lobby.sub">Ocho palitos, una plataforma y uno solo que queda parado.</p>
 
     <div class="card" id="choiceCard">
       <div class="nameRow">
@@ -405,7 +433,7 @@
     </div>
 
     <div class="card" id="customizeCard" style="display:none">
-      <p class="sub" data-i18n="lobby.customizeSub">Person&aacute;lizá tu stick:</p>
+      <p class="sub" data-i18n="lobby.customizeSub">Que se note cu&aacute;l sos:</p>
       <div id="customizePreviewWrap"><canvas id="customizePreview" width="200" height="230"></canvas></div>
       <input id="customizeNameInput" maxlength="14" placeholder="Tu nombre" data-i18n-ph="lobby.yourName" />
       <div class="swatchGrid" id="swatchGrid"></div>
@@ -414,90 +442,63 @@
     </div>
 
     <div class="card" id="practiceCard" style="display:none">
-      <p class="sub" data-i18n="practice.pickDiff">Eleg&iacute; la dificultad del rival:</p>
+      <p class="sub" data-i18n="practice.pickDiff">&iquest;Contra qui&eacute;n quer&eacute;s entrenar?</p>
 
       <button type="button" class="modeOption selected" id="diffEasyBtn">
         <strong data-i18n="practice.easy">F&aacute;cil</strong>
-        <span class="desc" data-i18n="practice.easyDesc">Reacciona lento y no siempre aprovecha los huecos. Para entrar en calor.</span>
+        <span class="desc" data-i18n="practice.easyDesc">Llega tarde a todo y perdona errores. Para agarrarle la mano.</span>
       </button>
       <button type="button" class="modeOption" id="diffMediumBtn">
         <strong data-i18n="practice.medium">Media</strong>
-        <span class="desc" data-i18n="practice.mediumDesc">Persigue y golpea con criterio, sin ser implacable.</span>
+        <span class="desc" data-i18n="practice.mediumDesc">Te sigue, te mide y pega cuando conviene. Ni regalado ni imposible.</span>
       </button>
       <button type="button" class="modeOption" id="diffHardBtn">
         <strong data-i18n="practice.hard">Dif&iacute;cil</strong>
-        <span class="desc" data-i18n="practice.hardDesc">Reacciona r&aacute;pido, cuida el borde de la plataforma y ataca apenas puede.</span>
+        <span class="desc" data-i18n="practice.hardDesc">Reacciona antes que vos, cuida el borde y no te perdona una.</span>
       </button>
 
       <button id="practiceNextBtn" style="width:100%; margin-top: 4px;" data-i18n="lobby.next">Siguiente</button>
     </div>
 
     <div class="card" id="practiceThemeCard" style="display:none">
-      <p class="sub" data-i18n="practice.pickMap">&iquest;Qu&eacute; mapa quer&eacute;s practicar? (se repite en cada ronda)</p>
+      <p class="sub" data-i18n="practice.pickMap">&iquest;D&oacute;nde entrenamos? El mismo mapa todas las rondas.</p>
       <div class="themeGrid" id="themeGrid"></div>
       <button id="practiceConfirmBtn" style="width:100%; margin-top: 4px;" data-i18n="practice.start">Empezar pr&aacute;ctica</button>
     </div>
 
     <div class="card" id="joinCard" style="display:none">
       <input id="codeInput" maxlength="4" placeholder="C&Oacute;DIGO DE SALA" data-i18n-ph="join.codePlaceholder" />
-      <button id="joinBtn" style="width:100%" data-i18n="join.connect">Conectar</button>
+      <button id="joinBtn" style="width:100%" data-i18n="join.connect">Entrar</button>
       <div class="err" id="joinErr"></div>
     </div>
 
     <div class="card" id="originCard" style="display:none">
-      <p class="sub" data-i18n="origin.q">&iquest;C&oacute;mo quer&eacute;s jugar?</p>
+      <p class="sub" data-i18n="origin.q">&iquest;C&oacute;mo se juega esta?</p>
 
       <button type="button" class="modeOption" id="originOnlineBtn">
         <strong data-i18n="origin.online">Online</strong>
-        <span class="desc" data-i18n="origin.onlineDesc">Sala con c&oacute;digo para jugar en red con otras PCs, servidor dedicado.</span>
+        <span class="desc" data-i18n="origin.onlineDesc">Se arma una sala con c&oacute;digo: lo pas&aacute;s y se suman desde donde est&eacute;n.</span>
       </button>
 
       <button type="button" class="modeOption" id="originLocalBtn">
         <strong data-i18n="origin.local">Local</strong>
-        <span class="desc" data-i18n="origin.localDesc">Hasta 8 jugadores en esta misma PC: 2 con teclado y el resto con mandos conectados.</span>
+        <span class="desc" data-i18n="origin.localDesc">Hasta 8 en esta misma PC: dos se pelean el teclado, el resto con mando.</span>
       </button>
+      <!-- "Online" ya crea la sala en el acto, así que los errores del servidor (sin códigos
+           libres, sin conexión) tienen que aparecer ACÁ: la tarjeta principal, donde iban antes,
+           en ese momento ya está oculta. -->
+      <div class="err" id="originErr"></div>
     </div>
 
-    <div class="card" id="modeCard" style="display:none">
-      <p class="sub" data-i18n="mode.pick">Eleg&iacute; el modo de juego. La cantidad de rondas (o de victorias, seg&uacute;n el modo) se configura despu&eacute;s, ya dentro de la sala.</p>
-
-      <button type="button" class="modeOption selected" id="modeRoundsBtn">
-        <strong data-i18n="mode.rounds">Por rondas</strong>
-        <span class="desc" data-i18n="mode.roundsDesc">Vos eleg&iacute;s cu&aacute;ntas rondas se juegan. Termina sola al llegar a la &uacute;ltima.</span>
-      </button>
-
-      <button type="button" class="modeOption" id="modeWinsBtn">
-        <strong data-i18n="mode.wins">Por victorias</strong>
-        <span class="desc" data-i18n="mode.winsDesc">Se juega ronda tras ronda sin l&iacute;mite. Gana el primero en ACUMULAR la cantidad de rondas ganadas que elijas.</span>
-      </button>
-
-      <button type="button" class="modeOption" id="modeInfiniteBtn">
-        <strong data-i18n="mode.infinite">Infinito</strong>
-        <span class="desc" data-i18n="mode.infiniteDesc">Ronda tras ronda sin l&iacute;mite. El marcador acumula desde la primera ronda; cada 5 rondas vuelve al mapa inicial. El anfitri&oacute;n la corta cuando quiere.</span>
-      </button>
-
-      <button type="button" class="modeOption" id="modeKothBtn">
-        <strong data-i18n="mode.koth">Rey de la Colina</strong>
-        <span class="desc" data-i18n="mode.kothDesc">Un c&iacute;rculo aparece en el mapa cada tanto: qued&aacute;te adentro para sumar puntos. El primero en llegar a 100 gana. Nadie se elimina — si te tiran, volv&eacute;s a caer al mapa.</span>
-      </button>
-
-      <button type="button" class="modeOption" id="modeOrbkingBtn">
-        <strong data-i18n="mode.orbking">Rey del Orbe</strong>
-        <span class="desc" data-i18n="mode.orbkingDesc">Partida a reloj (2 minutos). Agarr&aacute; los orbes de poder y mantenelos activos: gana quien acumul&oacute; m&aacute;s tiempo con un power encima. Tampoco se elimina a nadie.</span>
-      </button>
-
-      <button type="button" class="modeOption" disabled>
-        <strong><span data-i18n="mode.story">Historia</span> <span class="soon" data-i18n="mode.storySoon">PR&Oacute;XIMAMENTE</span></strong>
-        <span class="desc" data-i18n="mode.storyDesc">Un jugador contra la IA.</span>
-      </button>
-
-      <button id="modeConfirmBtn" style="width:100%; margin-top: 4px;" data-i18n="lobby.create">Crear sala</button>
-      <div class="err" id="modeErr"></div>
-    </div>
+    <!-- La pantalla "elegí el modo" antes iba entre Online/Local y la sala. Ya no existe: el modo
+         se elige adentro (roomCard / localSetupCard) con el selector compacto que arma
+         buildModeChips(), así crear la sala es un paso y no tres. -->
 
     <div class="card" id="localSetupCard" style="display:none">
+      <p class="modeLabel" data-i18n="room.modeLabel">MODO DE JUEGO</p>
+      <div class="modeChips" id="localModeChips"></div>
       <p class="sub" id="localModeSummary" style="margin:0 0 10px"></p>
-      <p class="sub" data-i18n="local.addPlayers">Sum&aacute; jugadores (hasta 8) con teclado o mandos conectados a esta PC:</p>
+      <p class="sub" data-i18n="local.addPlayers">Sum&aacute; hasta 8 al sill&oacute;n, con teclado o con mando:</p>
       <div class="rosterList" id="localRoster"></div>
       <div id="localAddRow"></div>
       <div class="roundsRow" id="localRoundsRow" style="display:none">
@@ -505,16 +506,18 @@
         <span id="localRoundsN">3</span> <span data-i18n="word.rounds">rondas</span>
         <button class="ghost" id="localPlusBtn" type="button">+</button>
       </div>
-      <button class="snail" id="localSnailBtn" role="switch" aria-checked="false" data-i18n="common.snail">&#128012; Modo caracol (PCs lentas)</button>
-      <button id="localStartBtn" style="width:100%; margin-top: 10px;" disabled data-i18n="common.startMatch">Empezar partida</button>
+      <button id="localStartBtn" style="width:100%; margin-top: 10px;" disabled data-i18n="common.startMatch">&iexcl;A pelear!</button>
       <div class="err" id="localErr"></div>
       <div class="hint" data-i18n-html="local.hint">Teclado 1: A/D mover &middot; ESPACIO/W saltar &middot; J pi&ntilde;a &middot; K patada<br>Teclado 2: &larr;/&rarr; mover &middot; &uarr;/CTRL saltar &middot; . pi&ntilde;a &middot; / patada</div>
     </div>
 
     <div class="card" id="roomCard" style="display:none">
-      <p class="sub" data-i18n="room.share">Compart&iacute; este c&oacute;digo con tus amigos:</p>
+      <p class="sub" data-i18n="room.share">Pas&aacute; este c&oacute;digo y que se sumen:</p>
       <div class="codeShow" id="showCode">----</div>
       <div class="rosterList" id="roster"></div>
+
+      <p class="modeLabel" data-i18n="room.modeLabel">MODO DE JUEGO</p>
+      <div class="modeChips" id="roomModeChips"></div>
       <p class="sub" id="modeSummary" style="margin:0 0 16px"></p>
 
       <div id="ownerControls" style="display:none">
@@ -523,10 +526,9 @@
           <span id="roomRoundsN">3</span> <span data-i18n="word.rounds">rondas</span>
           <button class="ghost" id="roomPlusBtn" type="button">+</button>
         </div>
-        <button class="snail" id="snailBtn" role="switch" aria-checked="false" data-i18n="common.snail">&#128012; Modo caracol (PCs lentas)</button>
-        <button id="startBtn" style="width:100%; margin-top: 10px;" data-i18n="common.startMatch">Empezar partida</button>
+        <button id="startBtn" style="width:100%; margin-top: 10px;" data-i18n="common.startMatch">&iexcl;A pelear!</button>
       </div>
-      <p class="sub" id="waitOwner" style="display:none; margin:0" data-i18n="room.waitOwner">Esperando a que el anfitri&oacute;n empiece&hellip;</p>
+      <p class="sub" id="waitOwner" style="display:none; margin:0" data-i18n="room.waitOwner">El anfitri&oacute;n est&aacute; decidiendo. Hac&eacute; unos estiramientos.</p>
 
       <div class="hint" data-i18n="room.hint">A/D mover &middot; ESPACIO/W saltar &middot; J/clic izq. pi&ntilde;a &middot; K/clic der. patada</div>
       <div class="err" id="roomErr"></div>
@@ -538,15 +540,15 @@
   <div id="reconnect">
     <div class="spinner"></div>
     <h2 data-i18n="rec.title">RECONECTANDO</h2>
-    <p id="reconnectMsg" data-i18n="rec.msgDefault">Se cort&oacute; la conexi&oacute;n. Volvemos a tu lugar en la partida&hellip;</p>
+    <p id="reconnectMsg" data-i18n="rec.msgDefault">Se cort&oacute;. Aguant&aacute;, que te devolvemos a tu lugar&hellip;</p>
     <button id="reconnectGiveUp" class="ghost" style="display:none" data-i18n="rec.backHome">Volver al inicio</button>
   </div>
 
   <div id="finalScreen">
     <h1 id="winnerTitle" data-i18n="final.winner">GANADOR</h1>
     <div id="ranking"></div>
-    <button id="playAgainBtn" data-i18n="final.playAgain">Jugar de nuevo</button>
-    <div id="againWait" data-i18n="final.waitHost">Esperando al anfitri&oacute;n&hellip;</div>
+    <button id="playAgainBtn" data-i18n="final.playAgain">Revancha</button>
+    <div id="againWait" data-i18n="final.waitHost">A ver si el anfitri&oacute;n se anima a la revancha&hellip;</div>
   </div>
 </div>
 
@@ -573,9 +575,9 @@
     es: {
       "hud.room": "SALA",
       "hud.scores": "PUNTAJES",
-      "hud.endMatch": "Terminar partida",
-      "hud.leavePractice": "Abandonar práctica",
-      "hud.leaveLocal": "Salir del modo local",
+      "hud.endMatch": "Cortarla acá",
+      "hud.leavePractice": "Listo, ya practiqué",
+      "hud.leaveLocal": "Cortar la local",
       "hud.practiceTitle": "PRÁCTICA LIBRE",
       "hud.localTitle": "LOCAL",
       "hud.round": "RONDA {n}",
@@ -587,10 +589,10 @@
       "audio.music": "Música",
       "audio.mute": "Silenciar",
 
-      "lobby.sub": "Modo online — servidor dedicado, todos con la misma latencia.",
+      "lobby.sub": "Ocho palitos, una plataforma y uno solo que queda parado.",
       "lobby.yourName": "Tu nombre",
       "lobby.customizeTitle": "Personalizar tu stick",
-      "lobby.customizeSub": "Personalizá tu stick:",
+      "lobby.customizeSub": "Que se note cuál sos:",
       "lobby.create": "Crear sala",
       "lobby.join": "Unirme a una sala",
       "lobby.practice": "Práctica libre",
@@ -598,65 +600,64 @@
       "lobby.back": "‹ volver",
       "lobby.save": "Guardar",
 
-      "practice.pickDiff": "Elegí la dificultad del rival:",
+      "practice.pickDiff": "¿Contra quién querés entrenar?",
       "practice.easy": "Fácil",
-      "practice.easyDesc": "Reacciona lento y no siempre aprovecha los huecos. Para entrar en calor.",
+      "practice.easyDesc": "Llega tarde a todo y perdona errores. Para agarrarle la mano.",
       "practice.medium": "Media",
-      "practice.mediumDesc": "Persigue y golpea con criterio, sin ser implacable.",
+      "practice.mediumDesc": "Te sigue, te mide y pega cuando conviene. Ni regalado ni imposible.",
       "practice.hard": "Difícil",
-      "practice.hardDesc": "Reacciona rápido, cuida el borde de la plataforma y ataca apenas puede.",
-      "practice.pickMap": "¿Qué mapa querés practicar? (se repite en cada ronda)",
+      "practice.hardDesc": "Reacciona antes que vos, cuida el borde y no te perdona una.",
+      "practice.pickMap": "¿Dónde entrenamos? El mismo mapa todas las rondas.",
       "practice.start": "Empezar práctica",
 
       "join.codePlaceholder": "CÓDIGO DE SALA",
-      "join.connect": "Conectar",
-      "join.connecting": "Conectando…",
-      "join.needCode": "Ingresá el código de 4 letras.",
+      "join.connect": "Entrar",
+      "join.connecting": "Golpeando la puerta…",
+      "join.needCode": "Faltan letras: el código es de 4.",
 
-      "origin.q": "¿Cómo querés jugar?",
+      "origin.q": "¿Cómo se juega esta?",
       "origin.online": "Online",
-      "origin.onlineDesc": "Sala con código para jugar en red con otras PCs, servidor dedicado.",
+      "origin.onlineDesc": "Se arma una sala con código: lo pasás y se suman desde donde estén.",
       "origin.local": "Local",
-      "origin.localDesc": "Hasta 8 jugadores en esta misma PC: 2 con teclado y el resto con mandos conectados.",
+      "origin.localDesc": "Hasta 8 en esta misma PC: dos se pelean el teclado, el resto con mando.",
 
-      "mode.pick": "Elegí el modo de juego. La cantidad de rondas (o de victorias, según el modo) se configura después, ya dentro de la sala.",
       "mode.rounds": "Por rondas",
-      "mode.roundsDesc": "Vos elegís cuántas rondas se juegan. Termina sola al llegar a la última.",
+      "mode.roundsDesc": "Se juegan las rondas que digas y se cuenta al final. El clásico.",
       "mode.wins": "Por victorias",
-      "mode.winsDesc": "Se juega ronda tras ronda sin límite. Gana el primero en ACUMULAR la cantidad de rondas ganadas que elijas.",
+      "mode.winsDesc": "Ronda tras ronda hasta que alguien junte las victorias que pediste. Ese se la lleva.",
       "mode.infinite": "Infinito",
-      "mode.infiniteDesc": "Ronda tras ronda sin límite. El marcador acumula desde la primera ronda; cada 5 rondas vuelve al mapa inicial. El anfitrión la corta cuando quiere.",
+      "mode.infiniteDesc": "No termina sola: el marcador arrastra desde la primera ronda y cada 5 vuelve el mapa del principio. La cortás vos.",
       "mode.koth": "Rey de la Colina",
-      "mode.kothDesc": "Un círculo aparece en el mapa cada tanto: quedáte adentro para sumar puntos. El primero en llegar a 100 gana. Nadie se elimina — si te tiran, volvés a caer al mapa.",
+      "mode.kothDesc": "Cada tanto aparece un círculo y el que se planta adentro suma. Primero a 100. Nadie muere: si te tiran, volvés a caer.",
       "mode.orbking": "Rey del Orbe",
-      "mode.orbkingDesc": "Partida a reloj (2 minutos). Agarrá los orbes de poder y mantenelos activos: gana quien acumuló más tiempo con un power encima. Tampoco se elimina a nadie.",
+      "mode.orbkingDesc": "Dos minutos de reloj. Agarrá orbes y bancá el power: gana el que más tiempo lo sostuvo. Acá tampoco muere nadie.",
       "mode.story": "Historia",
       "mode.storySoon": "PRÓXIMAMENTE",
-      "mode.storyDesc": "Un jugador contra la IA.",
+      "mode.storyDesc": "Vos solo contra la máquina. Falta poco.",
 
-      "summary.rounds": "🎯 Por rondas — {n} {word}",
-      "summary.wins": "🏆 Por victorias — primero en ganar {n} {word}",
-      "summary.infinite": "♾️ Modo infinito — el marcador no se reinicia entre rondas",
-      "summary.koth": "⛰️ Rey de la Colina — el primero en llegar a 100 puntos gana",
-      "summary.orbking": "🔮 Rey del Orbe — 2 minutos, gana quien más tiempo sostuvo un power",
+      "summary.rounds": "🎯 {n} {word} y se cuenta al final",
+      "summary.wins": "🏆 El primero que gane {n} {word} se la lleva",
+      "summary.infinite": "♾️ Sin final: el marcador arrastra hasta que el anfitrión diga basta",
+      "summary.koth": "⛰️ Aguantá adentro del círculo. Primero a 100.",
+      "summary.orbking": "🔮 Dos minutos: gana el que más aguante con el power",
       "word.round": "ronda",
       "word.rounds": "rondas",
 
-      "common.snail": "🐌 Modo caracol (PCs lentas)",
-      "common.startMatch": "Empezar partida",
+      "common.startMatch": "¡A pelear!",
 
-      "local.addPlayers": "Sumá jugadores (hasta 8) con teclado o mandos conectados a esta PC:",
+      "local.addPlayers": "Sumá hasta 8 al sillón, con teclado o con mando:",
       "local.hint": "Teclado 1: A/D mover · ESPACIO/W saltar · J piña · K patada<br>Teclado 2: ←/→ mover · ↑/CTRL saltar · . piña · / patada",
-      "local.full": "Sala local completa (8/8).",
-      "local.noSources": "No hay más fuentes libres. Conectá un mando y presionale un botón para que el navegador lo detecte.",
-      "local.needTwo": "Sumá al menos 2 jugadores.",
+      "local.full": "Sillón lleno (8/8), no entra nadie más.",
+      "local.noSources": "No queda con qué jugar. Enchufá un mando y tocale un botón para que aparezca.",
+      "local.needTwo": "Solo no se puede pelear: sumá a alguien más.",
       "local.keyboard": "Teclado {n}",
       "local.gamepad": "Mando {n}",
       "local.addKeyboard": "+ Teclado {n}",
       "local.addGamepad": "+ Mando {n}",
 
-      "room.share": "Compartí este código con tus amigos:",
-      "room.waitOwner": "Esperando a que el anfitrión empiece…",
+      "room.share": "Pasá este código y que se sumen:",
+      "room.modeLabel": "MODO DE JUEGO",
+      "room.waitOwner": "El anfitrión está decidiendo. Hacé unos estiramientos.",
       "room.hint": "A/D mover · ESPACIO/W saltar · J/clic izq. piña · K/clic der. patada",
       "room.hostTag": "(anfitrión)",
       "room.goneTag": "(reconectando…)",
@@ -667,28 +668,28 @@
       "player.npc": "NPC",
 
       "rec.title": "RECONECTANDO",
-      "rec.msgDefault": "Se cortó la conexión. Volvemos a tu lugar en la partida…",
-      "rec.resuming": "Volviendo a tu partida…",
-      "rec.retrying": "Se cortó la conexión. Volviendo a tu lugar en la partida… (intento {i} de {n})",
-      "rec.gaveUp": "No pudimos reconectar. El servidor puede estar caído o la partida ya terminó.",
+      "rec.msgDefault": "Se cortó. Aguantá, que te devolvemos a tu lugar…",
+      "rec.resuming": "Volviendo a la pelea…",
+      "rec.retrying": "Se cortó. Seguimos insistiendo… (intento {i} de {n})",
+      "rec.gaveUp": "No hubo caso: la pelea siguió sin vos.",
       "rec.backHome": "Volver al inicio",
 
       "final.winner": "GANADOR",
       "final.wins": "{name} GANA",
-      "final.noWinner": "SIN GANADOR",
-      "final.playAgain": "Jugar de nuevo",
-      "final.waitHost": "Esperando al anfitrión…",
+      "final.noWinner": "NADIE QUEDÓ PARADO",
+      "final.playAgain": "Revancha",
+      "final.waitHost": "A ver si el anfitrión se anima a la revancha…",
       "final.pts": "pts",
 
-      "err.generic": "Error.",
-      "err.prevGone": "La partida anterior ya no está disponible.",
-      "err.connLost": "Se perdió la conexión con el servidor. Recargá la página.",
-      "err.noConn": "Sin conexión con el servidor.",
-      "err.started": "Esa partida ya empezó.",
-      "err.full": "La sala está llena (8 jugadores).",
-      "err.notRegistered": "Esa partida ya no te tiene registrado.",
-      "err.noCodes": "No hay códigos de sala libres, probá de nuevo.",
-      "err.noRoom": "No existe una sala con ese código.",
+      "err.generic": "Algo salió mal.",
+      "err.prevGone": "Esa partida ya no existe.",
+      "err.connLost": "Se cortó la conexión. Recargá la página.",
+      "err.noConn": "Sin conexión: fijate el internet y probá de nuevo.",
+      "err.started": "Llegaste tarde: esa partida ya arrancó.",
+      "err.full": "Sala llena: ya son 8 adentro.",
+      "err.notRegistered": "Esa partida ya no te tiene en la lista.",
+      "err.noCodes": "No quedan códigos libres. Probá de nuevo en un rato.",
+      "err.noRoom": "Ese código no lleva a ninguna sala.",
 
       "stat.kicks": "{name} repartió {v} patadas por todo el mapa",
       "stat.punches": "{name} no bajó los puños: tiró {v} piñas",
@@ -706,9 +707,9 @@
     en: {
       "hud.room": "ROOM",
       "hud.scores": "SCORES",
-      "hud.endMatch": "End match",
-      "hud.leavePractice": "Leave practice",
-      "hud.leaveLocal": "Exit local mode",
+      "hud.endMatch": "Call it here",
+      "hud.leavePractice": "Done practicing",
+      "hud.leaveLocal": "End local match",
       "hud.practiceTitle": "FREE PRACTICE",
       "hud.localTitle": "LOCAL",
       "hud.round": "ROUND {n}",
@@ -720,10 +721,10 @@
       "audio.music": "Music",
       "audio.mute": "Mute",
 
-      "lobby.sub": "Online mode — dedicated server, everyone on the same latency.",
+      "lobby.sub": "Eight stick figures, one platform, and only one left standing.",
       "lobby.yourName": "Your name",
       "lobby.customizeTitle": "Customize your stick",
-      "lobby.customizeSub": "Customize your stick:",
+      "lobby.customizeSub": "Make yourself easy to spot:",
       "lobby.create": "Create room",
       "lobby.join": "Join a room",
       "lobby.practice": "Free practice",
@@ -731,65 +732,64 @@
       "lobby.back": "‹ back",
       "lobby.save": "Save",
 
-      "practice.pickDiff": "Choose your opponent's difficulty:",
+      "practice.pickDiff": "Who do you want to train against?",
       "practice.easy": "Easy",
-      "practice.easyDesc": "Reacts slowly and doesn't always take the openings. Good for warming up.",
+      "practice.easyDesc": "Late to everything and forgives mistakes. Good for getting the hang of it.",
       "practice.medium": "Medium",
-      "practice.mediumDesc": "Chases and strikes with intent, without being relentless.",
+      "practice.mediumDesc": "Follows you, reads you, hits when it counts. Not a gift, not a wall.",
       "practice.hard": "Hard",
-      "practice.hardDesc": "Reacts fast, watches the platform edge and attacks the moment it can.",
-      "practice.pickMap": "Which map do you want to practice on? (it repeats every round)",
+      "practice.hardDesc": "Reacts before you do, hugs the edge and forgives nothing.",
+      "practice.pickMap": "Where are we training? Same map every round.",
       "practice.start": "Start practice",
 
       "join.codePlaceholder": "ROOM CODE",
-      "join.connect": "Connect",
-      "join.connecting": "Connecting…",
-      "join.needCode": "Enter the 4-letter code.",
+      "join.connect": "Go in",
+      "join.connecting": "Knocking on the door…",
+      "join.needCode": "Missing letters: the code is 4 long.",
 
-      "origin.q": "How do you want to play?",
+      "origin.q": "How are we doing this?",
       "origin.online": "Online",
-      "origin.onlineDesc": "A room with a code to play over the network with other PCs, dedicated server.",
+      "origin.onlineDesc": "You get a room with a code: pass it around and they join from wherever they are.",
       "origin.local": "Local",
-      "origin.localDesc": "Up to 8 players on this same PC: 2 on the keyboard and the rest on connected controllers.",
+      "origin.localDesc": "Up to 8 on this one PC: two fight over the keyboard, the rest bring controllers.",
 
-      "mode.pick": "Choose the game mode. The number of rounds (or wins, depending on the mode) is set later, inside the room.",
       "mode.rounds": "By rounds",
-      "mode.roundsDesc": "You choose how many rounds are played. It ends on its own at the last one.",
+      "mode.roundsDesc": "Play the number of rounds you set, count them up at the end. The classic.",
       "mode.wins": "By wins",
-      "mode.winsDesc": "Round after round with no limit. First to ACCUMULATE the number of round wins you choose takes it.",
+      "mode.winsDesc": "Round after round until someone racks up the wins you asked for. That one takes it.",
       "mode.infinite": "Endless",
-      "mode.infiniteDesc": "Round after round with no limit. The score carries over from round one; every 5 rounds the starting map comes back. The host ends it whenever they want.",
+      "mode.infiniteDesc": "Never ends on its own: the score carries from round one and every 5 rounds the first map comes back. You call it.",
       "mode.koth": "King of the Hill",
-      "mode.kothDesc": "A circle shows up on the map every so often: stay inside it to score. First to 100 wins. Nobody is eliminated — if you get knocked off, you drop back onto the map.",
+      "mode.kothDesc": "A circle keeps showing up and whoever plants themselves inside it scores. First to 100. Nobody dies: knock you off and you drop right back in.",
       "mode.orbking": "Orb King",
-      "mode.orbkingDesc": "Timed match (2 minutes). Grab the power orbs and keep them active: whoever racked up the most time holding a power wins. Nobody is eliminated here either.",
+      "mode.orbkingDesc": "Two minutes on the clock. Grab orbs and hang on to the power: most time holding one wins. Nobody dies here either.",
       "mode.story": "Story",
       "mode.storySoon": "COMING SOON",
-      "mode.storyDesc": "One player against the AI.",
+      "mode.storyDesc": "Just you against the machine. Not long now.",
 
-      "summary.rounds": "🎯 By rounds — {n} {word}",
-      "summary.wins": "🏆 By wins — first to win {n} {word}",
-      "summary.infinite": "♾️ Endless mode — the score doesn't reset between rounds",
-      "summary.koth": "⛰️ King of the Hill — first to 100 points wins",
-      "summary.orbking": "🔮 Orb King — 2 minutes, whoever held a power the longest wins",
+      "summary.rounds": "🎯 {n} {word}, counted at the end",
+      "summary.wins": "🏆 First to win {n} {word} takes it",
+      "summary.infinite": "♾️ No finish line: the score carries until the host calls it",
+      "summary.koth": "⛰️ Hold the circle. First to 100.",
+      "summary.orbking": "🔮 Two minutes: longest time holding a power wins",
       "word.round": "round",
       "word.rounds": "rounds",
 
-      "common.snail": "🐌 Snail mode (slow PCs)",
-      "common.startMatch": "Start match",
+      "common.startMatch": "Let's brawl!",
 
-      "local.addPlayers": "Add players (up to 8) with the keyboard or controllers connected to this PC:",
+      "local.addPlayers": "Fill the couch, up to 8, on keyboard or controller:",
       "local.hint": "Keyboard 1: A/D move · SPACE/W jump · J punch · K kick<br>Keyboard 2: ←/→ move · ↑/CTRL jump · . punch · / kick",
-      "local.full": "Local room full (8/8).",
-      "local.noSources": "No free input sources left. Plug in a controller and press any button on it so the browser detects it.",
-      "local.needTwo": "Add at least 2 players.",
+      "local.full": "Couch is full (8/8), nobody else fits.",
+      "local.noSources": "Nothing left to play with. Plug in a controller and press a button to make it show up.",
+      "local.needTwo": "You can't brawl alone: add someone else.",
       "local.keyboard": "Keyboard {n}",
       "local.gamepad": "Controller {n}",
       "local.addKeyboard": "+ Keyboard {n}",
       "local.addGamepad": "+ Controller {n}",
 
-      "room.share": "Share this code with your friends:",
-      "room.waitOwner": "Waiting for the host to start…",
+      "room.share": "Pass this code around:",
+      "room.modeLabel": "GAME MODE",
+      "room.waitOwner": "The host is still deciding. Stretch a little.",
       "room.hint": "A/D move · SPACE/W jump · J/left click punch · K/right click kick",
       "room.hostTag": "(host)",
       "room.goneTag": "(reconnecting…)",
@@ -800,28 +800,28 @@
       "player.npc": "NPC",
 
       "rec.title": "RECONNECTING",
-      "rec.msgDefault": "The connection dropped. Getting you back to your spot in the match…",
-      "rec.resuming": "Getting you back into your match…",
-      "rec.retrying": "The connection dropped. Getting you back to your spot in the match… (attempt {i} of {n})",
-      "rec.gaveUp": "We couldn't reconnect. The server may be down or the match already ended.",
+      "rec.msgDefault": "You dropped. Hang on, putting you back where you were…",
+      "rec.resuming": "Back to the brawl…",
+      "rec.retrying": "You dropped. Still knocking… (attempt {i} of {n})",
+      "rec.gaveUp": "No luck: the brawl went on without you.",
       "rec.backHome": "Back to start",
 
       "final.winner": "WINNER",
       "final.wins": "{name} WINS",
-      "final.noWinner": "NO WINNER",
-      "final.playAgain": "Play again",
-      "final.waitHost": "Waiting for the host…",
+      "final.noWinner": "NOBODY LEFT STANDING",
+      "final.playAgain": "Rematch",
+      "final.waitHost": "Seeing if the host is up for a rematch…",
       "final.pts": "pts",
 
-      "err.generic": "Error.",
-      "err.prevGone": "The previous match is no longer available.",
-      "err.connLost": "Lost the connection to the server. Reload the page.",
-      "err.noConn": "No connection to the server.",
-      "err.started": "That match already started.",
-      "err.full": "The room is full (8 players).",
-      "err.notRegistered": "That match no longer has you registered.",
-      "err.noCodes": "No room codes available, try again.",
-      "err.noRoom": "There's no room with that code.",
+      "err.generic": "Something went wrong.",
+      "err.prevGone": "That match is gone.",
+      "err.connLost": "The connection dropped. Reload the page.",
+      "err.noConn": "No connection: check your internet and try again.",
+      "err.started": "Too late: that match already kicked off.",
+      "err.full": "Room's full: 8 in there already.",
+      "err.notRegistered": "That match doesn't have you on the list anymore.",
+      "err.noCodes": "No free codes right now. Try again in a bit.",
+      "err.noRoom": "That code doesn't lead anywhere.",
 
       "stat.kicks": "{name} spread {v} kicks all over the map",
       "stat.punches": "{name} never dropped their fists: threw {v} punches",
@@ -934,12 +934,10 @@
   var shineCtx = shineCanvas.getContext("2d");
 
   window.drawStickman = function (ctx, p, color, dbg) {
-    // Snail mode ya se salta toda la "juice" (squash, shadowBlur, auras — ver stickman.js) por
-    // plata de rendimiento; el sombreado suma otro canvas + composición por jugador y cuadro,
-    // así que se lo salta también. Ídem para fantasmas de estela y el fade de la muerte: ambos
-    // llegan con ctx.globalAlpha ya bajado por el llamador (Trails.draw / drawPlayer en
-    // desktop/sim.js), y a esa opacidad el matiz no se nota — no vale la pena el costo extra.
-    if (window.SNAIL_MODE || ctx.globalAlpha < 1) return baseDrawStickman(ctx, p, color, dbg);
+    // Fantasmas de estela y fade de la muerte llegan con ctx.globalAlpha ya bajado por el
+    // llamador (Trails.draw / drawPlayer en desktop/sim.js), y a esa opacidad el matiz del
+    // sombreado no se nota — no vale la pena otro canvas y una composición extra por cuadro.
+    if (ctx.globalAlpha < 1) return baseDrawStickman(ctx, p, color, dbg);
 
     var info = dbg || shineDbg;
     var w = ctx.canvas.width, h = ctx.canvas.height;
@@ -1021,13 +1019,14 @@
   var names = {};
   var colors = {}; // id -> color asignado por el servidor (ver Net.on("lobby"))
   var myId = null;
-  var snailOn = false;
-  var totalRoundsPick = 3; // valor elegido ANTES de crear la sala (modeCard)
+  var totalRoundsPick = 3; // cantidad elegida en el setup Local (localSetupCard); online la maneja el servidor
   var roomRoundsPick = 3; // último valor CONFIRMADO por el servidor una vez dentro (roomCard)
-  var selectedMode = "rounds"; // "rounds" | "infinite" — elegido antes de crear la sala
+  /* Modo del MODO LOCAL únicamente. En online el modo vive en el servidor (Net.getMode(), llega
+     en cada "lobby") porque lo elige el anfitrión con gente ya conectada y todos tienen que
+     verlo igual; acá no hay servidor ni nadie a quien avisarle. */
+  var selectedMode = "rounds";
   var finalShown = false;
   var lastMap = null; // último mapa recibido; el servidor solo lo manda cuando cambia
-  var roomOrigin = "online"; // "online" | "local" — elegido en originCard, antes de modeCard
   /* Último "lobby" recibido y último final mostrado: los guarda setLang() para poder rearmar en
      el otro idioma lo que ya está en pantalla, sin esperar a que el servidor los reenvíe. */
   var lastLobbyMsg = null;
@@ -1039,6 +1038,62 @@
   // Práctica Libre, donde no hay servidor.
   function colorFor(id) { return colors[id] || PLAYER_COLORS[id % PLAYER_COLORS.length]; }
   function nameFor(id) { return names[id] || t("player.n", { n: id }); }
+
+  /* Los modos jugables, en el orden en que se muestran. "story" queda afuera a propósito: no
+     existe todavía, así que buildModeChips() lo agrega aparte como chip deshabilitado. */
+  var MODE_LIST = ["rounds", "wins", "infinite", "koth", "orbking"];
+
+  /* Arma el selector compacto dentro de un contenedor (.modeChips). Se usa dos veces con la
+     misma pinta pero distinta autoridad: en la sala online el click le PIDE el cambio al
+     servidor (Net.setMode) y la marca la pone recién el "lobby" que vuelve, mientras que en el
+     setup Local se aplica en el acto porque no hay nadie más a quien avisarle. */
+  function buildModeChips(container, onPick) {
+    container.innerHTML = "";
+    MODE_LIST.forEach(function (mode) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("data-mode", mode);
+      b.addEventListener("click", function () { onPick(mode); });
+      container.appendChild(b);
+    });
+    var soon = document.createElement("button");
+    soon.type = "button";
+    soon.disabled = true;
+    soon.setAttribute("data-mode", "story");
+    container.appendChild(soon);
+    refreshModeChipLabels(container);
+  }
+
+  /* Los textos de los chips los pone JS, así que el cambio de idioma en caliente no los alcanza
+     por data-i18n: setLang() vuelve a pasar por acá. */
+  function refreshModeChipLabels(container) {
+    [].forEach.call(container.querySelectorAll("button"), function (b) {
+      var mode = b.getAttribute("data-mode");
+      if (mode === "story") {
+        b.innerHTML = "";
+        b.appendChild(document.createTextNode(t("mode.story")));
+        var soon = document.createElement("span");
+        soon.className = "soon";
+        soon.textContent = t("mode.storySoon");
+        b.appendChild(soon);
+        b.title = t("mode.storyDesc");
+        return;
+      }
+      b.textContent = t("mode." + mode);
+      // La descripción larga de cada modo ya no tiene pantalla propia; sobrevive acá como
+      // tooltip, además del resumen de una línea que se muestra debajo del selector.
+      b.title = t("mode." + mode + "Desc");
+    });
+  }
+
+  /* editable=false (invitado) deja el selector a la vista pero muerto: sirve para saber a qué se
+     juega y ver en vivo lo que va tocando el anfitrión, no para pelearle el control. */
+  function updateModeChips(container, mode, editable) {
+    container.classList.toggle("readonly", !editable);
+    [].forEach.call(container.querySelectorAll("button"), function (b) {
+      b.classList.toggle("selected", b.getAttribute("data-mode") === mode);
+    });
+  }
 
   /* Un solo lugar para el resumen "qué se está por jugar", compartido entre el lobby online
      (roomCard, vía Net.on("lobby")) y el setup de modo Local (localSetupCard) — antes solo
@@ -1076,7 +1131,7 @@
         var rb = $("roundBanner");
         // Modo Local: mismo texto que arma el servidor en el "round" broadcast online (ver
         // Net.on("round")) — acá no llega por mensaje, se arma con lo que ya tenemos a mano
-        // (selectedMode, fijado al confirmar modeCard). Práctica Libre sigue con su formato
+        // (selectedMode, el del selector del setup local). Práctica Libre sigue con su formato
         // simple de siempre (sin total, sin chequeo de modo: solo existe "infinite" ahí).
         var mapTxt = translateMapName(info.mapName);
         if (localActive && selectedMode === "koth") rb.textContent = t("hud.koth", { map: mapTxt });
@@ -1144,8 +1199,9 @@
     try { localStorage.setItem(LANG_KEY, lang); } catch (e) { /* incógnito */ }
     applyStaticI18n();
     updateSessionLabels();
-    updateModeConfirmLabel();
     relabelAutoLocalNames();
+    refreshModeChipLabels($("roomModeChips"));
+    refreshModeChipLabels($("localModeChips"));
 
     if (lastLobbyMsg) {
       $("modeSummary").textContent = modeSummaryText(lastLobbyMsg.mode, lastLobbyMsg.rounds);
@@ -1195,6 +1251,7 @@
   }
 
   function renderRoster(list, ownerId) {
+    $("roster").classList.toggle("wide", list.length > 4); // ver .rosterList.wide en el CSS
     $("roster").innerHTML = list.map(function (p) {
       var tag = p.id === ownerId ? ' <span class="tag">' + escapeHtml(t("room.hostTag")) + '</span>' : "";
       var gone = p.connected === false;
@@ -1835,11 +1892,12 @@
 
     Sim.resetToLobby();
     localPlayers.forEach(function (p) { Sim.addPlayer(p.id); });
-    Sim.startMatch(totalRoundsPick, snailOn, { mode: selectedMode });
+    // El segundo parámetro es el modo caracol de desktop/sim.js: acá ya no se ofrece, pero la
+    // firma es compartida con el build de escritorio, así que va false y listo.
+    Sim.startMatch(totalRoundsPick, false, { mode: selectedMode });
 
     stopLocalSetupPoll();
     $("originCard").style.display = "none";
-    $("modeCard").style.display = "none";
     $("localSetupCard").style.display = "none";
     $("backLink").style.display = "none";
     updateSessionLabels();
@@ -1859,7 +1917,7 @@
     localGamepadPrev = {};
     Sim.resetToLobby();
     localPlayers.forEach(function (p) { Sim.addPlayer(p.id); });
-    Sim.startMatch(totalRoundsPick, snailOn, { mode: selectedMode });
+    Sim.startMatch(totalRoundsPick, false, { mode: selectedMode });
   }
 
   function exitLocal() {
@@ -2104,7 +2162,7 @@
     $("reconnect").classList.remove("show");
     $("choiceCard").style.display = "none";
     $("joinCard").style.display = "none";
-    $("modeCard").style.display = "none";
+    $("originCard").style.display = "none";
     $("roomCard").style.display = "block";
     // Antes se ocultaba acá — no había forma de salir de una sala ya creada sin recargar la
     // página. Ahora el mismo link sirve de "salir de la sala" (ver el handler de click).
@@ -2141,7 +2199,7 @@
     $("roundBanner").classList.remove("show");
     $("roomCard").style.display = "none";
     $("joinCard").style.display = "none";
-    $("modeCard").style.display = "none";
+    $("originCard").style.display = "none";
     $("choiceCard").style.display = "block";
     $("mainErr").textContent = t("err.prevGone");
     myId = null;
@@ -2167,11 +2225,11 @@
     var owner = Net.isOwner();
     $("ownerControls").style.display = owner ? "block" : "none";
     $("waitOwner").style.display = owner ? "none" : "block";
-    /* El modo queda fijo desde que se crea la sala, pero la CANTIDAD de rondas (o de victorias,
-       en modo "wins") sí se puede seguir ajustando acá mientras se espera a que se sumen amigos
-       (setRounds). El servidor es la autoridad: este texto y el picker siempre reflejan
-       msg.rounds, nunca un valor local optimista, así que un guest ve el número cambiar en vivo
-       apenas el anfitrión lo toca. */
+    /* Modo y cantidad se eligen acá adentro, con la sala ya creada y la gente entrando. El
+       servidor es la autoridad: el selector, el resumen y el picker de rondas reflejan siempre
+       msg.mode/msg.rounds, nunca un valor local optimista, así que un invitado ve el cambio en
+       vivo apenas el anfitrión lo toca. */
+    updateModeChips($("roomModeChips"), msg.mode, owner);
     $("modeSummary").textContent = modeSummaryText(msg.mode, msg.rounds);
 
     var showRoundsRow = msg.mode === "rounds" || msg.mode === "wins";
@@ -2248,9 +2306,6 @@
         if (typeof fn === "function") fn.apply(AudioManager.on, e.a);
       }
     }
-    /* fx.js / world.js / stickman.js leen window.SNAIL_MODE, no el snailMode interno de Sim,
-       así que sin esta línea el modo caracol solo apagaba la mitad de los efectos. */
-    window.SNAIL_MODE = !!data.snail;
     Sim.guestApplySnapshot(data);
   });
 
@@ -2284,7 +2339,7 @@
   Net.on("err", function (msg) {
     var target = "mainErr";
     if ($("joinCard").style.display === "block") target = "joinErr";
-    else if ($("modeCard").style.display === "block") target = "modeErr";
+    else if ($("originCard").style.display === "block") target = "originErr";
     var key = msg.code && SERVER_ERR_KEYS[msg.code];
     $(target).textContent = key ? t(key) : (msg.msg || t("err.generic"));
   });
@@ -2297,6 +2352,8 @@
     if (Net.getSavedSession()) return;
     $("roomErr").textContent = t("err.connLost");
     $("mainErr").textContent = t("err.noConn");
+    // Si justo estaba creando la sala, la tarjeta a la vista es originCard, no la principal.
+    $("originErr").textContent = t("err.noConn");
   });
 
   /* ---------------------------------------------------------------- input */
@@ -2390,28 +2447,30 @@
   /* ---------------------------------------------------------------- wiring del lobby */
   $("createBtn").addEventListener("click", function () {
     $("mainErr").textContent = "";
+    $("originErr").textContent = "";
     $("choiceCard").style.display = "none";
     $("originCard").style.display = "block";
     $("backLink").style.display = "inline";
   });
 
-  /* En online el botón cierra el flujo ("Crear sala"); en local todavía queda el setup de
-     jugadores, así que dice "Siguiente". setLang() lo vuelve a pedir para que el cambio de
-     idioma no lo pise con el data-i18n fijo del HTML. */
-  function updateModeConfirmLabel() {
-    $("modeConfirmBtn").textContent = roomOrigin === "local" ? t("lobby.next") : t("lobby.create");
-  }
+  /* "Online" ya no abre otra pantalla: crea la sala en el acto. El modo se elige adentro, con
+     el código a la vista y la gente entrando — antes había que decidirlo de antemano y una sala
+     ya creada servía para un solo modo. El pase a roomCard lo hace Net.on("joined"), cuando el
+     servidor confirma; hasta entonces seguimos acá, que es donde se muestran sus errores. */
   $("originOnlineBtn").addEventListener("click", function () {
-    roomOrigin = "online";
-    $("originCard").style.display = "none";
-    $("modeCard").style.display = "block";
-    updateModeConfirmLabel();
+    $("originErr").textContent = "";
+    Net.create($("nickInputMain").value.trim() || t("room.defaultHost"), myColor);
   });
+  /* En local no hay sala que crear ni servidor a quien preguntarle: se va derecho al setup, que
+     tiene su propio selector de modo arriba del roster. */
   $("originLocalBtn").addEventListener("click", function () {
-    roomOrigin = "local";
     $("originCard").style.display = "none";
-    $("modeCard").style.display = "block";
-    updateModeConfirmLabel();
+    $("localSetupCard").style.display = "block";
+    localPlayers = [];
+    renderLocalRoster();
+    renderLocalAddRow();
+    renderLocalModeSummary();
+    startLocalSetupPoll();
   });
 
   $("joinShowBtn").addEventListener("click", function () {
@@ -2450,16 +2509,11 @@
       $("practiceCard").style.display = "block";
       return;
     }
-    // modeCard → originCard, y localSetupCard → modeCard: son pasos de la MISMA decisión
-    // ("crear sala"), igual que práctica arriba — un solo paso atrás, no directo al inicio.
+    // localSetupCard → originCard: son pasos de la MISMA decisión ("crear sala"), igual que
+    // práctica arriba — un solo paso atrás, no directo al inicio.
     if ($("localSetupCard").style.display === "block") {
       stopLocalSetupPoll();
       $("localSetupCard").style.display = "none";
-      $("modeCard").style.display = "block";
-      return;
-    }
-    if ($("modeCard").style.display === "block") {
-      $("modeCard").style.display = "none";
       $("originCard").style.display = "block";
       return;
     }
@@ -2473,7 +2527,6 @@
     }
     $("joinCard").style.display = "none";
     $("originCard").style.display = "none";
-    $("modeCard").style.display = "none";
     $("practiceCard").style.display = "none";
     $("roomCard").style.display = "none";
     $("choiceCard").style.display = "block";
@@ -2490,29 +2543,23 @@
     Net.join(code, $("nickInputMain").value.trim() || t("player.default"), myColor);
   });
 
-  /* ---- selección de modo (antes de crear la sala) ---- */
-  // La cantidad de rondas (o de victorias) YA NO se elige acá — esta pantalla es solo "qué modo",
-  // el número se configura después, dentro de la sala (roomCard) o del setup Local
-  // (localSetupCard), donde cada uno tiene su propio picker que reusa las mismas ids de siempre.
-  function selectMode(mode) {
-    selectedMode = mode;
-    $("modeRoundsBtn").classList.toggle("selected", mode === "rounds");
-    $("modeWinsBtn").classList.toggle("selected", mode === "wins");
-    $("modeInfiniteBtn").classList.toggle("selected", mode === "infinite");
-    $("modeKothBtn").classList.toggle("selected", mode === "koth");
-    $("modeOrbkingBtn").classList.toggle("selected", mode === "orbking");
-  }
-  $("modeRoundsBtn").addEventListener("click", function () { selectMode("rounds"); });
-  $("modeWinsBtn").addEventListener("click", function () { selectMode("wins"); });
-  $("modeInfiniteBtn").addEventListener("click", function () { selectMode("infinite"); });
-  $("modeKothBtn").addEventListener("click", function () { selectMode("koth"); });
-  $("modeOrbkingBtn").addEventListener("click", function () { selectMode("orbking"); });
-  selectMode("rounds"); // sincroniza selectedMode con el estado inicial que ya muestra el HTML
+  /* ---- selección de modo, ya dentro de la sala ---- */
+  /* Sala online: el click NO cambia nada local, le pide el cambio al servidor y la marca la pone
+     recién el "lobby" que vuelve (ver Net.on("lobby") → updateModeChips), que es el mismo que
+     ven los invitados. El servidor lo ignora si no sos el anfitrión o si la partida ya empezó;
+     acá el .readonly del contenedor ya evita que un invitado llegue a clickearlo. */
+  buildModeChips($("roomModeChips"), function (mode) { Net.setMode(mode); });
 
-  // Picker de rondas/victorias del setup Local — el modeCard ya no tiene uno propio (ver el
-  // comentario de selectMode más arriba); acá es donde totalRoundsPick se vuelve editable, y
-  // solo cuando corresponde (renderLocalModeSummary lo muestra/oculta según selectedMode).
+  /* Setup local: no hay servidor ni nadie a quien avisarle, así que se aplica en el acto. */
+  buildModeChips($("localModeChips"), function (mode) {
+    selectedMode = mode;
+    renderLocalModeSummary();
+  });
+
+  // Picker de rondas/victorias del setup Local: acá es donde totalRoundsPick se vuelve editable,
+  // y solo cuando corresponde (según el modo elegido en el selector de arriba).
   function renderLocalModeSummary() {
+    updateModeChips($("localModeChips"), selectedMode, true);
     $("localModeSummary").textContent = modeSummaryText(selectedMode, totalRoundsPick);
     $("localRoundsRow").style.display = (selectedMode === "rounds" || selectedMode === "wins") ? "flex" : "none";
     $("localRoundsN").textContent = totalRoundsPick;
@@ -2526,21 +2573,6 @@
     renderLocalModeSummary();
   });
 
-  $("modeConfirmBtn").addEventListener("click", function () {
-    $("modeErr").textContent = "";
-    if (roomOrigin === "local") {
-      $("modeCard").style.display = "none";
-      $("localSetupCard").style.display = "block";
-      localPlayers = [];
-      renderLocalRoster();
-      renderLocalAddRow();
-      renderLocalModeSummary();
-      startLocalSetupPoll();
-      return;
-    }
-    Net.create($("nickInputMain").value.trim() || t("room.defaultHost"), selectedMode, totalRoundsPick, myColor);
-  });
-
   // Rondas dentro de la sala (modo "rounds"): cada click pide el cambio al servidor; el
   // número en pantalla solo se actualiza cuando llega la confirmación ("lobby"), no acá — así
   // el anfitrión y los invitados nunca ven valores distintos entre sí.
@@ -2551,18 +2583,8 @@
     Net.setRounds(Math.min(20, roomRoundsPick + 1));
   });
 
-  $("snailBtn").addEventListener("click", function () {
-    snailOn = !snailOn;
-    this.classList.toggle("on", snailOn);
-    this.setAttribute("aria-checked", String(snailOn));
-  });
-  $("localSnailBtn").addEventListener("click", function () {
-    snailOn = !snailOn;
-    this.classList.toggle("on", snailOn);
-    this.setAttribute("aria-checked", String(snailOn));
-  });
   $("localStartBtn").addEventListener("click", startLocalMatch);
-  $("startBtn").addEventListener("click", function () { Net.start(snailOn); });
+  $("startBtn").addEventListener("click", function () { Net.start(); });
   $("endMatchBtn").addEventListener("click", function () {
     if (practiceActive) exitPractice();
     else if (localActive) exitLocal();

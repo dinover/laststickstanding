@@ -16,7 +16,7 @@ var Net = (function () {
   var myId = null;
   var roomCode = null;
   var ownerId = null;
-  var roomMode = null; // "rounds" | "infinite", conocido recién tras "joined"/"lobby"
+  var roomMode = null; // "rounds" | "wins" | "infinite" | "koth" | "orbking"; llega en cada "lobby" y puede cambiar mientras el anfitrión lo elige
   var roomRounds = null;
   var queued = null; // acción pedida antes de que abriera el socket
 
@@ -173,11 +173,11 @@ var Net = (function () {
   return {
     connect: open,
 
-    /* mode y rounds quedan fijos para toda la vida de la sala — se deciden acá, antes de que
-       exista, no dentro del lobby. Ver el comentario en server.js sobre por qué. */
-    create: function (nick, mode, rounds, color) {
+    /* Crear una sala no elige nada de la partida: nace en el modo por defecto del servidor y el
+       anfitrión decide modo y cantidad después, ya con gente adentro (setMode/setRounds). */
+    create: function (nick, color) {
       open();
-      send({ t: "create", nick: nick, mode: mode, rounds: rounds, color: color });
+      send({ t: "create", nick: nick, color: color });
     },
     join: function (code, nick, color) {
       open();
@@ -187,13 +187,19 @@ var Net = (function () {
     sendInput: function (action, down) {
       send({ t: "input", k: action, d: down });
     },
-    /* Solo tiene efecto en modo "rounds" y solo en el lobby (el servidor lo valida igual, esto
-       es solo para no gastar un mensaje si obviamente no aplica). */
+    /* Cambio de modo desde el lobby: solo el anfitrión, solo antes de empezar. El servidor lo
+       valida igual y responde con un "lobby" nuevo — el cliente no toca su estado local, espera
+       esa confirmación (así el anfitrión y los invitados nunca ven modos distintos). */
+    setMode: function (mode) {
+      send({ t: "setMode", mode: mode });
+    },
+    /* Solo tiene efecto en modo "rounds"/"wins" y solo en el lobby (el servidor lo valida igual,
+       esto es solo para no gastar un mensaje si obviamente no aplica). */
     setRounds: function (rounds) {
       send({ t: "setRounds", rounds: rounds });
     },
-    start: function (snail) {
-      send({ t: "start", snail: snail });
+    start: function () {
+      send({ t: "start" });
     },
     again: function () {
       send({ t: "again" });
