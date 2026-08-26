@@ -395,6 +395,30 @@
   .hint { font-size: 11px; color: #6b7394; letter-spacing: .04em; margin-top: 12px; }
   .err { color: #ff5e7a; font-size: 12px; min-height: 16px; margin-top: 8px; }
   a.back { color: #6b7394; font-size: 12px; text-decoration: none; margin-top: 2px; display: inline-block; }
+
+  /* Apoyo al proyecto, al final del lobby. Arranca cerrado y discreto —un botón fantasma más
+     chico que cualquier acción de verdad— y recién al tocarlo aparecen las dos formas de bancar:
+     nadie entró acá a donar, entró a pelear. Vive adentro de #lobby a propósito, así se va solo
+     cuando arranca la partida (#wrap.playing #lobby { display:none }) y no hay que acordarse de
+     esconderlo en cada transición. */
+  #supportRow { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  #supportBtn {
+    background: transparent; border: 1px solid #2a3050; color: #6b7394; box-shadow: none;
+    padding: 8px 16px; font-size: 12px; font-weight: 600; letter-spacing: .04em;
+  }
+  #supportBtn:hover { color: #eaf0ff; border-color: #3a4470; }
+  #supportPanel { display: none; text-align: center; max-width: 340px; }
+  #supportPanel.show { display: block; }
+  #supportPanel .sub { font-size: 12px; margin: 0 0 12px; }
+  .supportLinks { display: flex; gap: 10px; justify-content: center; }
+  /* Dos colores de la paleta del juego, no los de las marcas: distinguen un botón del otro sin
+     pegar un logo ajeno en una pantalla que no es de ellos. */
+  .supportLink {
+    flex: 1; text-decoration: none; border-radius: 8px; padding: 11px 14px;
+    font-size: 13px; font-weight: 700; color: #05060d; background: #4fd2ff;
+    box-shadow: 0 0 16px rgba(79,210,255,.28);
+  }
+  #supportMp { background: #ffc247; box-shadow: 0 0 16px rgba(255,194,71,.28); }
 </style>
 </head>
 <body>
@@ -554,6 +578,17 @@
     </div>
 
     <a class="back" id="backLink" href="#" style="display:none" data-i18n="lobby.back">&lsaquo; volver</a>
+
+    <div id="supportRow">
+      <button type="button" class="ghost" id="supportBtn" data-i18n="support.cta">Invitame un caf&eacute; &#9749;</button>
+      <div id="supportPanel">
+        <p class="sub" data-i18n="support.blurb">El juego es gratis y va a seguir si&eacute;ndolo. Si te re&iacute;ste un rato, con un cafecito me arregl&aacute;s el d&iacute;a:</p>
+        <div class="supportLinks">
+          <a class="supportLink" id="supportPaypal" href="https://www.paypal.com/paypalme/zoulta?country.x=UY&amp;locale.x=en_US" target="_blank" rel="noopener noreferrer">PayPal</a>
+          <a class="supportLink" id="supportMp" href="https://link.mercadopago.com.uy/leinonair" target="_blank" rel="noopener noreferrer">Mercado Pago</a>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="reconnect">
@@ -611,6 +646,8 @@
       "lobby.sub": "Ocho palitos, una plataforma y uno solo que queda parado.",
       "lobby.yourName": "Tu nombre",
       "lobby.customizeTitle": "Personalizar tu stick",
+      "support.cta": "Invitame un café ☕",
+      "support.blurb": "El juego es gratis y va a seguir siéndolo. Si te reíste un rato, con un cafecito me arreglás el día:",
       "lobby.customizeSub": "Que se note cuál sos:",
       "lobby.colorLabel": "Color",
       "lobby.hatLabel": "Accesorio",
@@ -760,6 +797,8 @@
       "lobby.sub": "Eight stick figures, one platform, and only one left standing.",
       "lobby.yourName": "Your name",
       "lobby.customizeTitle": "Customize your stick",
+      "support.cta": "Buy me a coffee ☕",
+      "support.blurb": "The game is free and it is staying free. If it got a laugh out of you, a coffee makes my day:",
       "lobby.customizeSub": "Make yourself easy to spot:",
       "lobby.colorLabel": "Colour",
       "lobby.hatLabel": "Accessory",
@@ -2199,6 +2238,13 @@
     saveProfile(profile);
     $("nickInputMain").value = nm;
     closeCustomize();
+  });
+
+  /* Apoyo al proyecto: el mismo botón abre y cierra. No se recuerda el estado ni se abre solo —
+     un panel de donaciones que aparece de prepo cada vez que alguien vuelve al lobby deja de ser
+     una invitación y pasa a ser un cartel. */
+  $("supportBtn").addEventListener("click", function () {
+    $("supportPanel").classList.toggle("show");
   });
 
   /* ---------------------------------------------------------------- loop de render */
