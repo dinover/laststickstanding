@@ -296,14 +296,29 @@
   .nameRow input { margin-bottom: 0; flex: 1; min-width: 0; }
   .nameRow button { flex: 0 0 auto; width: auto; padding: 13px 15px; font-size: 16px; line-height: 1; }
 
-  #customizePreviewWrap { display: flex; justify-content: center; margin-bottom: 6px; }
+  /* El box del preview está calibrado al muñeco y no al revés: con PREVIEW_SCALE y
+     PREVIEW_FEET_Y (ver la sección de personalización, más abajo) el palito con el accesorio
+     más alto puesto ocupa casi todo el alto útil. Antes era un 200x230 con el muñeco dibujado
+     a escala 1 adentro, o sea dos tercios de aire y un stick demasiado chico para ver qué
+     tenía puesto. */
+  #customizePreviewWrap { display: flex; justify-content: center; margin-bottom: 14px; }
   #customizePreview { background: #0a0c18; border-radius: 10px; border: 1px solid #2a3050; }
-  .swatchGrid { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 4px 0 16px; }
+  .swatchGrid { display: flex; flex-wrap: wrap; gap: 9px; justify-content: center; margin: 0 0 16px; }
   .swatch {
-    width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
+    width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
     border: 2px solid rgba(255,255,255,.15); box-shadow: 0 0 8px currentColor;
   }
   .swatch.selected { border-color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.22), 0 0 12px currentColor; }
+
+  /* Accesorios: grilla de emojis. El emoji es la etiqueta, no el dibujo — quien muestra de
+     verdad cómo queda puesto es el preview de arriba, que cambia al tocar cada uno. */
+  .hatGrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 0 0 8px; }
+  .hatGrid button {
+    padding: 0; height: 42px; font-size: 20px; line-height: 1;
+    background: #12162a; color: #eaf0ff; border: 1px solid #2a3050; box-shadow: none;
+  }
+  .hatGrid button.selected { border-color: #35f0e0; box-shadow: 0 0 0 1px #35f0e0 inset; }
+  #hatName { color: #9aa3bd; font-size: 12px; min-height: 16px; margin: 0 0 16px; }
 
   /* Tarjetas de tema (Práctica Libre): snapshot real del fondo de cada bioma, generado con las
      mismas World Background.build/draw que ya pintan el fondo del lobby — no un dropdown de
@@ -434,9 +449,13 @@
 
     <div class="card" id="customizeCard" style="display:none">
       <p class="sub" data-i18n="lobby.customizeSub">Que se note cu&aacute;l sos:</p>
-      <div id="customizePreviewWrap"><canvas id="customizePreview" width="200" height="230"></canvas></div>
+      <div id="customizePreviewWrap"><canvas id="customizePreview" width="150" height="158"></canvas></div>
       <input id="customizeNameInput" maxlength="14" placeholder="Tu nombre" data-i18n-ph="lobby.yourName" />
+      <p class="modeLabel" data-i18n="lobby.colorLabel">Color</p>
       <div class="swatchGrid" id="swatchGrid"></div>
+      <p class="modeLabel" data-i18n="lobby.hatLabel">Accesorio</p>
+      <div class="hatGrid" id="hatGrid"></div>
+      <div id="hatName"></div>
       <button id="customizeSaveBtn" style="width:100%" data-i18n="lobby.save">Guardar</button>
       <a class="back" id="customizeBackLink" href="#" data-i18n="lobby.back">&lsaquo; volver</a>
     </div>
@@ -593,6 +612,23 @@
       "lobby.yourName": "Tu nombre",
       "lobby.customizeTitle": "Personalizar tu stick",
       "lobby.customizeSub": "Que se note cuál sos:",
+      "lobby.colorLabel": "Color",
+      "lobby.hatLabel": "Accesorio",
+      "hat.none": "Pelado",
+      "hat.horns": "Cuernos",
+      "hat.halo": "Aureola",
+      "hat.tophat": "Galera",
+      "hat.cap": "Gorra",
+      "hat.crown": "Corona",
+      "hat.poop": "Caca",
+      "hat.cowboy": "Sombrero de vaquero",
+      "hat.party": "Gorrito de cumpleaños",
+      "hat.bunny": "Orejas de conejo",
+      "hat.antennae": "Antenas",
+      "hat.arrow": "Flechazo",
+      "hat.mohawk": "Cresta",
+      "hat.flame": "Prendido fuego",
+      "hat.propeller": "Gorro con hélice",
       "lobby.create": "Crear sala",
       "lobby.join": "Unirme a una sala",
       "lobby.practice": "Práctica libre",
@@ -725,6 +761,23 @@
       "lobby.yourName": "Your name",
       "lobby.customizeTitle": "Customize your stick",
       "lobby.customizeSub": "Make yourself easy to spot:",
+      "lobby.colorLabel": "Colour",
+      "lobby.hatLabel": "Accessory",
+      "hat.none": "Bare head",
+      "hat.horns": "Horns",
+      "hat.halo": "Halo",
+      "hat.tophat": "Top hat",
+      "hat.cap": "Cap",
+      "hat.crown": "Crown",
+      "hat.poop": "Poop",
+      "hat.cowboy": "Cowboy hat",
+      "hat.party": "Party hat",
+      "hat.bunny": "Bunny ears",
+      "hat.antennae": "Antennae",
+      "hat.arrow": "Arrow through the head",
+      "hat.mohawk": "Mohawk",
+      "hat.flame": "On fire",
+      "hat.propeller": "Propeller beanie",
       "lobby.create": "Create room",
       "lobby.join": "Join a room",
       "lobby.practice": "Free practice",
@@ -910,7 +963,17 @@
 
   var canvas = document.getElementById("c");
   var ctx = canvas.getContext("2d");
-  var PLAYER_COLORS = ["#35f0e0", "#ff2e88", "#9dff4f", "#ffc247", "#7b6cff", "#4fd2ff", "#ff7a3d", "#ff5ec4"];
+  /* Espejo de PLAYER_COLORS en online/server.js, que es quien manda: acá sirve para pintar el
+     selector y como fallback mientras no llegó el primer "lobby". Los primeros 8 van en ese
+     orden a propósito — colorFor() cae en PLAYER_COLORS[id % length] antes del "lobby", así que
+     reordenarlos le cambiaría el color de arranque a cada slot. Los 6 siguientes llenan los
+     huecos de tono que dejaba la paleta vieja (rojo, amarillo, menta, azul, violeta y blanco);
+     con 8 palitos en pantalla el color ES el nombre, así que sumar variedad no puede costar
+     que dos se confundan de lejos. */
+  var PLAYER_COLORS = [
+    "#35f0e0", "#ff2e88", "#9dff4f", "#ffc247", "#7b6cff", "#4fd2ff", "#ff7a3d", "#ff5ec4",
+    "#ff3d3d", "#f2ff3d", "#2eff9d", "#4f7dff", "#d24fff", "#eef2ff",
+  ];
 
   /* ---------------------------------------------------------------- sombreado del stick (solo acá) */
   /* stickman.js es un <script> clásico compartido con desktop/ y steam/ (no un módulo): una
@@ -933,11 +996,11 @@
   var shineCanvas = document.createElement("canvas");
   var shineCtx = shineCanvas.getContext("2d");
 
-  window.drawStickman = function (ctx, p, color, dbg) {
+  window.drawStickman = function (ctx, p, color, dbg, hat) {
     // Fantasmas de estela y fade de la muerte llegan con ctx.globalAlpha ya bajado por el
     // llamador (Trails.draw / drawPlayer en desktop/sim.js), y a esa opacidad el matiz del
     // sombreado no se nota — no vale la pena otro canvas y una composición extra por cuadro.
-    if (ctx.globalAlpha < 1) return baseDrawStickman(ctx, p, color, dbg);
+    if (ctx.globalAlpha < 1) return baseDrawStickman(ctx, p, color, dbg, hat);
 
     var info = dbg || shineDbg;
     var w = ctx.canvas.width, h = ctx.canvas.height;
@@ -949,7 +1012,10 @@
     // Misma transformación (cámara: shake/zoom) que tiene el canvas real en este momento, para
     // que el resultado caiga exactamente en el mismo pixel al pegarlo de vuelta.
     shineCtx.setTransform(ctx.getTransform());
-    var rig = baseDrawStickman(shineCtx, p, color, info);
+    // El accesorio entra al mismo canvas de trabajo y se come el mismo degradé que el cuerpo:
+    // asi queda iluminado desde arriba igual que el resto y se lee puesto encima del muneco,
+    // no pegado como una calcomania aparte.
+    var rig = baseDrawStickman(shineCtx, p, color, info, hat);
     drawStickShine(shineCtx, info);
 
     ctx.save();
@@ -1018,6 +1084,7 @@
 
   var names = {};
   var colors = {}; // id -> color asignado por el servidor (ver Net.on("lobby"))
+  var hats = {};   // id -> accesorio cosmético, mismo camino que colors (ver ACCESSORY_IDS)
   var myId = null;
   var totalRoundsPick = 3; // cantidad elegida en el setup Local (localSetupCard); online la maneja el servidor
   var roomRoundsPick = 3; // último valor CONFIRMADO por el servidor una vez dentro (roomCard)
@@ -1038,6 +1105,7 @@
   // Práctica Libre, donde no hay servidor.
   function colorFor(id) { return colors[id] || PLAYER_COLORS[id % PLAYER_COLORS.length]; }
   function nameFor(id) { return names[id] || t("player.n", { n: id }); }
+  function hatFor(id) { return hats[id] || "none"; }
 
   /* Los modos jugables, en el orden en que se muestran. "story" queda afuera a propósito: no
      existe todavía, así que buildModeChips() lo agrega aparte como chip deshabilitado. */
@@ -1113,7 +1181,7 @@
      que decide cuándo pasa, en vez de enterarse por un mensaje del servidor como en el resto de
      este archivo. */
   Sim.init({
-    colorFor: colorFor, nameFor: nameFor,
+    colorFor: colorFor, nameFor: nameFor, hatFor: hatFor,
     // Sin efecto en modo online real (el servidor tiene su propia copia de este mismo
     // balance.js — ver online/sim-host.js). Acá importa solo para Práctica Libre y modo Local,
     // que sí hacen correr este Sim de verdad en el navegador: antes usaba los valores por
@@ -1207,6 +1275,7 @@
       $("modeSummary").textContent = modeSummaryText(lastLobbyMsg.mode, lastLobbyMsg.rounds);
       renderRoster(lastLobbyMsg.players, lastLobbyMsg.owner);
     }
+    if ($("customizeCard").style.display === "block") renderHats();
     if ($("localSetupCard").style.display === "block") {
       renderLocalModeSummary();
       renderLocalRoster();
@@ -1602,7 +1671,7 @@
 
     if (ai.grounded && (wantJump || (ambientJumpOk && Math.random() < cfg.jumpChance))) {
       Sim.handleInput(PRACTICE_AI, "jump", true);
-    } else if (!ai.grounded && practiceAiNeedsDoubleJump && !ai.doubleJumped) {
+    } else if (!ai.grounded && practiceAiNeedsDoubleJump && ai.jumpsLeft > 0) {
       // El hop elegido por el pathfinding necesita el segundo salto (ver buildPlatformGraph):
       // ya despegó del suelo, ahora hay que pedirlo mientras sigue en el aire.
       Sim.handleInput(PRACTICE_AI, "jump", true);
@@ -1690,7 +1759,8 @@
     // Antes nameFor() mostraba "Vos" para myId sin necesidad de esto — ahora que nameFor()
     // siempre devuelve el nombre real, práctica necesita el propio, igual que online.
     names = {}; names[PRACTICE_ME] = $("nickInputMain").value.trim() || t("player.default"); names[PRACTICE_AI] = t("player.npc");
-    colors = {}; if (myColor) colors[PRACTICE_ME] = myColor;
+    colors = {}; hats = {}; if (myColor) colors[PRACTICE_ME] = myColor;
+    hats[PRACTICE_ME] = myHat;
     finalShown = false;
     hideScoreReveal();
 
@@ -1711,7 +1781,7 @@
     Sim.resetToLobby();
     myId = null;
     names = {};
-    colors = {};
+    colors = {}; hats = {};
     hideScoreReveal();
 
     $("wrap").classList.remove("playing");
@@ -1769,6 +1839,11 @@
     localPlayers.push({
       id: id, name: localAutoName(localPlayers.length), auto: true,
       color: PLAYER_COLORS[id % PLAYER_COLORS.length], source: source,
+      /* El accesorio guardado es de quien está sentado frente a la máquina, así que se lo
+         queda el primero que se suma; los demás arrancan pelados. En local no hay una
+         pantalla de personalización por jugador y no vale la pena inventarla: el color por
+         slot ya alcanza para saber quién es quién en el mismo sillón. */
+      hat: localPlayers.length === 0 ? myHat : "none",
     });
     renderLocalRoster();
     renderLocalAddRow();
@@ -1885,8 +1960,8 @@
     localActive = true;
     finalShown = false;
     hideScoreReveal();
-    names = {}; colors = {};
-    localPlayers.forEach(function (p) { names[p.id] = p.name; colors[p.id] = p.color; });
+    names = {}; colors = {}; hats = {};
+    localPlayers.forEach(function (p) { names[p.id] = p.name; colors[p.id] = p.color; hats[p.id] = p.hat; });
     myId = null;
     localGamepadPrev = {};
 
@@ -1924,7 +1999,7 @@
     localActive = false;
     Sim.resetToLobby();
     myId = null;
-    names = {}; colors = {};
+    names = {}; colors = {}; hats = {};
     hideScoreReveal();
     $("wrap").classList.remove("playing");
     $("roundBanner").classList.remove("show");
@@ -2004,6 +2079,10 @@
   // pickColor en server.js). Si ya guardó uno antes, se lo mandamos y el servidor lo respeta
   // salvo que ya esté en uso por otro jugador conectado.
   var myColor = profile.color || null;
+  /* El accesorio, en cambio, no tiene "todavía no elegí": sin nada guardado se arranca pelado.
+     Se valida contra ACCESSORY_IDS (stickman.js) al leerlo porque un perfil viejo en
+     localStorage puede tener un id que ya no existe, y el servidor lo bajaría a "none" igual. */
+  var myHat = ACCESSORY_IDS.indexOf(profile.hat) === -1 ? "none" : profile.hat;
   if (profile.name) $("nickInputMain").value = profile.name;
 
   /* Muñeco de preview: un objeto "player" mínimo, quieto y en el suelo, para que drawStickman
@@ -2011,14 +2090,35 @@
      misma función que usa el juego, no una copia. Solo idleT avanza cuadro a cuadro (igual que
      sim.js: idleT += dt*0.001), que es lo que le da la respiración/balanceo del idle. */
   var customizePreviewPlayer = {
-    x: 100, y: 190, vx: 0, vy: 0, grounded: true, facing: 1, hp: 100, alive: true,
+    x: 0, y: 0, vx: 0, vy: 0, grounded: true, facing: 1, hp: 100, alive: true,
     attack: null, attackCooldown: 0, walkCycle: 0, idleT: Math.random() * 10, squash: 0,
     hitStunT: 0, hitDir: 1, jumpAnticT: 0, deathFadeT: 0, power: null, burnT: 0, burnTickT: 0,
     burnFlashT: 0, slowT: 0,
   };
+  /* El muñeco se dibuja con los pies en (0,0) y es el canvas el que lo acerca y lo ubica: a
+     escala 1 el palito mide ~78 px de alto, que en el box viejo era una miniatura. Con este
+     zoom se ve de verdad qué accesorio tiene puesto, que es lo único que hay que poder juzgar
+     acá adentro. Las dos constantes salieron de medir la tinta real del muñeco a esta escala,
+     accesorio por accesorio y con las dos orientaciones: 129 px arriba de los pies (la hélice,
+     que es lo más alto) y 16 abajo (el glow que sangra bajo la punta de las piernas), o sea 145
+     de 158 de alto ocupados. Si algún accesorio nuevo se pasa de eso, se corta — hay que volver
+     a medir, no tantear. */
+  var PREVIEW_SCALE = 1.6;
+  var PREVIEW_FEET_Y = 136;
+
   var customizePreviewColor = myColor || PLAYER_COLORS[0];
+  var customizePreviewHat = myHat;
   var customizeRaf = null;
   var customizeLastT = null;
+
+  /* Un emoji por accesorio, solo para el botón: es una etiqueta rápida de reconocer en la
+     grilla, no el dibujo real (ese lo hace drawAccessory en stickman.js y se ve en el preview).
+     Las claves son los ids de ACCESSORY_IDS, que es la lista que valida el servidor. */
+  var ACCESSORY_GLYPHS = {
+    none: "—", horns: "😈", halo: "😇", tophat: "🎩", cap: "🧢", crown: "👑", poop: "💩",
+    cowboy: "🤠", party: "🎉", bunny: "🐰", antennae: "👽", arrow: "🏹", mohawk: "🤘",
+    flame: "🔥", propeller: "🚁",
+  };
 
   function renderSwatches() {
     var grid = $("swatchGrid");
@@ -2037,6 +2137,26 @@
     });
   }
 
+  function renderHats() {
+    var grid = $("hatGrid");
+    grid.innerHTML = "";
+    ACCESSORY_IDS.forEach(function (id) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = id === customizePreviewHat ? "selected" : "";
+      b.textContent = ACCESSORY_GLYPHS[id] || "?";
+      b.title = t("hat." + id);
+      b.addEventListener("click", function () {
+        customizePreviewHat = id;
+        Array.prototype.forEach.call(grid.children, function (el) { el.classList.remove("selected"); });
+        b.classList.add("selected");
+        $("hatName").textContent = t("hat." + id);
+      });
+      grid.appendChild(b);
+    });
+    $("hatName").textContent = t("hat." + customizePreviewHat);
+  }
+
   function customizeFrame(now) {
     var dt = customizeLastT == null ? 16.6667 : Math.min(40, now - customizeLastT);
     customizeLastT = now;
@@ -2044,7 +2164,11 @@
     var canvas = $("customizePreview");
     var pctx = canvas.getContext("2d");
     pctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawStickman(pctx, customizePreviewPlayer, customizePreviewColor);
+    pctx.save();
+    pctx.translate(canvas.width / 2, PREVIEW_FEET_Y);
+    pctx.scale(PREVIEW_SCALE, PREVIEW_SCALE);
+    drawStickman(pctx, customizePreviewPlayer, customizePreviewColor, null, customizePreviewHat);
+    pctx.restore();
     customizeRaf = requestAnimationFrame(customizeFrame);
   }
 
@@ -2053,7 +2177,9 @@
     $("customizeCard").style.display = "block";
     $("customizeNameInput").value = $("nickInputMain").value.trim() || profile.name || "";
     customizePreviewColor = myColor || PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
+    customizePreviewHat = myHat;
     renderSwatches();
+    renderHats();
     customizeLastT = null;
     if (!customizeRaf) customizeRaf = requestAnimationFrame(customizeFrame);
   }
@@ -2068,7 +2194,8 @@
   $("customizeSaveBtn").addEventListener("click", function () {
     var nm = $("customizeNameInput").value.trim() || t("player.default");
     myColor = customizePreviewColor;
-    profile = { name: nm, color: myColor };
+    myHat = customizePreviewHat;
+    profile = { name: nm, color: myColor, hat: myHat };
     saveProfile(profile);
     $("nickInputMain").value = nm;
     closeCustomize();
@@ -2205,7 +2332,7 @@
     myId = null;
     finalShown = false;
     names = {};
-    colors = {};
+    colors = {}; hats = {};
     Sim.resetGuest();
     lastMap = null;
     startLobbyBackground();
@@ -2219,8 +2346,12 @@
   Net.on("lobby", function (msg) {
     lastLobbyMsg = msg; // para que setLang() pueda rearmar roster y resumen sin esperar otro "lobby"
     names = {};
-    colors = {};
-    msg.players.forEach(function (p) { names[p.id] = p.name; if (p.color) colors[p.id] = p.color; });
+    colors = {}; hats = {};
+    msg.players.forEach(function (p) {
+      names[p.id] = p.name;
+      if (p.color) colors[p.id] = p.color;
+      hats[p.id] = p.hat || "none";
+    });
     renderRoster(msg.players, msg.owner);
     var owner = Net.isOwner();
     $("ownerControls").style.display = owner ? "block" : "none";
@@ -2459,7 +2590,7 @@
      servidor confirma; hasta entonces seguimos acá, que es donde se muestran sus errores. */
   $("originOnlineBtn").addEventListener("click", function () {
     $("originErr").textContent = "";
-    Net.create($("nickInputMain").value.trim() || t("room.defaultHost"), myColor);
+    Net.create($("nickInputMain").value.trim() || t("room.defaultHost"), myColor, myHat);
   });
   /* En local no hay sala que crear ni servidor a quien preguntarle: se va derecho al setup, que
      tiene su propio selector de modo arriba del roster. */
@@ -2523,7 +2654,7 @@
       finalShown = false;
       hideScoreReveal();
       names = {};
-      colors = {};
+      colors = {}; hats = {};
     }
     $("joinCard").style.display = "none";
     $("originCard").style.display = "none";
@@ -2540,7 +2671,7 @@
       return;
     }
     $("joinErr").textContent = t("join.connecting");
-    Net.join(code, $("nickInputMain").value.trim() || t("player.default"), myColor);
+    Net.join(code, $("nickInputMain").value.trim() || t("player.default"), myColor, myHat);
   });
 
   /* ---- selección de modo, ya dentro de la sala ---- */

@@ -16,13 +16,27 @@ var Sim = (function () {
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-  var W = 960, H = 540;
+  /* El mundo mide 1152x648 y el canvas 960x540: son 1.2x del tamaño de siempre, dibujados con
+     un zoom de 0.833 que aplica Camera.begin. La consecuencia buscada es que el muñeco NO
+     creció con el mapa — mismo tamaño, mismo salto, misma velocidad — así que ahora es más
+     chico en relación a la arena y cruzarla lleva un 20% más de recorrido. El 1.2 es el techo
+     real, no un número redondo elegido a ojo: los layouts de world.js tienen exactamente ese
+     margen antes de que algún hueco se pase del alcance de UN salto (medido sobre 400 mapas
+     por archetype; a 1.25 ya aparecen mapas que el generador tiene que salir a rescatar). */
+  var W = 1152, H = 648;
   var GRAVITY_UP = 0.95, GRAVITY_DOWN = 0.7, SPEED = 4.3, JUMP_V = -20.5;
   /* Doble salto: valor fijo, no una fracción de la velocidad restante del primer salto. La
      altura máxima de un salto con velocidad v es v²/(2·GRAVITY_UP) — despejando para que el
      segundo salto llegue a la MITAD de esa altura (110.6px contra 221.2px del primero) da
      JUMP_V / √2. Es una constante calculada una sola vez, no algo que varíe salto a salto. */
   var JUMP_V2 = JUMP_V / Math.SQRT2;
+  /* Los saltos son un CONTADOR (p.jumpsLeft), no un flag de "ya usé el doble". La diferencia
+     importa justo en el caso que rompía: caminar hasta el borde y caerse sin haber saltado.
+     Con el flag viejo, el primer botón que apretabas en el aire caía en la rama del segundo
+     salto y te daba el impulso corto (JUMP_V2) — el salto de recuperación quedaba a mitad de
+     altura y te ibas al vacío creyendo que habías saltado bien. Ahora caerse de una plataforma
+     no consume nada: los dos saltos siguen enteros y se reponen al tocar cualquier superficie. */
+  var MAX_JUMPS = 2;
   var PW = 13, PH = 52;
   /* Tabla de ataques. Antes esto estaba desparramado en ternarios `type === "kick" ? a : b`
      por todo stepPlayer; juntarlo acá permite que cada build ajuste el combate por su cuenta
@@ -43,7 +57,7 @@ var Sim = (function () {
      milisegundo parado adentro suma hacia HILL_TARGET_MS (30 s de acumulado total, no seguido);
      HILL_TARGET_SCORE es el puntaje que da ese acumulado completo — al llegar ahí termina la
      partida. */
-  var HILL_APPEAR_DELAY_MS = 5000, HILL_ACTIVE_MS = 15000, HILL_RADIUS = 95;
+  var HILL_APPEAR_DELAY_MS = 5000, HILL_ACTIVE_MS = 15000, HILL_RADIUS = 114; // 95 * 1.2: la zona tiene que seguir tapando la misma fracción de plataforma que antes
   var HILL_TARGET_MS = 30000, HILL_TARGET_SCORE = 100;
 
   /* Rey del Orbe: partida a reloj (2 min), sin objetivo de puntos — gana quien acumuló más
@@ -69,6 +83,11 @@ var Sim = (function () {
       { x: 400, y: 250, w: 160, h: 18 },
     ],
   };
+  /* MAP0 está escrito en coordenadas de diseño (960x540), las mismas que usan los archetypes de
+     world.js, y se estira una sola vez acá al cargar el módulo. Es el mapa fijo de la ronda 1 de
+     casi toda partida, así que si se quedaba en la escala vieja era EL mapa que más se juega el
+     que aparecía chico y corrido, justo al lado de mapas procedurales que sí ocupan todo. */
+  World.scaleFromDesign(MAP0.platforms, W, H);
 
   // forcedArchetype: disponible pero sin uso actual (ver World.generateMap). forcedBiome es lo
   // que Práctica Libre sí fija vía opts.biome en startMatch(), para repetir siempre el mismo
@@ -82,6 +101,10 @@ var Sim = (function () {
 
   var colorFor = function (id) { return "#35f0e0"; };
   var nameFor = function (id) { return "Jugador " + id; };
+  /* Accesorio cosmetico por jugador (ver ACCESSORY_IDS en stickman.js). Solo lo pisa el build
+     web: desktop y steam no ofrecen personalizacion todavia, asi que se quedan con "none" y
+     drawStickman ni entra a dibujar nada. */
+  var hatFor = function (id) { return "none"; };
   var onPhaseChange = function () {};
 
   /* ---------------------------------------------------------------- state (host) */
@@ -138,7 +161,7 @@ var Sim = (function () {
       walkCycle: 0, idleT: Math.random() * 10, squash: 0,
       hitStunT: 0, hitDir: 1, jumpAnticT: 0, deathFadeT: 0,
       power: null, burnT: 0, burnTickT: 0, burnFlashT: 0, slowT: 0,
-      doubleJumped: false, hillMs: 0, orbMs: 0,
+      jumpsLeft: MAX_JUMPS, hillMs: 0, orbMs: 0,
     };
   }
 
@@ -188,7 +211,7 @@ var Sim = (function () {
       p.vx = 0; p.vy = 0; p.hp = 100; p.alive = true;
       p.attack = null; p.attackCooldown = 0;
       p.power = null; p.burnT = 0; p.burnTickT = 0; p.burnFlashT = 0; p.slowT = 0;
-      p.doubleJumped = false;
+      p.jumpsLeft = MAX_JUMPS;
     });
     orb = null;
     orbTimer = ORB_SPAWN_MS;
@@ -256,7 +279,7 @@ var Sim = (function () {
     p.vx = 0; p.vy = 0; p.kbx = 0; p.hp = 100;
     p.attack = null; p.attackCooldown = 0;
     p.power = null; p.burnT = 0; p.burnTickT = 0; p.burnFlashT = 0; p.slowT = 0;
-    p.doubleJumped = false; p.hitStunT = 0; p.deathFadeT = 0;
+    p.jumpsLeft = MAX_JUMPS; p.hitStunT = 0; p.deathFadeT = 0;
   }
 
   function eliminate(p) {
@@ -458,7 +481,7 @@ var Sim = (function () {
        queda visible durante todo el fight (top:64px) — y a y=34 el reloj quedaba tapado por el
        primero. 112 cae debajo de los dos con margen, en la franja de "cielo" que ningún
        archetype de world.js usa para plataformas. */
-    ctx.fillText(mm + ":" + (ss < 10 ? "0" : "") + ss, W / 2, 112);
+    ctx.fillText(mm + ":" + (ss < 10 ? "0" : "") + ss, ctx.canvas.width / 2, 112);
     ctx.restore();
   }
 
@@ -516,14 +539,16 @@ var Sim = (function () {
     else if (p.input.right && !p.input.left) { p.vx = spd; p.facing = 1; }
     else p.vx = 0;
 
-    if (p.jumpEdge) {
-      if (p.grounded) {
-        p.vy = JUMP_V; p.grounded = false; p.jumpAnticT = 90; p.doubleJumped = false; AudioManager.on.jump();
-      } else if (!p.doubleJumped) {
-        // Segundo salto en el aire: valor fijo (JUMP_V2), no una fracción de lo que quedaba
-        // de vy — se puede pedir cayendo o subiendo, siempre da la misma altura extra.
-        p.vy = JUMP_V2; p.doubleJumped = true; p.jumpAnticT = 90; AudioManager.on.jump();
-      }
+    if (p.jumpEdge && p.jumpsLeft > 0) {
+      /* El primero es siempre el salto entero (JUMP_V), lo pidas parado en una plataforma o ya
+         cayendo por haberte pasado del borde. El segundo es el valor fijo de siempre (JUMP_V2),
+         no una fracción de lo que quedaba de vy: se puede pedir subiendo o bajando y da la
+         misma altura extra en los dos casos. */
+      p.vy = p.jumpsLeft === MAX_JUMPS ? JUMP_V : JUMP_V2;
+      p.jumpsLeft--;
+      p.grounded = false;
+      p.jumpAnticT = 90;
+      AudioManager.on.jump();
     }
     p.jumpEdge = false;
 
@@ -585,7 +610,7 @@ var Sim = (function () {
           AudioManager.on.land(landStrength);
         }
         p.vy = 0; p.grounded = true;
-        p.doubleJumped = false; // tocar cualquier superficie repone el segundo salto
+        p.jumpsLeft = MAX_JUMPS; // tocar cualquier superficie repone los dos saltos
       }
     }
 
@@ -652,10 +677,11 @@ var Sim = (function () {
   function drawPlayer(ctx, p) {
     if (!p.alive && phase !== "lobby" && p.deathFadeT <= 0) return;
     var color = colorFor(p.id);
+    var hat = hatFor(p.id);
 
     if (p.attack && !snailMode) {
       Trails.push(p, performance.now());
-      Trails.draw(ctx, p, function (gctx, ghost) { drawStickman(gctx, ghost, color); });
+      Trails.draw(ctx, p, function (gctx, ghost) { drawStickman(gctx, ghost, color, null, hat); });
     } else if (p._trail) {
       Trails.clear(p);
     }
@@ -667,7 +693,7 @@ var Sim = (function () {
        note "esto se mueve rapidísimo" de un vistazo, no una sutileza. */
     if (p.power && p.power.type === "aire" && p.alive && !snailMode) {
       Trails.push(p, performance.now(), { key: "_airTrail", maxGhosts: 6, minIntervalMs: 18 });
-      Trails.draw(ctx, p, function (gctx, ghost) { drawStickman(gctx, ghost, color); },
+      Trails.draw(ctx, p, function (gctx, ghost) { drawStickman(gctx, ghost, color, null, hat); },
         { key: "_airTrail", baseAlpha: 0.05, alphaSpread: 0.34 });
     } else if (p._airTrail) {
       Trails.clear(p, { key: "_airTrail" });
@@ -675,23 +701,27 @@ var Sim = (function () {
 
     var fading = !p.alive && p.deathFadeT > 0;
     if (fading) ctx.globalAlpha = clamp(p.deathFadeT / 420, 0, 1);
-    var rig = drawStickman(ctx, p, color);
+    var rig = drawStickman(ctx, p, color, null, hat);
     var headY = rig.headY;
+    /* Todo lo que va ARRIBA de la cabeza (barra de vida, nombre, glyph de poder, contador de
+       koth/orbe) se corre según lo que el jugador tenga puesto: con un accesorio alto, las
+       alturas fijas de siempre le quedaban por debajo de la galera o de la hélice. */
+    var hudY = headY - accessoryLift(hat);
     if (fading) { ctx.globalAlpha = 1; return; }
 
     if (phase === "fight" || phase === "fightIntro" || phase === "roundEnd") {
       var bw = 40;
       ctx.fillStyle = "rgba(0,0,0,.5)";
-      ctx.fillRect(p.x - bw / 2, headY - 24, bw, 5);
+      ctx.fillRect(p.x - bw / 2, hudY - 24, bw, 5);
       ctx.fillStyle = color;
-      ctx.fillRect(p.x - bw / 2, headY - 24, bw * Math.max(0, p.hp) / 100, 5);
+      ctx.fillRect(p.x - bw / 2, hudY - 24, bw * Math.max(0, p.hp) / 100, 5);
     }
 
     if (!snailMode) {
       ctx.fillStyle = "rgba(255,255,255,.7)";
       ctx.font = "10px Chakra Petch, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(nameFor(p.id), p.x, headY - 30);
+      ctx.fillText(nameFor(p.id), p.x, hudY - 30);
 
       // Mismo glyph que el orbe (ver drawOrb): mientras el power sigue activo, arriba del
       // nombre, para que se sepa de un vistazo quién tiene qué sin tener que memorizar colores.
@@ -700,7 +730,7 @@ var Sim = (function () {
         ctx.save();
         ctx.globalAlpha = 0.85;
         ctx.font = "12px 'Segoe UI Emoji','Noto Color Emoji',sans-serif";
-        ctx.fillText(glyph, p.x, headY - 42);
+        ctx.fillText(glyph, p.x, hudY - 42);
         ctx.restore();
       }
     }
@@ -713,7 +743,7 @@ var Sim = (function () {
       ctx.font = "bold 11px Chakra Petch, sans-serif";
       ctx.textAlign = "center";
       var txt = gameMode === "koth" ? (scores[p.id] || 0) + " / " + HILL_TARGET_SCORE : (scores[p.id] || 0) + "s";
-      ctx.fillText(txt, p.x, headY - 42);
+      ctx.fillText(txt, p.x, hudY - 42);
     }
   }
 
@@ -722,6 +752,7 @@ var Sim = (function () {
     opts = opts || {};
     if (opts.colorFor) colorFor = opts.colorFor;
     if (opts.nameFor) nameFor = opts.nameFor;
+    if (opts.hatFor) hatFor = opts.hatFor;
     if (opts.onPhaseChange) onPhaseChange = opts.onPhaseChange;
 
     /* Ajuste de combate por build. Merge campo por campo (no reemplazo del objeto) para que
@@ -854,9 +885,13 @@ var Sim = (function () {
     for (var i = 0; i < ids.length; i++) drawPlayer(ctx, players[ids[i]]);
     Particles.draw(ctx);
     Camera.end(ctx);
+    /* De acá para abajo se dibuja en píxeles de PANTALLA, no del mundo: la cámara ya cerró, así
+       que lo que corresponde son las medidas del canvas y no W/H, que desde que el mundo creció
+       son un 20% más grandes. */
+    var cw = ctx.canvas.width, ch = ctx.canvas.height;
     if (gameMode === "orbking") drawMatchClock(ctx); // relojito fijo en pantalla, no shakea con la cámara
-    ScreenFX.drawVignette(ctx, W, H);
-    ScreenFX.draw(ctx, W, H);
+    ScreenFX.drawVignette(ctx, cw, ch);
+    ScreenFX.draw(ctx, cw, ch, cw / W);
   }
 
   // World.draw caches a CanvasGradient directly on each platform object (pl._grad/_gradH) the

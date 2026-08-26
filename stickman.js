@@ -416,6 +416,254 @@ function blendPose(fromPose, toPose, frac) {
   return { a: lerp(fromPose.a, toPose.a, frac), b: lerp(fromPose.b, toPose.b, frac) };
 }
 
+/* ================================================================ accesorios cosméticos
+   Objetos que el jugador se "pone" en la cabeza: puro adorno, sin efecto en física, hitbox,
+   daño ni balance. Se dibujan al final de drawStickman, arriba de todo el rig, en coordenadas
+   relativas al centro de la cabeza y ya rotadas con la inclinación de la cabeza — así el
+   accesorio acompaña solo el bob del idle, el lag del resorte del cuello y el latigazo del
+   knockback, sin una sola línea de animación propia.
+
+   Cada uno lleva sus PROPIOS colores en vez del color del jugador, a propósito: el cuerpo
+   sigue siendo el identificador de quién es quién (una galera negra no le roba identidad a
+   nadie), y con colores fijos el accesorio se lee como un objeto puesto encima y no como
+   parte del palito. Por eso también se dibujan sin el shadowBlur del cuerpo: el glow del
+   color del jugador emborronaba las formas chicas hasta volverlas una mancha.
+
+   El id viaja por la red: online/server.js valida contra esta misma lista antes de repartirla
+   en el "lobby", así que agregar uno acá exige agregarlo allá o el servidor lo descarta. */
+var ACCESSORY_IDS = ["none", "horns", "halo", "tophat", "cap", "crown", "poop", "cowboy",
+                     "party", "bunny", "antennae", "arrow", "mohawk", "flame", "propeller"];
+
+var HEAD_RX = 7.6, HEAD_RY = 8.8; // mismo elipse que dibuja la cabeza al final de drawStickman
+
+/* Cuánto sobresale cada accesorio por encima del CENTRO de la cabeza, glow incluido. No es un
+   dato decorativo: el nombre y la barra de vida se dibujan a una altura fija sobre la cabeza
+   (drawPlayer en desktop/sim.js) y sin corrimiento una galera o una hélice se los tapan. Los
+   números salieron de medir la tinta real de cada uno, no a ojo — al cambiarle la forma a un
+   accesorio hay que volver a medirlo, o su cartel le queda encima. Referencia: "none" da 15,
+   que es lo que ocupa la cabeza pelada con su halo de glow. */
+var ACCESSORY_REACH = {
+  none: 15, horns: 20, halo: 26, tophat: 26, cap: 17, crown: 20, poop: 23, cowboy: 19,
+  party: 28, bunny: 27, antennae: 24, arrow: 15, mohawk: 22, flame: 29, propeller: 29,
+};
+
+/* Cuánto hay que subir el cartel de un jugador por su accesorio. El margen de 17 (y no 15) deja
+   que el borde más tenue del glow se meta un par de píxeles debajo del cartel: se ve mejor
+   pegado que flotando, y a esa opacidad no molesta. */
+function accessoryLift(kind) {
+  var reach = ACCESSORY_REACH[kind] || 0;
+  return reach > 17 ? reach - 17 : 0;
+}
+
+/* Y del borde de la cabeza a una X dada, para apoyar cosas sobre la curva del cráneo en vez de
+   sobre una recta imaginaria que dejaría aire visible en los costados (cresta, antenas). */
+function accHeadEdgeY(x) {
+  var u = clamp(x / HEAD_RX, -1, 1);
+  return -HEAD_RY * Math.sqrt(1 - u * u);
+}
+
+/* Relleno + contorno del path actual. El contorno claro no es decorativo: sobre el fondo casi
+   negro del juego, una forma rellena y sin borde se pierde contra el cielo de los biomas oscuros. */
+function accPaint(ctx, fill, stroke, lw) {
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1.4; ctx.stroke(); }
+}
+
+function drawAccessory(ctx, kind, headX, headY, headLean, facing, t, snail) {
+  if (!kind || kind === "none") return;
+  var f = facing < 0 ? -1 : 1;
+  var s, i;
+  ctx.save();
+  ctx.translate(headX, headY);
+  ctx.rotate(headLean * DEG);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.shadowBlur = 0;
+
+  if (kind === "horns") {
+    for (s = -1; s <= 1; s += 2) {
+      ctx.beginPath();
+      ctx.moveTo(s * 3.6, -7.4);
+      ctx.quadraticCurveTo(s * 10.8, -10.2, s * 8.8, -18.8);
+      ctx.quadraticCurveTo(s * 7.0, -11.4, s * 1.6, -8.4);
+      ctx.closePath();
+      accPaint(ctx, "#ff3d3d", "#ffb0b0", 1.2);
+    }
+
+  } else if (kind === "halo") {
+    // lo único que flota por su cuenta: se despega de la cabeza con un vaivén propio, que es
+    // justo lo que hace que se lea como aureola y no como sombrero de alambre.
+    var hy = -16.5 + Math.sin(t * 2.1) * 0.9;
+    ctx.beginPath();
+    ctx.ellipse(0, hy, 7.4, 2.5, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = "#ffe27a";
+    ctx.lineWidth = 2.2;
+    if (!snail) { ctx.shadowColor = "#ffe27a"; ctx.shadowBlur = 8; }
+    ctx.stroke();
+
+  } else if (kind === "tophat") {
+    // La copa va mas alta que ancha (13.2 x 11.8) y la cinta pegada al ala: con la copa chata
+    // y la cinta flotando en el medio, la galera se leia como una notebook abierta.
+    ctx.beginPath(); ctx.rect(-11.5, -11.8, 23, 2.6); accPaint(ctx, "#15161f", "#7d87ad", 1.1);
+    ctx.beginPath(); ctx.rect(-5.4, -24.8, 10.8, 13.4); accPaint(ctx, "#15161f", "#7d87ad", 1.1);
+    ctx.beginPath(); ctx.rect(-5.4, -14.6, 10.8, 2.4); accPaint(ctx, "#ff2e88", null);
+
+  } else if (kind === "cap") {
+    ctx.beginPath(); ctx.ellipse(0, -8.4, 8.6, 7.2, 0, Math.PI, Math.PI * 2); ctx.closePath();
+    accPaint(ctx, "#2e6bff", "#bcd2ff", 1.2);
+    // Visera: cae hacia adelante y hacia abajo, siempre para donde mira el muñeco. Curvada
+    // hacia ARRIBA (como estaba) la gorra se leia como una tapa de olla con manija.
+    ctx.beginPath();
+    ctx.moveTo(f * 1.5, -9);
+    ctx.quadraticCurveTo(f * 10, -9.6, f * 13.2, -6.2);
+    ctx.quadraticCurveTo(f * 9, -6.2, f * 1.5, -7);
+    ctx.closePath();
+    accPaint(ctx, "#1f4dc4", "#bcd2ff", 1.2);
+    ctx.beginPath(); ctx.arc(0, -15.2, 1.5, 0, Math.PI * 2); accPaint(ctx, "#bcd2ff", null);
+
+  } else if (kind === "crown") {
+    ctx.beginPath();
+    ctx.moveTo(-8.2, -6.4);
+    ctx.lineTo(-8.8, -15.8); ctx.lineTo(-4.2, -12.2); ctx.lineTo(0, -18.6);
+    ctx.lineTo(4.2, -12.2); ctx.lineTo(8.8, -15.8); ctx.lineTo(8.2, -6.4);
+    ctx.quadraticCurveTo(0, -10.4, -8.2, -6.4);
+    ctx.closePath();
+    accPaint(ctx, "#ffc247", "#fff3c4", 1.2);
+    ctx.beginPath(); ctx.arc(0, -9.2, 1.3, 0, Math.PI * 2); accPaint(ctx, "#ff2e88", null);
+
+  } else if (kind === "poop") {
+    ctx.beginPath(); ctx.ellipse(0, -11.4, 8.2, 3.6, 0, 0, Math.PI * 2); accPaint(ctx, "#7a4a24", "#b8834a", 1.2);
+    ctx.beginPath(); ctx.ellipse(0.6, -15.4, 5.8, 3.1, 0, 0, Math.PI * 2); accPaint(ctx, "#8a5528", "#b8834a", 1.2);
+    ctx.beginPath(); // el rulito de arriba
+    ctx.moveTo(-3.2, -17.6);
+    ctx.quadraticCurveTo(-1.2, -22.8, 2.8, -21.2);
+    ctx.quadraticCurveTo(1.4, -18.4, 3.4, -17.4);
+    ctx.closePath();
+    accPaint(ctx, "#8a5528", "#b8834a", 1.2);
+    ctx.beginPath();
+    ctx.moveTo(-1.1, -15.6); ctx.arc(-2.4, -15.6, 1.3, 0, Math.PI * 2);
+    ctx.moveTo(4.1, -15.6); ctx.arc(2.8, -15.6, 1.3, 0, Math.PI * 2);
+    accPaint(ctx, "#f4f7ff", null);
+    ctx.beginPath();
+    ctx.moveTo(-2.4 + f * 0.5 + 0.6, -15.6); ctx.arc(-2.4 + f * 0.5, -15.6, 0.6, 0, Math.PI * 2);
+    ctx.moveTo(2.8 + f * 0.5 + 0.6, -15.6); ctx.arc(2.8 + f * 0.5, -15.6, 0.6, 0, Math.PI * 2);
+    accPaint(ctx, "#15161f", null);
+
+  } else if (kind === "cowboy") {
+    ctx.beginPath();
+    ctx.moveTo(-14.4, -9.4);
+    ctx.quadraticCurveTo(0, -14.4, 14.4, -9.4);
+    ctx.quadraticCurveTo(0, -5.4, -14.4, -9.4);
+    ctx.closePath();
+    accPaint(ctx, "#8a5a2b", "#d8a566", 1.2);
+    ctx.beginPath();
+    ctx.moveTo(-6.4, -10.4);
+    ctx.quadraticCurveTo(-7.6, -19.8, 0, -17.4);
+    ctx.quadraticCurveTo(7.6, -19.8, 6.4, -10.4);
+    ctx.closePath();
+    accPaint(ctx, "#9c6832", "#d8a566", 1.2);
+    ctx.beginPath(); ctx.rect(-6.5, -12.6, 13, 2.2); accPaint(ctx, "#4a2f16", null);
+
+  } else if (kind === "party") {
+    ctx.beginPath();
+    ctx.moveTo(-6.6, -8.2);
+    ctx.lineTo(6.6, -8.2);
+    ctx.lineTo(f * 3.4, -23.4);
+    ctx.closePath();
+    accPaint(ctx, "#ff2e88", "#ffd7ea", 1.2);
+    ctx.beginPath();
+    ctx.moveTo(f * 0.4 + 1.1, -13.4); ctx.arc(f * 0.4, -13.4, 1.1, 0, Math.PI * 2);
+    ctx.moveTo(f * 2.2 + 0.9, -18.2); ctx.arc(f * 2.2, -18.2, 0.9, 0, Math.PI * 2);
+    accPaint(ctx, "#ffe27a", null);
+    ctx.beginPath(); ctx.arc(f * 3.4, -24.6, 2.3, 0, Math.PI * 2); accPaint(ctx, "#ffe27a", "#fff6cf", 1);
+
+  } else if (kind === "bunny") {
+    for (s = -1; s <= 1; s += 2) {
+      ctx.save();
+      ctx.translate(s * 3.2, -7.2);
+      ctx.rotate(s * 0.2);
+      ctx.beginPath(); ctx.ellipse(0, -9.4, 3.1, 9.8, 0, 0, Math.PI * 2); accPaint(ctx, "#f0f3ff", "#c3c9e6", 1.1);
+      ctx.beginPath(); ctx.ellipse(0, -9.4, 1.4, 6.8, 0, 0, Math.PI * 2); accPaint(ctx, "#ff9ecb", null);
+      ctx.restore();
+    }
+
+  } else if (kind === "antennae") {
+    for (s = -1; s <= 1; s += 2) {
+      ctx.strokeStyle = "#9dff4f";
+      ctx.lineWidth = 1.7;
+      ctx.beginPath();
+      ctx.moveTo(s * 3.4, accHeadEdgeY(s * 3.4));
+      ctx.quadraticCurveTo(s * 8.6, -14.4, s * 6.2, -19.4);
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(s * 6.2, -21, 2.4, 0, Math.PI * 2); accPaint(ctx, "#9dff4f", "#e6ffd0", 1);
+    }
+
+  } else if (kind === "arrow") {
+    var ay0 = -2.2, ay1 = -6.4;
+    ctx.strokeStyle = "#b98a4a";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(f * -15.5, ay0); ctx.lineTo(f * 14.5, ay1); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(f * 20.6, ay1 - 0.7);
+    ctx.lineTo(f * 13.4, ay1 - 3.8);
+    ctx.lineTo(f * 13.8, ay1 + 2.8);
+    ctx.closePath();
+    accPaint(ctx, "#c9d2f0", "#f4f7ff", 1);
+    ctx.strokeStyle = "#ff3d3d";
+    ctx.lineWidth = 1.6;
+    for (i = 0; i < 3; i++) {
+      var px = f * (-15.2 + i * 2.6), py = ay0 - i * 0.35;
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + f * 2.3, py - 3.6); ctx.stroke();
+    }
+
+  } else if (kind === "mohawk") {
+    var mxs = [-6.6, -4.2, -1.6, 1.2, 3.8, 6.4];
+    var mhs = [6.2, 9.6, 12.4, 11, 8.4, 5.4];
+    ctx.beginPath();
+    for (i = 0; i < mxs.length; i++) {
+      ctx.moveTo(mxs[i] - 1.5, accHeadEdgeY(mxs[i] - 1.5));
+      ctx.lineTo(mxs[i], accHeadEdgeY(mxs[i]) - mhs[i]);
+      ctx.lineTo(mxs[i] + 1.5, accHeadEdgeY(mxs[i] + 1.5));
+    }
+    accPaint(ctx, "#ff2e88", "#ffd7ea", 1);
+
+  } else if (kind === "flame") {
+    // tres capas concéntricas con la punta desfasada: el fuego tiene que titilar solo, o al
+    // lado del resto del rig (que respira, se inclina y rebota) se ve como una calcomanía.
+    var wob = Math.sin(t * 7.5), wob2 = Math.sin(t * 11.3 + 1.7) * 0.8;
+    var fw = [7.2, 4.6, 2.3], fh = [17.6, 12.4, 7.2], fc = ["#ff5a2e", "#ffc247", "#fff2a8"];
+    for (i = 0; i < 3; i++) {
+      var tipX = wob * (1.6 + i * 0.7);
+      ctx.beginPath();
+      ctx.moveTo(-fw[i], -8);
+      ctx.quadraticCurveTo(-fw[i] * 0.9 + wob2, -8 - fh[i] * 0.6, tipX, -8 - fh[i]);
+      ctx.quadraticCurveTo(fw[i] * 0.9 + wob2, -8 - fh[i] * 0.6, fw[i], -8);
+      ctx.closePath();
+      if (!snail && i === 0) { ctx.shadowColor = "#ff5a2e"; ctx.shadowBlur = 10; }
+      ctx.fillStyle = fc[i];
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+  } else if (kind === "propeller") {
+    ctx.beginPath(); ctx.ellipse(0, -8.2, 8.2, 7, 0, Math.PI, Math.PI * 2); ctx.closePath();
+    accPaint(ctx, "#2e6bff", "#bcd2ff", 1.2);
+    ctx.beginPath(); ctx.rect(-8.1, -9.6, 16.2, 1.8); accPaint(ctx, "#ff2e88", null);
+    ctx.strokeStyle = "#bcd2ff";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(0, -15.1); ctx.lineTo(0, -18.6); ctx.stroke();
+    ctx.save();
+    ctx.translate(0, -19.2);
+    ctx.rotate(t * 7); // gira siempre, quieto o corriendo: es media hélice, no un ventilador
+    for (s = -1; s <= 1; s += 2) {
+      ctx.beginPath(); ctx.ellipse(s * 5, 0, 5, 1.5, 0, 0, Math.PI * 2); accPaint(ctx, "#ffc247", "#fff3c4", 1);
+    }
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
 /**
  * @param {CanvasRenderingContext2D} ctx
  * @param {object} p - needs: x, y (feet), vx, vy, facing, grounded,
@@ -425,9 +673,12 @@ function blendPose(fromPose, toPose, frac) {
  *                         head anchor points + facing + scaleX so a tool (the anim editor) can
  *                         draw draggable handles in exact alignment with the real render. Costs
  *                         nothing when omitted — every game call site leaves it undefined.
+ * @param {string} [hat] - id de accesorio cosmetico (ver ACCESSORY_IDS). Va por parametro y no
+ *                         como campo de `p` para que los fantasmas de Trails (snapshots
+ *                         reducidos del jugador, sin campos cosmeticos) lo hereden igual.
  * @return {{headY:number}} so callers can position an HP bar / nametag above the head
  */
-function drawStickman(ctx, p, color, dbg) {
+function drawStickman(ctx, p, color, dbg, hat) {
   var snail = !!window.SNAIL_MODE;
   var cx = p.x, feet = p.y;
   var running = p.grounded && p.vx !== 0;
@@ -726,6 +977,11 @@ function drawStickman(ctx, p, color, dbg) {
   auraSegment(ctx, shoulderX, shoulderY, headX, headY + 8, CURRENT_AURA);
   ctx.lineWidth = 4;
   ctx.beginPath(); ctx.ellipse(headX, headY, 7.6, 8.8, 0, 0, Math.PI * 2); ctx.stroke();
+
+  // ---- accesorio cosmetico ----
+  // Ultimo del rig y con la cabeza ya resuelta: se apoya sobre headX/headY/headLean finales,
+  // asi que hereda gratis el bob del idle, el resorte del cuello y el latigazo del knockback.
+  if (hat && hat !== "none") drawAccessory(ctx, hat, headX, headY, headLean, p.facing, p.idleT || 0, snail);
 
   if (!snail) ctx.shadowBlur = 0;
   // burn flash last, on top of everything, like a hit spark

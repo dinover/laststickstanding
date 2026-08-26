@@ -101,6 +101,13 @@ function makeReachability(consts) {
   return { reachable: reachable, allConnected: allConnected, components: components, maxHorizontal: maxHorizontal };
 }
 
+/* Espacio de diseño de los archetypes: TODOS los builders de acá abajo escriben sus posiciones
+   con estos números, que son los de siempre. generateMap estira el layout resultante al tamaño
+   real del mundo (hoy 1.2x, ver W/H en desktop/sim.js). Hacerlo así y no reescribiendo las
+   constantes significa que cambiar el tamaño del mapa es tocar dos números en sim.js, y que un
+   archetype nuevo se escribe con las mismas coordenadas familiares que los siete que ya están. */
+var DESIGN_W = 960, DESIGN_H = 540;
+
 /* ==================================================================== map archetypes */
 var MapArchetypes = (function () {
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -543,47 +550,224 @@ var PlatformRenderer = (function () {
 })();
 
 /* ==================================================================== decorations */
+/* Adornos por plataforma: cosméticos puros, sin colisión ni efecto de juego. Lo que los hace
+   valer la pena es que se MUEVEN — enredaderas que se hamacan, brasas que suben, un banderín
+   que ondea, la marquesina que corre por el borde — así una plataforma deja de ser un rectángulo
+   quieto y el mapa se siente habitado incluso cuando nadie se está moviendo.
+
+   El layout (posiciones, largos, desfasajes) se sortea UNA sola vez por plataforma y queda
+   cacheado en el propio objeto, igual que pl._grad en PlatformRenderer. Antes esto rearmaba un
+   mulberry32 nuevo por plataforma y por CUADRO para volver a sortear exactamente los mismos
+   números; sacar ese sorteo del camino caliente es justo lo que deja lugar para que ahora haya
+   más adornos y encima animados, sin gastar más que antes por cuadro. */
 var Decorations = (function () {
-  function draw(ctx, pl, biomeId, seed, t) {
+  var TWO_PI = Math.PI * 2;
+
+  /* Fase 0..1 que da la vuelta sola. `ph` desfasa cada elemento para que no lata todo junto (que
+     es lo que delata un efecto como "un loop" en vez de como vida). */
+  function loop(t, ph, spd) {
+    var u = (t * spd + ph) % 1;
+    return u < 0 ? u + 1 : u;
+  }
+
+  function build(pl, biomeId, seed) {
     var rng = WorldBackground.mulberry32(seed);
+    var d = { hang: [], top: [], face: [] };
+    var span = Math.max(10, pl.w - 28);
+    var n, i;
+
     if (biomeId === "bosque") {
-      // hanging vines swaying gently from the platform's underside
-      var n = 2 + Math.floor(rng() * 2);
-      for (var i = 0; i < n; i++) {
-        var x = pl.x + 14 + rng() * (pl.w - 28);
-        var len = 10 + rng() * 16;
-        var sway = Math.sin(t * 0.0015 + i) * 4;
-        ctx.strokeStyle = "rgba(123,226,106,.55)";
-        ctx.lineWidth = 2;
+      n = 2 + Math.floor(rng() * 3);
+      for (i = 0; i < n; i++) {
+        d.hang.push({
+          x: pl.x + 14 + rng() * span, len: 12 + rng() * 22,
+          sway: 3 + rng() * 4, ph: rng() * TWO_PI, leaf: rng() < 0.7,
+        });
+      }
+      n = 2 + Math.floor(rng() * 3);
+      for (i = 0; i < n; i++) {
+        d.top.push({
+          x: pl.x + 10 + rng() * Math.max(10, pl.w - 20),
+          h: 4 + rng() * 5, ph: rng() * TWO_PI, dir: rng() < 0.5 ? -1 : 1,
+        });
+      }
+
+    } else if (biomeId === "ruinas") {
+      d.chip = rng() < 0.6;
+      /* No en todas: el banderín es una forma dura y repetida en las 10 plataformas de un mapa
+         de colina se leía como una fila de cajitas grises, no como ruinas. Las enredaderas del
+         bosque sí van en todas porque al ser orgánicas la repetición no canta. */
+      d.banner = rng() < 0.55 ? {
+        x: pl.x + 16 + rng() * Math.max(1, pl.w - 60),
+        w: 14 + rng() * 9, len: 18 + rng() * 14, ph: rng() * TWO_PI,
+      } : null;
+      n = 2 + Math.floor(rng() * 2);
+      for (i = 0; i < n; i++) {
+        d.face.push({
+          x: pl.x + 8 + rng() * Math.max(8, pl.w - 16),
+          fall: 16 + rng() * 18, ph: rng(), spd: 0.00035 + rng() * 0.0003,
+        });
+      }
+
+    } else if (biomeId === "volcan") {
+      n = 1 + Math.floor(rng() * 2);
+      for (i = 0; i < n; i++) {
+        d.face.push({ x: pl.x + pl.w * (0.2 + rng() * 0.6), ph: rng() * TWO_PI });
+      }
+      n = 2 + Math.floor(rng() * 2);
+      for (i = 0; i < n; i++) {
+        d.top.push({
+          x: pl.x + 12 + rng() * Math.max(10, pl.w - 24),
+          rise: 16 + rng() * 16, ph: rng(), spd: 0.0004 + rng() * 0.0003, r: 1.2 + rng() * 1.2,
+        });
+      }
+      d.drip = { x: pl.x + 20 + rng() * Math.max(1, pl.w - 40), len: 12 + rng() * 10, ph: rng(), spd: 0.00042 };
+
+    } else if (biomeId === "neon") {
+      d.sign = { x: pl.x + pl.w - 10, ph: rng() * TWO_PI };
+      n = Math.max(3, Math.min(9, Math.round(pl.w / 46)));
+      d.marquee = { n: n, from: pl.x + 8, step: (pl.w - 16) / Math.max(1, n - 1), ph: rng() * n };
+      d.scan = { ph: rng() };
+
+    } else if (biomeId === "nieve") {
+      n = 2 + Math.floor(rng() * 3);
+      for (i = 0; i < n; i++) {
+        d.hang.push({ x: pl.x + 12 + rng() * span, len: 7 + rng() * 11, ph: rng() * TWO_PI });
+      }
+      d.puff = { x: rng() < 0.5 ? pl.x + 8 : pl.x + pl.w - 8, ph: rng(), spd: 0.00028 + rng() * 0.0002 };
+    }
+    return d;
+  }
+
+  function draw(ctx, pl, biomeId, seed, t) {
+    var key = biomeId + ":" + seed + ":" + Math.round(pl.x) + ":" + Math.round(pl.w);
+    if (pl._decoKey !== key) { pl._deco = build(pl, biomeId, seed); pl._decoKey = key; }
+    var d = pl._deco;
+    var top = pl.y, bot = pl.y + pl.h;
+    var i, u;
+
+    if (biomeId === "bosque") {
+      // enredaderas colgando, cada una con su propio vaivén
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(123,226,106,.55)";
+      for (i = 0; i < d.hang.length; i++) {
+        var v = d.hang[i];
+        var sway = Math.sin(t * 0.0015 + v.ph) * v.sway;
         ctx.beginPath();
-        ctx.moveTo(x, pl.y + pl.h);
-        ctx.quadraticCurveTo(x + sway, pl.y + pl.h + len * 0.6, x + sway * 1.4, pl.y + pl.h + len);
+        ctx.moveTo(v.x, bot);
+        ctx.quadraticCurveTo(v.x + sway * 0.5, bot + v.len * 0.6, v.x + sway, bot + v.len);
+        ctx.stroke();
+        if (v.leaf) {
+          ctx.fillStyle = "rgba(143,212,90,.7)";
+          ctx.beginPath();
+          ctx.ellipse(v.x + sway, bot + v.len + 2, 2.6, 1.5, sway * 0.06, 0, TWO_PI);
+          ctx.fill();
+          ctx.strokeStyle = "rgba(123,226,106,.55)"; // el fill de la hoja no pisa el trazo siguiente
+        }
+      }
+      // pastito en la superficie, hamacándose al revés que las enredaderas
+      ctx.strokeStyle = "rgba(123,226,106,.45)";
+      ctx.lineWidth = 1.6;
+      for (i = 0; i < d.top.length; i++) {
+        var g = d.top[i];
+        var bend = Math.sin(t * 0.0021 + g.ph) * 2.2 * g.dir;
+        ctx.beginPath();
+        ctx.moveTo(g.x, top);
+        ctx.quadraticCurveTo(g.x + bend * 0.4, top - g.h * 0.6, g.x + bend, top - g.h);
         ctx.stroke();
       }
+
     } else if (biomeId === "ruinas") {
-      // small chipped chunk missing from a corner, cosmetic only
-      if (rng() < 0.6) {
+      if (d.chip) { // esquina rota, cosmética
         ctx.fillStyle = "rgba(0,0,0,.3)";
         ctx.beginPath();
-        ctx.moveTo(pl.x + pl.w - 10, pl.y);
-        ctx.lineTo(pl.x + pl.w, pl.y);
-        ctx.lineTo(pl.x + pl.w, pl.y + 8);
+        ctx.moveTo(pl.x + pl.w - 10, top);
+        ctx.lineTo(pl.x + pl.w, top);
+        ctx.lineTo(pl.x + pl.w, top + 8);
         ctx.closePath();
         ctx.fill();
       }
-    } else if (biomeId === "volcan") {
-      // thin ember cracks along the top
-      ctx.strokeStyle = "rgba(255,122,60,.5)";
-      ctx.lineWidth = 1;
+      // banderín colgado del canto: la ondulación crece hacia la punta, como una tela real
+      var b = d.banner, seg = 4, k, uu, wob;
+      if (b) {
       ctx.beginPath();
-      var cx = pl.x + pl.w * (0.3 + rng() * 0.4);
-      ctx.moveTo(cx, pl.y);
-      ctx.lineTo(cx - 6, pl.y + pl.h * 0.6);
-      ctx.lineTo(cx + 4, pl.y + pl.h);
+      ctx.moveTo(b.x, bot);
+      ctx.lineTo(b.x + b.w, bot);
+      for (k = 1; k <= seg; k++) {
+        uu = k / seg;
+        wob = Math.sin(t * 0.0026 + b.ph + uu * 2.4) * 3 * uu;
+        ctx.lineTo(b.x + b.w + wob, bot + b.len * uu);
+      }
+      for (k = seg; k >= 1; k--) {
+        uu = k / seg;
+        wob = Math.sin(t * 0.0026 + b.ph + uu * 2.4) * 3 * uu;
+        ctx.lineTo(b.x + wob, bot + b.len * uu);
+      }
+      ctx.closePath();
+      ctx.fillStyle = "rgba(159,178,255,.16)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(159,178,255,.38)";
+      ctx.lineWidth = 1;
       ctx.stroke();
+      }
+      // polvo cayendo del canto — lo que hace que la ruina se sienta vieja y no solo gris
+      ctx.fillStyle = "rgba(205,214,255,.5)";
+      for (i = 0; i < d.face.length; i++) {
+        var m = d.face[i];
+        u = loop(t, m.ph, m.spd);
+        ctx.globalAlpha = Math.sin(u * Math.PI) * 0.55;
+        ctx.beginPath();
+        ctx.arc(m.x, bot + u * m.fall, 1.1, 0, TWO_PI);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+    } else if (biomeId === "volcan") {
+      // grietas que laten como si abajo hubiera algo respirando
+      ctx.lineWidth = 1.2;
+      for (i = 0; i < d.face.length; i++) {
+        var cr = d.face[i];
+        var glow = 0.3 + 0.45 * (0.5 + 0.5 * Math.sin(t * 0.0032 + cr.ph));
+        ctx.strokeStyle = "rgba(255,122,60," + glow.toFixed(3) + ")";
+        ctx.beginPath();
+        ctx.moveTo(cr.x, top);
+        ctx.lineTo(cr.x - 6, top + pl.h * 0.6);
+        ctx.lineTo(cr.x + 4, bot);
+        ctx.stroke();
+      }
+      // brasas subiendo de la superficie
+      for (i = 0; i < d.top.length; i++) {
+        var em = d.top[i];
+        u = loop(t, em.ph, em.spd);
+        ctx.globalAlpha = (1 - u) * 0.7;
+        ctx.fillStyle = u < 0.5 ? "#ffb37a" : "#ff7a3c";
+        ctx.beginPath();
+        ctx.arc(em.x + Math.sin(u * 6 + em.ph * 6) * 3, top - u * em.rise, em.r * (1 - u * 0.5), 0, TWO_PI);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      // gota de lava: primero se hincha colgando y recién después se suelta
+      var dr = d.drip;
+      u = loop(t, dr.ph, dr.spd);
+      if (u < 0.55) {
+        var grow = u / 0.55;
+        ctx.fillStyle = "rgba(255,122,60,.85)";
+        ctx.beginPath();
+        ctx.ellipse(dr.x, bot + 1.5 + grow * 1.5, 1.4 + grow * 1.2, 1.8 + grow * 2.2, 0, 0, TWO_PI);
+        ctx.fill();
+      } else {
+        var fall = (u - 0.55) / 0.45;
+        ctx.globalAlpha = 1 - fall;
+        ctx.fillStyle = "#ff7a3c";
+        ctx.beginPath();
+        ctx.ellipse(dr.x, bot + 4 + fall * dr.len, 1.3, 2.4, 0, 0, TWO_PI);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
     } else if (biomeId === "neon") {
-      // tiny pulsing sign light near an edge
-      var blink = 0.5 + Math.sin(t * 0.004 + seed) * 0.5;
+      // cartelito que late
+      var blink = 0.5 + Math.sin(t * 0.004 + d.sign.ph) * 0.5;
       ctx.save();
       if (!window.SNAIL_MODE) {
         ctx.shadowColor = "rgba(255,46,214,.8)";
@@ -591,15 +775,59 @@ var Decorations = (function () {
       }
       ctx.fillStyle = "rgba(255,46,214," + (0.5 + blink * 0.5) + ")";
       ctx.beginPath();
-      ctx.arc(pl.x + pl.w - 10, pl.y - 4, 2.4, 0, Math.PI * 2);
+      ctx.arc(d.sign.x, top - 4, 2.4, 0, TWO_PI);
       ctx.fill();
       ctx.restore();
+      // marquesina: una cometa de luces corriendo por el borde de arriba
+      var mq = d.marquee;
+      var head = (t * 0.006 + mq.ph) % mq.n;
+      for (i = 0; i < mq.n; i++) {
+        var rel = (i - head + mq.n) % mq.n;
+        var lit = rel < 2 ? 1 - rel / 2 : 0;
+        if (lit <= 0.02) continue;
+        ctx.fillStyle = "rgba(53,240,224," + (0.2 + lit * 0.65).toFixed(3) + ")";
+        ctx.beginPath();
+        ctx.arc(mq.from + i * mq.step, top + 1.5, 1.3, 0, TWO_PI);
+        ctx.fill();
+      }
+      // barrido de scanline por la cara de la plataforma
+      u = loop(t, d.scan.ph, 0.00022);
+      ctx.globalAlpha = Math.sin(u * Math.PI) * 0.35;
+      ctx.fillStyle = "#35f0e0";
+      ctx.fillRect(pl.x + 3, top + u * pl.h, pl.w - 6, 1);
+      ctx.globalAlpha = 1;
+
     } else if (biomeId === "nieve") {
-      // small snow cap along the top edge
       ctx.fillStyle = "rgba(255,255,255,.55)";
-      ctx.fillRect(pl.x + 2, pl.y - 2, pl.w - 4, 2);
+      ctx.fillRect(pl.x + 2, top - 2, pl.w - 4, 2);
+      // carámbanos con un brillo lento, cada uno por su lado
+      for (i = 0; i < d.hang.length; i++) {
+        var ic = d.hang[i];
+        var shine = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(t * 0.0012 + ic.ph));
+        ctx.fillStyle = "rgba(216,236,255," + shine.toFixed(3) + ")";
+        ctx.beginPath();
+        ctx.moveTo(ic.x - 2.2, bot);
+        ctx.lineTo(ic.x + 2.2, bot);
+        ctx.lineTo(ic.x, bot + ic.len);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // ventisca: cada tanto se vuela nieve del borde hacia afuera
+      var pf = d.puff;
+      u = loop(t, pf.ph, pf.spd);
+      var away = pf.x < pl.x + pl.w / 2 ? -1 : 1;
+      ctx.globalAlpha = Math.sin(u * Math.PI) * 0.5;
+      ctx.fillStyle = "#eaf4ff";
+      for (i = 0; i < 3; i++) {
+        var pu = u + i * 0.06;
+        ctx.beginPath();
+        ctx.arc(pf.x + away * pu * 22, top - 2 - pu * 10 - i * 1.5, 1.6 - i * 0.35, 0, TWO_PI);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
     }
   }
+
   return { draw: draw };
 })();
 
@@ -720,7 +948,12 @@ var Hazards = (function () {
 
   // Attach hazards to a subset of a built archetype's hazardCandidates, biased low so most
   // rounds have none — hazards are seasoning, not the default.
-  function place(rng, built) {
+  /* scale: cuánto se estiró el layout respecto del espacio de diseño. Solo se usa para el
+     umbral de "esta plataforma es demasiado angosta para compartirla con púas", que habla del
+     terreno y por lo tanto creció con él. El ancho y el alto de las púas en sí NO se escalan a
+     propósito: son un obstáculo que el jugador esquiva, y el jugador no creció. */
+  function place(rng, built, scale) {
+    scale = scale || 1;
     var hazards = [];
     if (!built.hazardCandidates || !built.hazardCandidates.length) return hazards;
     if (rng() > 0.35) return hazards; // most maps stay hazard-free
@@ -729,7 +962,7 @@ var Hazards = (function () {
     // Plataformas angostas no dejan margen real para compartir espacio con púas — antes esto
     // no se filtraba, y en pasos de la torre (~100-120px) las púas centradas se comían casi
     // todo lo pisable.
-    if (!pl || pl.w < 110) return hazards;
+    if (!pl || pl.w < 110 * scale) return hazards;
     var w = Math.min(pl.w * 0.35, 55);
     /* Pegadas a UN borde (no centradas): así el resto de la plataforma queda como una franja
        segura CONTIGUA para aterrizar y pisar, en vez de dos márgenes angostos a los costados
@@ -770,6 +1003,19 @@ var Hazards = (function () {
    junto, preservando su forma — hacia la plataforma alcanzable más cercana del grupo
    principal, un poco por iteración, re-chequeando conectividad en cada paso hasta que cierra
    (o hasta el tope de iteraciones, por las dudas). */
+/* Estira un layout del espacio de diseño al tamaño real del mundo. Escala también el alto de
+   cada plataforma (que es puramente visual: para la física solo cuenta pl.y, la superficie de
+   arriba) para que no queden repisas finitas y desproporcionadas en un mapa más grande. */
+function scaleLayout(platforms, sx, sy) {
+  if (sx === 1 && sy === 1) return platforms;
+  for (var i = 0; i < platforms.length; i++) {
+    var p = platforms[i];
+    p.x *= sx; p.w *= sx;
+    p.y *= sy; p.h *= sy;
+  }
+  return platforms;
+}
+
 function connectAllPlatforms(platforms, reach, W, H) {
   var maxIter = 60;
   for (var iter = 0; iter < maxIter; iter++) {
@@ -797,7 +1043,9 @@ function connectAllPlatforms(platforms, reach, W, H) {
     isolated.forEach(function (idx) {
       var pl = platforms[idx];
       pl.x = Math.max(20, Math.min(W - 20 - pl.w, pl.x + stepX));
-      pl.y = Math.max(120, Math.min(500, pl.y + stepY));
+      // Como fracción del alto y no en píxeles fijos: los 120/500 de siempre valían para un
+      // mundo de 540 de alto, y con uno más grande habrían aplastado el rescate contra el techo.
+      pl.y = Math.max(H * (120 / DESIGN_H), Math.min(H * (500 / DESIGN_H), pl.y + stepY));
     });
   }
   return reach.allConnected(platforms);
@@ -832,9 +1080,15 @@ var World = (function () {
     var ids = MapArchetypes.ids;
     var archId = (forcedArchId && ids.indexOf(forcedArchId) >= 0) ? forcedArchId : ids[Math.floor(rng() * ids.length)];
 
+    /* Ojo con el orden: el layout se construye en el espacio de diseño, se estira al mundo
+       real y RECIÉN AHÍ se chequea conectividad. Al revés, se estaría validando que los saltos
+       cierran en un mapa que no es el que se va a jugar — y los huecos crecen con la escala
+       mientras el salto no, que es justamente de dónde sale la sensación de mapa más grande. */
+    var sx = W / DESIGN_W, sy = H / DESIGN_H;
     var built = null, attempts = 0;
     while (attempts < 5) {
-      built = MapArchetypes.build(archId, rng, W, H);
+      built = MapArchetypes.build(archId, rng, DESIGN_W, DESIGN_H);
+      scaleLayout(built.platforms, sx, sy);
       if (reach.allConnected(built.platforms)) break;
       attempts++;
     }
@@ -845,7 +1099,7 @@ var World = (function () {
     var pool = names[archId] || ["Sector Desconocido"];
     var mapName = pool[Math.floor(rng() * pool.length)] + " · " + biome.name;
 
-    var hazards = Hazards.place(rng, built);
+    var hazards = Hazards.place(rng, built, sx);
 
     return {
       name: mapName,
@@ -891,5 +1145,18 @@ var World = (function () {
     return Hazards.check(p, map, PW);
   }
 
-  return { generateMap: generateMap, draw: draw, checkHazards: checkHazards, makeReachability: makeReachability };
+  /* Estira un layout escrito en coordenadas de diseño al mundo real de W x H. Público porque el
+     mapa inicial (MAP0, en desktop/sim.js — el de la ronda 1 de casi toda partida) está escrito
+     en las mismas coordenadas que los archetypes de este archivo y necesita el mismo trato: sin
+     pasarlo por acá quedaba pegado arriba a la izquierda, con una franja muerta abajo y a la
+     derecha, mientras los mapas procedurales sí ocupaban toda la pantalla. */
+  function scaleFromDesign(platforms, W, H) {
+    return scaleLayout(platforms, W / DESIGN_W, H / DESIGN_H);
+  }
+
+  return {
+    generateMap: generateMap, draw: draw, checkHazards: checkHazards,
+    makeReachability: makeReachability, scaleFromDesign: scaleFromDesign,
+    DESIGN_W: DESIGN_W, DESIGN_H: DESIGN_H,
+  };
 })();

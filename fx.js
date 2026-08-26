@@ -60,6 +60,14 @@ var Camera = {
 
   begin: function (ctx, W, H) {
     ctx.save();
+    /* Ajuste mundo -> canvas. El mundo mide W x H y el canvas sigue siendo 960x540: desde que
+       los mapas crecieron esos dos números dejaron de ser el mismo, y esta escala es la que
+       hace que el mapa entero siga entrando en pantalla. Va PRIMERO y también en modo caracol
+       (antes del early return de abajo): sin ella se perdería la franja de abajo y la de la
+       derecha del mapa, que es justo donde hay plataformas. Si el canvas y el mundo miden lo
+       mismo (screen.html, y todo build viejo) da 1 y no se aplica nada, igual que siempre. */
+    var fit = ctx.canvas.width / W;
+    if (fit !== 1) ctx.scale(fit, fit);
     // scale()/translate() on every draw call forces the software rasterizer to run every
     // subsequent path through a non-identity matrix — skip it outright in snail mode rather
     // than just zeroing the shake, since an identity-matrix fast path is what's cheap.
@@ -316,16 +324,27 @@ var ScreenFX = {
     ctx.fillRect(0, 0, W, H);
   },
 
-  draw: function (ctx, W, H) {
-    for (var i = 0; i < this.streaks.length; i++) {
-      var s = this.streaks[i];
-      var a = s.t / s.maxT;
-      ctx.globalAlpha = a * 0.8;
-      ctx.strokeStyle = "rgba(255,80,120,.9)";
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(s.x - 10 * s.dir, s.y - 1); ctx.lineTo(s.x + 10 * s.dir, s.y - 1); ctx.stroke();
-      ctx.strokeStyle = "rgba(90,220,255,.9)";
-      ctx.beginPath(); ctx.moveTo(s.x - 10 * s.dir, s.y + 1); ctx.lineTo(s.x + 10 * s.dir, s.y + 1); ctx.stroke();
+  /* W/H acá son los del CANVAS (el flash tapa la pantalla, no el mundo). worldScale es cuánto
+     hay que achicar una coordenada del mundo para caer en ese canvas: las rayitas de impacto se
+     guardan en el punto del mundo donde pegó el golpe, pero se dibujan afuera de la cámara para
+     que no shakeen, así que la conversión hay que hacerla a mano. Sin esto, con el mundo más
+     grande que el canvas, aparecían corridas hacia abajo y a la derecha — cada vez más lejos
+     del golpe cuanto más al borde pasara. Sin el parámetro (screen.html) vale 1: igual que antes. */
+  draw: function (ctx, W, H, worldScale) {
+    if (this.streaks.length) {
+      ctx.save();
+      if (worldScale && worldScale !== 1) ctx.scale(worldScale, worldScale);
+      for (var i = 0; i < this.streaks.length; i++) {
+        var s = this.streaks[i];
+        var a = s.t / s.maxT;
+        ctx.globalAlpha = a * 0.8;
+        ctx.strokeStyle = "rgba(255,80,120,.9)";
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(s.x - 10 * s.dir, s.y - 1); ctx.lineTo(s.x + 10 * s.dir, s.y - 1); ctx.stroke();
+        ctx.strokeStyle = "rgba(90,220,255,.9)";
+        ctx.beginPath(); ctx.moveTo(s.x - 10 * s.dir, s.y + 1); ctx.lineTo(s.x + 10 * s.dir, s.y + 1); ctx.stroke();
+      }
+      ctx.restore();
     }
     ctx.globalAlpha = 1;
 

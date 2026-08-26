@@ -175,13 +175,13 @@ var Net = (function () {
 
     /* Crear una sala no elige nada de la partida: nace en el modo por defecto del servidor y el
        anfitrión decide modo y cantidad después, ya con gente adentro (setMode/setRounds). */
-    create: function (nick, color) {
+    create: function (nick, color, hat) {
       open();
-      send({ t: "create", nick: nick, color: color });
+      send({ t: "create", nick: nick, color: color, hat: hat });
     },
-    join: function (code, nick, color) {
+    join: function (code, nick, color, hat) {
       open();
-      send({ t: "join", code: code, nick: nick, color: color });
+      send({ t: "join", code: code, nick: nick, color: color, hat: hat });
     },
 
     sendInput: function (action, down) {

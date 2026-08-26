@@ -20,7 +20,7 @@ const { createSim } = require("./sim-host");
 const PORT = process.env.PORT || 8080;
 const ROOT = path.join(__dirname, "..");
 
-const MAX_PLAYERS = 8; // = PLAYER_COLORS.length en el cliente
+const MAX_PLAYERS = 8; // ya NO es PLAYER_COLORS.length: la paleta la supera a propósito (ver abajo)
 const TICK_MS = 16; // ~60 Hz de simulación (menos que esto y los jugadores atraviesan plataformas)
 
 /* 33 ms (~30 Hz), no 40. Dos razones, las dos medidas contra el server real:
@@ -46,11 +46,28 @@ const REJOIN_GRACE_MS = 30000;
 /* Mismo alfabeto que net.js: sin 0/O/1/I, para poder dictar el código en voz alta. */
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-/* Misma paleta que PLAYER_COLORS en online/public/index.html (8 = MAX_PLAYERS). Duplicada acá
-   a propósito: el color que elige cada jugador es cosmético, pero se valida server-side como
-   cualquier otro input — no hay que confiar en que el cliente mande un hex válido ni en que
-   respete el "no repetido" por su cuenta. */
-const PLAYER_COLORS = ["#35f0e0", "#ff2e88", "#9dff4f", "#ffc247", "#7b6cff", "#4fd2ff", "#ff7a3d", "#ff5ec4"];
+/* Misma paleta que PLAYER_COLORS en online/public/index.html. Duplicada acá a propósito: el
+   color que elige cada jugador es cosmético, pero se valida server-side como cualquier otro
+   input — no hay que confiar en que el cliente mande un hex válido ni en que respete el "no
+   repetido" por su cuenta.
+
+   Los primeros 8 son los originales y en ese orden a propósito: colorFor() del cliente cae en
+   PLAYER_COLORS[id % length] cuando todavía no llegó el "lobby", así que mover uno de esos ocho
+   le cambiaría el color de arranque a los slots. Los 6 de la segunda línea se eligieron por el
+   hueco de tono que llenan (rojo, amarillo, menta, azul, violeta y blanco caen justo en los
+   claros que dejaba la paleta vieja), no por gusto: con 8 jugadores en pantalla el color ES el
+   nombre, y dos tonos parecidos arruinan la partida más que la falta de variedad. Que sobren
+   colores sobre MAX_PLAYERS es la gracia — ahora elegir el tuyo casi nunca choca con otro. */
+const PLAYER_COLORS = [
+  "#35f0e0", "#ff2e88", "#9dff4f", "#ffc247", "#7b6cff", "#4fd2ff", "#ff7a3d", "#ff5ec4",
+  "#ff3d3d", "#f2ff3d", "#2eff9d", "#4f7dff", "#d24fff", "#eef2ff",
+];
+
+/* Accesorios cosméticos de la cabeza. Espejo exacto de ACCESSORY_IDS en stickman.js (que es
+   quien los dibuja): si acá falta uno, el servidor lo baja a "none" y el resto de la sala
+   nunca lo ve, aunque el cliente que lo eligió se lo dibuje a sí mismo. */
+const ACCESSORY_IDS = ["none", "horns", "halo", "tophat", "cap", "crown", "poop", "cowboy",
+                       "party", "bunny", "antennae", "arrow", "mohawk", "flame", "propeller"];
 
 /* ------------------------------------------------------------------ archivos estáticos */
 const STATIC = {
@@ -355,6 +372,7 @@ function lobbyState(room) {
       id: p.id,
       name: p.name,
       color: p.color,
+      hat: p.hat,
       connected: p.connected,
     })),
   };
@@ -386,6 +404,13 @@ function cleanColor(raw) {
    conectados: si se excluyera a los "ausentes" (ver REJOIN_GRACE_MS), alguien podría reclamar
    el color de otro que se cayó del wifi y va a volver en cualquier momento, y quedarían dos
    jugadores con el mismo color a la vez apenas reconecte. */
+/* A diferencia del color, el accesorio NO es exclusivo: dos jugadores con la misma galera se
+   siguen distinguiendo por el color del cuerpo, que es el identificador de verdad. */
+function cleanHat(raw) {
+  const h = String(raw == null ? "" : raw).trim().toLowerCase();
+  return ACCESSORY_IDS.indexOf(h) === -1 ? "none" : h;
+}
+
 function usedColors(room) {
   const used = {};
   for (const p of room.players.values()) if (p.color) used[p.color] = true;
@@ -406,7 +431,7 @@ function pickColor(room, wantedRaw) {
 /* Cada error viaja con un `code` estable ADEMÁS del texto: el cliente traduce por code (ver
    SERVER_ERR_KEYS en online/public/index.html) y usa el `msg` solo de fallback. El texto se
    mantiene en castellano acá a propósito — es lo que ve un cliente viejo todavía cacheado. */
-function joinRoom(room, ws, nick, colorRaw) {
+function joinRoom(room, ws, nick, colorRaw, hatRaw) {
   if (room.host.sim.getPhase() !== "lobby") return { err: "Esa partida ya empezó.", code: "started" };
   const id = freeSlot(room);
   if (id === null) return { err: "La sala está llena (8 jugadores).", code: "full" };
@@ -418,6 +443,7 @@ function joinRoom(room, ws, nick, colorRaw) {
     id,
     name: cleanNick(nick),
     color: pickColor(room, colorRaw),
+    hat: cleanHat(hatRaw),
     ws,
     connected: true,
     token: crypto.randomUUID(),
@@ -579,7 +605,7 @@ function handleMessage(ws, raw) {
        sala y repartir un código nuevo — justo lo contrario de "entren que ya arreglamos". */
     const room = createRoom(msg.mode, msg.rounds);
     if (!room) return send(ws, { t: "err", msg: "No hay códigos de sala libres, probá de nuevo.", code: "noCodes" });
-    const res = joinRoom(room, ws, msg.nick, msg.color);
+    const res = joinRoom(room, ws, msg.nick, msg.color, msg.hat);
     if (res.err) {
       destroyRoom(room);
       send(ws, { t: "err", msg: res.err, code: res.code });
@@ -604,7 +630,7 @@ function handleMessage(ws, raw) {
     const code = String(msg.code || "").toUpperCase().trim();
     const room = rooms.get(code);
     if (!room) return send(ws, { t: "err", msg: "No existe una sala con ese código.", code: "noRoom" });
-    const res = joinRoom(room, ws, msg.nick, msg.color);
+    const res = joinRoom(room, ws, msg.nick, msg.color, msg.hat);
     if (res.err) send(ws, { t: "err", msg: res.err, code: res.code });
     return;
   }
