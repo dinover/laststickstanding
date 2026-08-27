@@ -1980,6 +1980,7 @@
       delete padPeers[gone.source.pad];
       delete padSent[gone.source.pad];
       delete padHp[gone.source.pad];
+      updatePadLeader();
       renderPadPeers();
       renderPadHint();
     }
@@ -2122,6 +2123,7 @@
     stopLocalSetupPoll();
     $("originCard").style.display = "none";
     $("localSetupCard").style.display = "none";
+    $("padCard").style.display = "none"; // la partida puede arrancarla un celular, con el QR a la vista
     $("backLink").style.display = "none";
     updateSessionLabels();
     $("endMatchBtn").classList.add("show");
@@ -2156,6 +2158,7 @@
   function exitLocal() {
     localActive = false;
     closePadRoom();
+    $("padCard").style.display = "none";
     localMatchIds = {};
     Sim.resetToLobby();
     myId = null;
@@ -2240,6 +2243,17 @@
      la próxima. Y ojo con eso: Sim.handleInput() crea el jugador si no existe (ensurePlayer),
      o sea que reenviarle input a alguien fuera de la partida METE un fantasma en el mapa. */
   var localMatchIds = {};
+  /* Quién manda desde el teléfono. El sillón no tiene anfitrión (todos están frente a la misma
+     pantalla), pero con celulares el botón de "¡A pelear!" quedaba del lado de la PC — y si la
+     PC es la tele del living, alguien se tiene que levantar a apretarlo. Así que el primero que
+     escanea se lleva el control de la sala: elige el modo, las rondas y arranca, sin moverse del
+     sillón. Misma idea que el master controller de la consola.
+
+     Es "el primero que entró Y sigue conectado": si se le bloquea el teléfono y hay otro
+     despierto, la posta pasa sola en vez de dejar a todos esperando a alguien que no está. El
+     que la recibió se la queda aunque el original vuelva — turnarse el mando cada vez que a
+     alguien se le apaga la pantalla sería peor que cualquier criterio fijo. */
+  var padLeader = null; // padId
 
   function padPlayerFor(padId) {
     for (var i = 0; i < localPlayers.length; i++) {
@@ -2259,7 +2273,24 @@
      hace que mirando el teléfono sepas cuál de los ocho palitos sos. */
   function padIdentify(p) {
     if (!p || p.source.type !== "pad") return;
-    PadHost.sendTo(p.source.pad, { t: "you", name: p.name, color: p.color });
+    PadHost.sendTo(p.source.pad, { t: "you", name: p.name, color: p.color, leader: p.source.pad === padLeader });
+  }
+
+  /* Recalcula quién manda y, si cambió, se lo avisa a todos los teléfonos (el que la pierde
+     tiene que dejar de ver los controles de la sala en el acto, no solo el que la gana). */
+  function updatePadLeader() {
+    var previo = padLeader;
+    var actual = padPlayerFor(padLeader);
+    if (!actual || actual.padOff) {
+      padLeader = null;
+      for (var i = 0; i < localPlayers.length; i++) {
+        var p = localPlayers[i];
+        if (p.source.type === "pad" && !p.padOff) { padLeader = p.source.pad; break; }
+      }
+    }
+    if (padLeader === previo) return;
+    padSent = {}; // que el próximo syncPads() les rearme el cartel a todos
+    localPlayers.forEach(function (p) { if (p.source.type === "pad") padIdentify(p); });
   }
 
   function padStateFor(p) {
@@ -2282,10 +2313,17 @@
       if (p.source.type !== "pad") continue;
       var pad = p.source.pad;
       var st = padStateFor(p);
-      var key = st.phase + "|" + (st.alive === false ? "0" : "1");
+      var manda = pad === padLeader;
+      var puedeArrancar = localPlayers.length >= 2;
+      var key = [st.phase, st.alive === false ? "0" : "1", manda ? "1" : "0",
+                 selectedMode, totalRoundsPick, puedeArrancar ? "1" : "0", localPlayers.length].join("|");
       if (padSent[pad] !== key) {
         padSent[pad] = key;
-        PadHost.sendTo(pad, { t: "phase", phase: st.phase, alive: st.alive !== false });
+        PadHost.sendTo(pad, {
+          t: "phase", phase: st.phase, alive: st.alive !== false,
+          leader: manda, mode: selectedMode, rounds: totalRoundsPick,
+          canStart: puedeArrancar, players: localPlayers.length,
+        });
       }
       if (!localActive || !localMatchIds[p.id]) { delete padHp[pad]; continue; }
       var sp = Sim.getPlayers()[p.id];
@@ -2383,6 +2421,7 @@
         if (p) { p.padOff = !peer.connected; padIdentify(p); }
       });
       padSent = {};
+      updatePadLeader();
       renderLocalRoster();
       renderLocalAddRow();
       renderPadCard();
@@ -2408,6 +2447,7 @@
         renderLocalRoster();
       }
       padSent[msg.pad] = null; // que reciba el cartel de la fase actual, aunque no haya cambiado
+      updatePadLeader(); // el primero que entra se lleva el control de la sala
       padIdentify(p);
       syncPads();
       renderPadPeers();
@@ -2421,6 +2461,7 @@
       if (p) {
         p.padOff = true;
         padReleaseInputs(p);
+        updatePadLeader();
         renderLocalRoster();
       }
       renderPadPeers();
@@ -2435,6 +2476,7 @@
       delete padPeers[msg.pad];
       var p = padPlayerFor(msg.pad);
       if (p) removeLocalPlayer(p.id);
+      updatePadLeader();
       renderPadPeers();
       renderPadHint();
     });
@@ -2447,10 +2489,44 @@
     });
 
     PadHost.on("msg", function (msg) {
-      // Único mensaje que mandan los teléfonos por su cuenta: "me desperté, ¿en qué andábamos?".
-      if (msg.data && msg.data.t === "sync") {
+      var data = msg.data;
+      if (!data || !data.t) return;
+
+      // "Me desperté, ¿en qué andábamos?" — lo manda cualquier teléfono al volver de la pantalla
+      // bloqueada, no solo el que manda.
+      if (data.t === "sync") {
         padSent[msg.pad] = null;
         syncPads();
+        return;
+      }
+
+      /* De acá para abajo, solo el que manda. Un teléfono podría mandar estos mensajes a mano
+         igual que cualquier cliente, así que se chequea acá y no solo escondiendo botones. */
+      if (msg.pad !== padLeader) return;
+
+      if (data.t === "setMode" && !localActive) {
+        if (MODE_LIST.indexOf(data.mode) === -1) return;
+        selectedMode = data.mode;
+        renderLocalModeSummary(); // la pantalla grande muestra el cambio al toque
+        syncPads();
+        return;
+      }
+      if (data.t === "setRounds" && !localActive) {
+        totalRoundsPick = Math.max(1, Math.min(20, Number(data.rounds) || totalRoundsPick));
+        renderLocalModeSummary();
+        syncPads();
+        return;
+      }
+      if (data.t === "start" && !localActive) {
+        // Mismo camino que el botón de la PC, con el mismo mínimo de dos jugadores.
+        startLocalMatch();
+        syncPads();
+        return;
+      }
+      if (data.t === "again" && localActive && Sim.getPhase() === "final") {
+        restartLocalMatch();
+        syncPads();
+        return;
       }
     });
 
@@ -2477,6 +2553,7 @@
     if (!padRoomOpen && !PadHost.getCode()) return;
     PadHost.close();
     padRoomOpen = false;
+    padLeader = null;
     padPeers = {};
     padSent = {};
     padHp = {};

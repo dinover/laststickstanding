@@ -93,6 +93,24 @@
   #overlay .big.hot { color: #ff2e88; }
   #overlay .small { color: #6b7394; font-size: 12px; max-width: 280px; line-height: 1.5; }
 
+  /* Panel del que manda la sala (el primero que escaneó): elige modo, rondas y arranca sin
+     levantarse del sillón. Vive adentro del cartel de espera, que es justo cuando hace falta. */
+  #hostPanel { display: none; flex-direction: column; align-items: center; gap: 10px; width: min(94vw, 460px); margin-top: 4px; }
+  #hostPanel.show { display: flex; }
+  #modeRow { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; }
+  .modeBtn {
+    padding: 7px 10px; font-size: 12px; font-weight: 700; border-radius: 999px;
+    border: 1px solid #2a3050; background: #12162a; color: #9aa3bd; box-shadow: none;
+  }
+  .modeBtn.on { border-color: var(--me); color: var(--me); box-shadow: 0 0 0 1px var(--me) inset; }
+  .stepper { display: flex; align-items: center; gap: 12px; }
+  .stepper button { width: 34px; height: 34px; padding: 0; border-radius: 50%; background: #12162a; border: 1px solid #2a3050; color: #eaf0ff; box-shadow: none; font-size: 18px; }
+  .stepper .n { font-size: 20px; font-weight: 800; color: var(--me); min-width: 30px; text-align: center; }
+  .stepper .lbl { font-size: 11px; color: #6b7394; }
+  #startBtn, #againBtn { padding: 12px 30px; border-radius: 999px; font-size: 14px; }
+  #againBtn { display: none; margin-top: 6px; }
+  #againBtn.show { display: block; }
+
   #flash { position: absolute; inset: 0; z-index: 15; display: none; align-items: center; justify-content: center; pointer-events: none; }
   #flash.show { display: flex; }
   #flash span { font-size: 34px; font-weight: 900; letter-spacing: .1em; color: #ff2e88; text-shadow: 0 0 24px rgba(255,46,136,.6); }
@@ -148,6 +166,17 @@
   <div id="overlay">
     <div class="big" id="overlayTitle"></div>
     <div class="small" id="overlayText"></div>
+    <div id="hostPanel">
+      <div id="modeRow"></div>
+      <div class="stepper" id="roundsRow">
+        <button type="button" id="minusBtn">&minus;</button>
+        <div class="n" id="roundsN">3</div>
+        <button type="button" id="plusBtn">+</button>
+        <div class="lbl" id="roundsLbl">rondas</div>
+      </div>
+      <button type="button" id="startBtn">&iexcl;A PELEAR!</button>
+    </div>
+    <button type="button" id="againBtn">JUGAR DE NUEVO</button>
   </div>
 </div>
 
@@ -182,7 +211,17 @@
       rotate: "Girá el teléfono de costado para jugar.",
       stConnected: "Listo", stWaiting: "Esperando", stFight: "Peleando", stOut: "Afuera", stLost: "Sin conexión",
       waitTitle: "YA VA A EMPEZAR",
-      waitText: "No sueltes el teléfono: arranca apenas la pantalla diga que sí.",
+      waitText: "El primero que entró elige el modo y arranca. No sueltes el teléfono.",
+      leadTitle: "MANEJÁS VOS",
+      leadText: "Entraste primero, así que elegís vos. Arrancá cuando estén todos.",
+      leadNeedTwo: "Falta gente: solo no se puede pelear.",
+      leadPlayers: "{n} en el sillón.",
+      start: "¡A PELEAR!",
+      again: "JUGAR DE NUEVO",
+      roundsWord: "rondas",
+      winsWord: "para ganar",
+      "mode.rounds": "Rondas", "mode.wins": "Victorias", "mode.infinite": "Infinito",
+      "mode.koth": "Colina", "mode.orbking": "Orbe",
       nextTitle: "ENTRÁS EN LA PRÓXIMA",
       nextText: "Esta ya empezó sin vos. Aguantá al final de la ronda y jugás la que viene.",
       fight: "¡A PELEAR!",
@@ -211,7 +250,17 @@
       rotate: "Turn your phone sideways to play.",
       stConnected: "Ready", stWaiting: "Waiting", stFight: "Fighting", stOut: "Out", stLost: "Offline",
       waitTitle: "STARTING SOON",
-      waitText: "Keep the phone handy: it starts the moment the screen says so.",
+      waitText: "Whoever joined first picks the mode and starts it. Keep the phone handy.",
+      leadTitle: "YOU'RE IN CHARGE",
+      leadText: "You joined first, so it's your call. Start it when everyone's in.",
+      leadNeedTwo: "Not enough people: you can't brawl alone.",
+      leadPlayers: "{n} on the couch.",
+      start: "FIGHT!",
+      again: "PLAY AGAIN",
+      roundsWord: "rounds",
+      winsWord: "to win",
+      "mode.rounds": "Rounds", "mode.wins": "Wins", "mode.infinite": "Endless",
+      "mode.koth": "Hill", "mode.orbking": "Orb",
       nextTitle: "YOU'RE IN NEXT ONE",
       nextText: "This one started without you. Hang on till the round ends and you're in.",
       fight: "FIGHT!",
@@ -231,7 +280,11 @@
     var nav = (navigator.languages && navigator.languages[0]) || navigator.language || "en";
     return String(nav).toLowerCase().indexOf("es") === 0 ? "es" : "en";
   })();
-  function t(k) { return (STRINGS[lang] && STRINGS[lang][k]) || STRINGS.es[k] || k; }
+  function t(k, params) {
+    var v = (STRINGS[lang] && STRINGS[lang][k]) || STRINGS.es[k] || k;
+    if (!params) return v;
+    return v.replace(/\{(\w+)\}/g, function (m, p) { return params[p] !== undefined ? params[p] : m; });
+  }
 
   document.documentElement.lang = lang;
   $("nickInput").placeholder = t("nick");
@@ -241,6 +294,8 @@
   $("punchBtn").textContent = t("punch");
   $("kickBtn").textContent = t("kick");
   $("flashText").textContent = t("fight");
+  $("startBtn").textContent = t("start");
+  $("againBtn").textContent = t("again");
   $("rotateText").textContent = t("rotate");
 
   /* ---------------------------------------------------------------- estado */
@@ -254,6 +309,8 @@
   var MAX_TRIES = 30; // ~2 minutos de intentos: lo que tarda alguien en volver del baño
   var pending = null; // el padJoin que hay que mandar apenas abra el socket
   var lastPhase = null;
+  var state = null;      // último estado que mandó la pantalla (fase, modo, rondas, si mandás vos)
+  var amLeader = false;  // el primero que escaneó maneja la sala desde el teléfono
 
   /* El nombre se guarda para no tener que escribirlo cada vez (el mismo teléfono suele ser el
      mismo jugador), y el token es lo que permite volver a TU lugar tras un bloqueo de pantalla
@@ -304,6 +361,11 @@
   }
   function backToJoin(errKey) {
     joined = false;
+    amLeader = false;
+    state = null;
+    lastPhase = null;
+    $("hostPanel").classList.remove("show");
+    $("againBtn").classList.remove("show");
     document.body.classList.remove("playing");
     $("pad").classList.remove("show");
     $("joinScreen").classList.remove("hide");
@@ -442,37 +504,23 @@
     if (!data || !data.t) return;
 
     if (data.t === "you") {
-      // Color y nombre definitivos: los decide la pantalla, que es la que reparte los slots.
+      // Color, nombre y mando: los decide la pantalla, que es la que reparte los slots.
       if (data.color) document.body.style.setProperty("--me", data.color);
       if (data.name) { myName = data.name; $("badgeName").textContent = data.name; }
+      amLeader = !!data.leader;
+      renderState();
       return;
     }
 
     if (data.t === "phase") {
+      state = data;
+      if (typeof data.leader === "boolean") amLeader = data.leader;
+      // El cartel de "¡A pelear!" se dispara una sola vez, cuando ENTRA la fase, no cada vez
+      // que se repinta (que pasa también al cambiar el modo o al sumarse alguien).
+      var entra = data.phase !== lastPhase;
       lastPhase = data.phase;
-      if (data.phase === "lobby") {
-        setStatus("stWaiting");
-        showOverlay("waitTitle", "waitText", false);
-      } else if (data.phase === "pending") {
-        // Se sumó con la partida ya empezada: entra recién en la próxima.
-        setStatus("stWaiting");
-        showOverlay("nextTitle", "nextText", false);
-      } else if (data.phase === "fightIntro") {
-        setStatus("stFight");
-        hideOverlay();
-        flash();
-      } else if (data.phase === "fight" || data.phase === "roundEnd") {
-        if (data.alive === false) {
-          setStatus("stOut");
-          showOverlay("outTitle", "outText", true);
-        } else {
-          setStatus("stFight");
-          hideOverlay();
-        }
-      } else if (data.phase === "final") {
-        setStatus("stWaiting");
-        showOverlay("endTitle", "endText", false);
-      }
+      renderState();
+      if (entra && data.phase === "fightIntro") flash();
       return;
     }
 
@@ -481,6 +529,86 @@
       navigator.vibrate(data.long ? 90 : 25);
     }
   }
+
+  /* Un solo lugar que decide qué se ve encima de los botones, a partir del último estado que
+     mandó la pantalla. Es re-entrante a propósito: se lo llama tanto cuando cambia la fase como
+     cuando cambia el modo o entra alguien más, y siempre tiene que dar el mismo resultado para
+     el mismo estado. */
+  function renderState() {
+    if (!state) return;
+    var esLobby = state.phase === "lobby";
+    var mando = amLeader && esLobby;
+
+    $("hostPanel").classList.toggle("show", mando);
+    $("againBtn").classList.toggle("show", amLeader && state.phase === "final");
+
+    if (esLobby) {
+      setStatus("stWaiting");
+      if (amLeader) {
+        showOverlay("leadTitle", null, false);
+        $("overlayText").textContent = state.canStart
+          ? t("leadPlayers", { n: state.players || 0 })
+          : t("leadNeedTwo");
+        renderHostPanel();
+      } else {
+        showOverlay("waitTitle", "waitText", false);
+      }
+      return;
+    }
+    if (state.phase === "pending") {
+      setStatus("stWaiting");
+      showOverlay("nextTitle", "nextText", false);
+      return;
+    }
+    if (state.phase === "final") {
+      setStatus("stWaiting");
+      showOverlay("endTitle", "endText", false);
+      return;
+    }
+    // En pelea: el cartel solo aparece si te mataron.
+    if (state.alive === false) {
+      setStatus("stOut");
+      showOverlay("outTitle", "outText", true);
+    } else {
+      setStatus("stFight");
+      hideOverlay();
+    }
+  }
+
+  /* Selector de modo + cantidad de rondas, para el que manda. Los botones NO cambian nada
+     localmente: le piden el cambio a la pantalla y la marca la pone el estado que vuelve, así
+     el teléfono y la pantalla grande nunca muestran modos distintos. */
+  var MODES = ["rounds", "wins", "infinite", "koth", "orbking"];
+  function renderHostPanel() {
+    var row = $("modeRow");
+    if (!row.children.length) {
+      MODES.forEach(function (mode) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "modeBtn";
+        b.setAttribute("data-mode", mode);
+        b.textContent = t("mode." + mode);
+        b.addEventListener("click", function () { hostCmd({ t: "setMode", mode: mode }); });
+        row.appendChild(b);
+      });
+    }
+    [].forEach.call(row.children, function (b) {
+      b.classList.toggle("on", b.getAttribute("data-mode") === state.mode);
+    });
+    var conRondas = state.mode === "rounds" || state.mode === "wins";
+    $("roundsRow").style.display = conRondas ? "flex" : "none";
+    $("roundsN").textContent = state.rounds;
+    $("roundsLbl").textContent = t(state.mode === "wins" ? "winsWord" : "roundsWord");
+    $("startBtn").disabled = !state.canStart;
+    $("startBtn").style.opacity = state.canStart ? "1" : ".5";
+  }
+
+  function hostCmd(obj) { send({ t: "padMsg", data: obj }); }
+
+  $("startBtn").addEventListener("click", function () { hostCmd({ t: "start" }); });
+  $("againBtn").addEventListener("click", function () { hostCmd({ t: "again" }); });
+  $("minusBtn").addEventListener("click", function () { if (state) hostCmd({ t: "setRounds", rounds: Math.max(1, state.rounds - 1) }); });
+  $("plusBtn").addEventListener("click", function () { if (state) hostCmd({ t: "setRounds", rounds: Math.min(20, state.rounds + 1) }); });
 
   /* ---------------------------------------------------------------- botones */
   var held = {};

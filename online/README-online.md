@@ -246,6 +246,17 @@ Flujo completo:
 **No hace falta compartir wifi.** Los teléfonos hablan con el mismo servidor que el resto del
 juego, así que el que está de visita con datos móviles entra igual.
 
+**El primero que escanea maneja la sala.** El sillón local no tiene anfitrión (todos están
+frente a la misma pantalla), pero con celulares el botón de "¡A pelear!" quedaba del lado de la
+PC — y si la PC es la tele del living, alguien se tenía que levantar. Así que el primer teléfono
+que entra recibe `leader: true` y desde ahí elige modo, cantidad de rondas, arranca la partida y
+pide la revancha, sin moverse. La pantalla grande refleja cada cambio en el acto (los chips de
+modo y el resumen), y las órdenes se validan del lado del anfitrión (`msg.pad !== padLeader`), no
+solo escondiendo botones en el teléfono. Si al que manda se le bloquea la pantalla y hay otro
+despierto, la posta pasa sola; el que la recibió se la queda aunque el original vuelva, porque
+turnarse el mando cada vez que a alguien se le apaga el celular es peor que cualquier criterio
+fijo.
+
 Detalles que cuestan caro si se pasan por alto:
 
 - **`Sim.handleInput()` crea el jugador si no existe** (`ensurePlayer`). Un celular que se suma
