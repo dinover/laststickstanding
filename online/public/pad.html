@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#05060d" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="robots" content="noindex" />
+<title>Last Stick Standing — Control</title>
+<link rel="icon" href="/favicon.png" />
+<style>
+  /* Paleta y tipografía calcadas de index.html: el que agarra el teléfono ya vio la pantalla
+     grande, y dos estéticas distintas para el mismo juego se sienten como dos juegos. */
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: #05060d; color: #eaf0ff; touch-action: none; overscroll-behavior: none;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    /* --me es el color del jugador; lo manda la pantalla cuando entrás y tiñe todo el control,
+       así el que mira su teléfono sabe cuál de los ocho palitos es sin preguntar. */
+    --me: #35f0e0;
+  }
+
+  /* ---------------------------------------------------------------- entrar */
+  #joinScreen {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; padding: 20px max(16px, env(safe-area-inset-right)) 20px max(16px, env(safe-area-inset-left));
+    text-align: center; overflow-y: auto;
+  }
+  #joinScreen.hide { display: none; }
+  h1 { font-size: 15px; letter-spacing: .18em; margin: 0 0 2px; color: #35f0e0; text-shadow: 0 0 18px rgba(53,240,224,.45); }
+  .sub { color: #6b7394; font-size: 12px; margin: 0 0 8px; max-width: 320px; line-height: 1.45; }
+  input {
+    width: min(280px, 80vw); text-align: center; letter-spacing: .1em; font-family: inherit; font-size: 15px;
+    padding: 13px 14px; border-radius: 8px; border: 1px solid #2a3050; background: #12162a; color: #eaf0ff;
+  }
+  #codeInput { text-transform: uppercase; letter-spacing: .35em; font-size: 20px; font-weight: 700; }
+  button {
+    font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+    border-radius: 8px; border: none; padding: 13px 16px; background: #35f0e0; color: #05060d;
+    box-shadow: 0 0 16px rgba(53,240,224,.3);
+  }
+  #joinBtn { width: min(280px, 80vw); }
+  .err { color: #ff2e88; font-size: 12px; min-height: 16px; margin-top: 2px; }
+
+  /* ---------------------------------------------------------------- control */
+  #pad { position: absolute; inset: 0; display: none; }
+  #pad.show { display: block; }
+
+  #badge {
+    position: absolute; z-index: 5; pointer-events: none;
+    top: max(6px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left));
+    display: flex; align-items: center; gap: 7px;
+  }
+  #badge .dot { width: 13px; height: 13px; border-radius: 50%; background: var(--me); box-shadow: 0 0 10px var(--me); }
+  #badge .nm { font-size: 12px; font-weight: 700; }
+  #badge .st { font-size: 10px; color: #6b7394; }
+
+  #controls {
+    position: absolute; inset: 0; display: flex; gap: 12px;
+    padding: max(34px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+  /* Cada mitad se reparte por flex: pase lo que pase con el alto del teléfono, ningún botón
+     se sale de la pantalla ni queda recortado. */
+  .zone { flex: 1 1 0; min-width: 0; display: flex; gap: 10px; }
+  .zone.action { flex-direction: column; }
+  .btn {
+    flex: 1 1 0; min-width: 0; min-height: 0; border-radius: 20px; border: 2px solid #2a3050;
+    background: linear-gradient(155deg, #1a2038, #0a0c18); color: #9aa3bd;
+    display: flex; align-items: center; justify-content: center; font-weight: 700;
+    font-size: clamp(11px, 2.6vw, 14px); letter-spacing: .06em; box-shadow: none; padding: 0;
+  }
+  .btn .glyph { font-size: 30px; line-height: 1; }
+  .btn.down { transform: scale(.97); border-color: var(--me); color: var(--me); box-shadow: inset 0 0 40px rgba(53,240,224,.18); }
+  #punchBtn { background: linear-gradient(155deg, #2a1030, #180a18); }
+  #punchBtn.down { border-color: #ff2e88; color: #ff2e88; box-shadow: inset 0 0 40px rgba(255,46,136,.2); }
+  #kickBtn { background: linear-gradient(155deg, #0f2a30, #0a1818); }
+  #kickBtn.down { border-color: #35f0e0; color: #35f0e0; box-shadow: inset 0 0 40px rgba(53,240,224,.2); }
+  #jumpBtn.down { border-color: #ffc247; color: #ffc247; box-shadow: inset 0 0 40px rgba(255,194,71,.18); }
+  /* Piña y patada van una al lado de la otra debajo del salto: tres botones apilados a lo
+     ancho dejarían a cada uno demasiado bajo para pegarle sin mirar. */
+  .strikeRow { flex: 1 1 0; display: flex; gap: 10px; min-height: 0; }
+
+  /* ---------------------------------------------------------------- carteles encima del control */
+  #overlay {
+    position: absolute; inset: 0; z-index: 20; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 20px;
+    background: rgba(5,6,13,.86); backdrop-filter: blur(4px);
+  }
+  #overlay.show { display: flex; }
+  #overlay .big { font-size: 22px; font-weight: 800; letter-spacing: .12em; color: #35f0e0; }
+  #overlay .big.hot { color: #ff2e88; }
+  #overlay .small { color: #6b7394; font-size: 12px; max-width: 280px; line-height: 1.5; }
+
+  #flash { position: absolute; inset: 0; z-index: 15; display: none; align-items: center; justify-content: center; pointer-events: none; }
+  #flash.show { display: flex; }
+  #flash span { font-size: 34px; font-weight: 900; letter-spacing: .1em; color: #ff2e88; text-shadow: 0 0 24px rgba(255,46,136,.6); }
+
+  /* El juego se controla con los dos pulgares: en vertical los botones quedan del tamaño de una
+     moneda. No se puede forzar la rotación desde el navegador, así que se pide y se bloquea. */
+  #rotate {
+    display: none; position: fixed; inset: 0; z-index: 100; background: #05060d;
+    flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 24px;
+  }
+  #rotate .icon { width: 54px; height: 54px; border: 3px solid #35f0e0; border-radius: 8px; box-shadow: 0 0 18px rgba(53,240,224,.4); animation: turn 1.8s ease-in-out infinite; }
+  @keyframes turn { 0%, 15% { transform: rotate(0deg); } 50%, 65% { transform: rotate(-90deg); } 100% { transform: rotate(-90deg); } }
+  #rotate p { margin: 0; font-size: 15px; font-weight: 700; max-width: 220px; }
+  @media (orientation: portrait) { body.playing #rotate { display: flex; } }
+</style>
+</head>
+<body>
+
+<div id="joinScreen">
+  <h1>LAST STICK STANDING</h1>
+  <p class="sub" id="joinSub">Tu tel&eacute;fono es el control. Pon&eacute; tu nombre y el c&oacute;digo que est&aacute; en la pantalla.</p>
+  <input id="nickInput" maxlength="14" placeholder="TU NOMBRE" autocomplete="off" autocapitalize="words" />
+  <input id="codeInput" maxlength="4" placeholder="C&Oacute;DIGO" autocomplete="off" autocorrect="off" spellcheck="false" inputmode="text" />
+  <button id="joinBtn">Entrar</button>
+  <div class="err" id="joinErr"></div>
+</div>
+
+<div id="pad">
+  <div id="badge">
+    <div class="dot"></div>
+    <div>
+      <div class="nm" id="badgeName">&nbsp;</div>
+      <div class="st" id="badgeStatus">&nbsp;</div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <div class="zone">
+      <button class="btn" id="leftBtn"><span class="glyph">&#9664;</span></button>
+      <button class="btn" id="rightBtn"><span class="glyph">&#9654;</span></button>
+    </div>
+    <div class="zone action">
+      <button class="btn" id="jumpBtn">SALTAR</button>
+      <div class="strikeRow">
+        <button class="btn" id="punchBtn">PI&Ntilde;A</button>
+        <button class="btn" id="kickBtn">PATADA</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="flash"><span id="flashText">&iexcl;A PELEAR!</span></div>
+
+  <div id="overlay">
+    <div class="big" id="overlayTitle"></div>
+    <div class="small" id="overlayText"></div>
+  </div>
+</div>
+
+<div id="rotate">
+  <div class="icon"></div>
+  <p id="rotateText">Gir&aacute; el tel&eacute;fono de costado para jugar.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  function $(id) { return document.getElementById(id); }
+
+  /* ---------------------------------------------------------------- idioma */
+  /* Versión mínima del i18n de index.html: acá hay quince frases, no trescientas, así que no
+     vale la pena traerse todo el sistema de data-i18n. El criterio de detección es el mismo
+     (cualquier variante de español cae en "es"), para que la pantalla y el teléfono nunca
+     terminen hablando distinto idioma. */
+  var STRINGS = {
+    es: {
+      sub: "Tu teléfono es el control. Poné tu nombre y el código que está en la pantalla.",
+      subCode: "Tu teléfono es el control. Poné tu nombre y entrá.",
+      nick: "TU NOMBRE", code: "CÓDIGO", enter: "Entrar", entering: "Entrando…",
+      needNick: "Te falta el nombre.",
+      needCode: "Te falta el código (son 4 letras, están en la pantalla).",
+      noRoom: "Ese código no existe. Fijate bien en la pantalla.",
+      full: "El sillón está lleno: ocho y no entra uno más.",
+      offline: "Se cortó. Volviendo a entrar…",
+      dead: "No hay señal. Revisá el wifi o los datos.",
+      jump: "SALTAR", punch: "PIÑA", kick: "PATADA",
+      rotate: "Girá el teléfono de costado para jugar.",
+      stConnected: "Listo", stWaiting: "Esperando", stFight: "Peleando", stOut: "Afuera", stLost: "Sin conexión",
+      waitTitle: "YA VA A EMPEZAR",
+      waitText: "No sueltes el teléfono: arranca apenas la pantalla diga que sí.",
+      nextTitle: "ENTRÁS EN LA PRÓXIMA",
+      nextText: "Esta ya empezó sin vos. Aguantá al final de la ronda y jugás la que viene.",
+      fight: "¡A PELEAR!",
+      outTitle: "ELIMINADO",
+      outText: "Ya está. Mirá la pantalla, que los demás siguen.",
+      endTitle: "SE TERMINÓ",
+      endText: "Los resultados están en la pantalla grande.",
+      hostGoneTitle: "SE FUE LA PANTALLA",
+      hostGoneText: "Esperando que vuelva. No cierres esto.",
+      closedTitle: "CORTARON LA PARTIDA",
+      closedText: "Volvé a entrar cuando armen otra.",
+      kickedTitle: "TE SACARON DEL SILLÓN",
+      kickedText: "Podés volver a entrar con el mismo código.",
+    },
+    en: {
+      sub: "Your phone is the controller. Type your name and the code on the screen.",
+      subCode: "Your phone is the controller. Type your name and jump in.",
+      nick: "YOUR NAME", code: "CODE", enter: "Join", entering: "Joining…",
+      needNick: "Name's missing.",
+      needCode: "Code's missing (4 letters, they're on the screen).",
+      noRoom: "No such code. Take another look at the screen.",
+      full: "Couch is full: eight and not one more.",
+      offline: "Dropped. Getting back in…",
+      dead: "No signal. Check your wifi or data.",
+      jump: "JUMP", punch: "PUNCH", kick: "KICK",
+      rotate: "Turn your phone sideways to play.",
+      stConnected: "Ready", stWaiting: "Waiting", stFight: "Fighting", stOut: "Out", stLost: "Offline",
+      waitTitle: "STARTING SOON",
+      waitText: "Keep the phone handy: it starts the moment the screen says so.",
+      nextTitle: "YOU'RE IN NEXT ONE",
+      nextText: "This one started without you. Hang on till the round ends and you're in.",
+      fight: "FIGHT!",
+      outTitle: "ELIMINATED",
+      outText: "That's it. Watch the screen, the others are still at it.",
+      endTitle: "IT'S OVER",
+      endText: "Results are up on the big screen.",
+      hostGoneTitle: "THE SCREEN LEFT",
+      hostGoneText: "Waiting for it to come back. Don't close this.",
+      closedTitle: "LOCAL MATCH ENDED",
+      closedText: "Come back in when they set up another one.",
+      kickedTitle: "YOU'RE OFF THE COUCH",
+      kickedText: "You can join again with the same code.",
+    },
+  };
+  var lang = (function () {
+    var nav = (navigator.languages && navigator.languages[0]) || navigator.language || "en";
+    return String(nav).toLowerCase().indexOf("es") === 0 ? "es" : "en";
+  })();
+  function t(k) { return (STRINGS[lang] && STRINGS[lang][k]) || STRINGS.es[k] || k; }
+
+  document.documentElement.lang = lang;
+  $("nickInput").placeholder = t("nick");
+  $("codeInput").placeholder = t("code");
+  $("joinBtn").textContent = t("enter");
+  $("jumpBtn").textContent = t("jump");
+  $("punchBtn").textContent = t("punch");
+  $("kickBtn").textContent = t("kick");
+  $("flashText").textContent = t("fight");
+  $("rotateText").textContent = t("rotate");
+
+  /* ---------------------------------------------------------------- estado */
+  var ws = null;
+  var joined = false;
+  var myCode = null;
+  var myName = "";
+  var wantOpen = false;
+  var retryTimer = null;
+  var tries = 0;
+  var MAX_TRIES = 30; // ~2 minutos de intentos: lo que tarda alguien en volver del baño
+  var pending = null; // el padJoin que hay que mandar apenas abra el socket
+  var lastPhase = null;
+
+  /* El nombre se guarda para no tener que escribirlo cada vez (el mismo teléfono suele ser el
+     mismo jugador), y el token es lo que permite volver a TU lugar tras un bloqueo de pantalla
+     en vez de entrar como uno nuevo. El token va por código de sala. */
+  var NAME_KEY = "lss-pad-name";
+  var TOKEN_KEY = "lss-pad-token";
+  function store(key, v) {
+    try {
+      if (v == null) sessionStorage.removeItem(key);
+      else sessionStorage.setItem(key, v);
+    } catch (e) { /* incógnito: se sigue sin memoria, no es grave */ }
+  }
+  function recall(key) {
+    try { return sessionStorage.getItem(key); } catch (e) { return null; }
+  }
+  function savedName() {
+    try { return localStorage.getItem(NAME_KEY) || ""; } catch (e) { return ""; }
+  }
+  function saveName(v) {
+    try { localStorage.setItem(NAME_KEY, v); } catch (e) { /* sin memoria y listo */ }
+  }
+  function tokenFor(code) { return recall(TOKEN_KEY + ":" + code); }
+  function saveToken(code, token) { store(TOKEN_KEY + ":" + code, token); }
+
+  /* ---------------------------------------------------------------- pantalla */
+  function setStatus(key) { $("badgeStatus").textContent = key ? t(key) : ""; }
+
+  function showOverlay(titleKey, textKey, hot) {
+    $("overlayTitle").textContent = titleKey ? t(titleKey) : "";
+    $("overlayTitle").className = "big" + (hot ? " hot" : "");
+    $("overlayText").textContent = textKey ? t(textKey) : "";
+    $("overlay").classList.add("show");
+  }
+  function hideOverlay() { $("overlay").classList.remove("show"); }
+
+  function flash() {
+    var f = $("flash");
+    f.classList.add("show");
+    setTimeout(function () { f.classList.remove("show"); }, 900);
+  }
+
+  function enterPad() {
+    joined = true;
+    $("joinScreen").classList.add("hide");
+    $("pad").classList.add("show");
+    document.body.classList.add("playing");
+    requestWakeLock();
+  }
+  function backToJoin(errKey) {
+    joined = false;
+    document.body.classList.remove("playing");
+    $("pad").classList.remove("show");
+    $("joinScreen").classList.remove("hide");
+    $("joinBtn").disabled = false;
+    $("joinBtn").textContent = t("enter");
+    $("joinErr").textContent = errKey ? t(errKey) : "";
+  }
+
+  /* La pantalla apagada a la mitad de una ronda es la forma más tonta de perder: el teléfono se
+     bloquea solo a los 30 s y el muñeco queda parado recibiendo piñas. Donde el navegador lo
+     soporta pedimos que no se apague; donde no, no pasa nada y se juega igual. */
+  var wakeLock = null;
+  function requestWakeLock() {
+    if (!navigator.wakeLock || wakeLock) return;
+    navigator.wakeLock.request("screen").then(function (lock) {
+      wakeLock = lock;
+      lock.addEventListener("release", function () { wakeLock = null; });
+    }).catch(function () { /* lo negó el navegador o la batería está en ahorro: seguimos igual */ });
+  }
+
+  /* ---------------------------------------------------------------- red */
+  function wsUrl() {
+    return (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host;
+  }
+
+  function send(obj) {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+  }
+
+  function connect() {
+    if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
+    wantOpen = true;
+    try {
+      ws = new WebSocket(wsUrl());
+    } catch (e) {
+      backToJoin("dead");
+      return;
+    }
+
+    ws.onopen = function () {
+      tries = 0;
+      if (pending) send(pending);
+    };
+
+    ws.onmessage = function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (!msg || !msg.t) return;
+
+      if (msg.t === "padJoined") {
+        myCode = msg.code;
+        myName = msg.name;
+        saveToken(msg.code, msg.token);
+        /* A partir de acá el pending es un RE-ingreso: si el socket se cae, hay que volver a
+           entrar con el token, no como jugador nuevo. */
+        pending = { t: "padJoin", code: myCode, nick: myName, token: msg.token };
+        $("badgeName").textContent = myName;
+        setStatus("stConnected");
+        enterPad();
+        hideOverlay();
+        // Le pedimos a la pantalla que nos cuente en qué anda: si entramos con la partida ya
+        // empezada, el cartel correcto lo sabe ella, no nosotros.
+        send({ t: "padMsg", data: { t: "sync" } });
+        return;
+      }
+
+      if (msg.t === "padErr") {
+        pending = null;
+        backToJoin(msg.code === "full" ? "full" : "noRoom");
+        return;
+      }
+
+      if (msg.t === "padMsg") { onHostMessage(msg.data); return; }
+
+      if (msg.t === "padHostGone") {
+        setStatus("stLost");
+        showOverlay("hostGoneTitle", "hostGoneText", false);
+        return;
+      }
+      if (msg.t === "padHostBack") {
+        hideOverlay();
+        setStatus("stConnected");
+        send({ t: "padMsg", data: { t: "sync" } });
+        return;
+      }
+      if (msg.t === "padKicked" && msg.reason === "full") {
+        /* Entró bien al servidor pero el sillón ya tenía ocho (los teclados y los mandos el
+           servidor no los ve, así que este "lleno" solo lo puede decidir la pantalla). Es la
+           misma situación que el rechazo del servidor, así que se muestra igual: de vuelta a
+           la pantalla de entrar, con el motivo escrito. */
+        pending = null;
+        saveToken(myCode, null);
+        backToJoin("full");
+        return;
+      }
+
+      if (msg.t === "padClosed" || msg.t === "padKicked") {
+        var kicked = msg.t === "padKicked";
+        pending = null;
+        saveToken(myCode, null);
+        showOverlay(kicked ? "kickedTitle" : "closedTitle", kicked ? "kickedText" : "closedText", true);
+        setTimeout(function () {
+          hideOverlay();
+          backToJoin(null);
+        }, 2600);
+        return;
+      }
+    };
+
+    ws.onclose = function () {
+      ws = null;
+      releaseAll();
+      if (!wantOpen) return;
+      if (joined) { setStatus("stLost"); }
+      scheduleRetry();
+    };
+    ws.onerror = function () { /* onclose se encarga */ };
+  }
+
+  function scheduleRetry() {
+    if (retryTimer) return;
+    if (tries >= MAX_TRIES) {
+      backToJoin("dead");
+      return;
+    }
+    var delay = Math.min(4000, 300 * Math.pow(1.6, tries));
+    tries++;
+    retryTimer = setTimeout(function () {
+      retryTimer = null;
+      connect();
+    }, delay);
+  }
+
+  /* Mensajes que manda la pantalla (ver padSend/padPhase en online/public/index.html). */
+  function onHostMessage(data) {
+    if (!data || !data.t) return;
+
+    if (data.t === "you") {
+      // Color y nombre definitivos: los decide la pantalla, que es la que reparte los slots.
+      if (data.color) document.body.style.setProperty("--me", data.color);
+      if (data.name) { myName = data.name; $("badgeName").textContent = data.name; }
+      return;
+    }
+
+    if (data.t === "phase") {
+      lastPhase = data.phase;
+      if (data.phase === "lobby") {
+        setStatus("stWaiting");
+        showOverlay("waitTitle", "waitText", false);
+      } else if (data.phase === "pending") {
+        // Se sumó con la partida ya empezada: entra recién en la próxima.
+        setStatus("stWaiting");
+        showOverlay("nextTitle", "nextText", false);
+      } else if (data.phase === "fightIntro") {
+        setStatus("stFight");
+        hideOverlay();
+        flash();
+      } else if (data.phase === "fight" || data.phase === "roundEnd") {
+        if (data.alive === false) {
+          setStatus("stOut");
+          showOverlay("outTitle", "outText", true);
+        } else {
+          setStatus("stFight");
+          hideOverlay();
+        }
+      } else if (data.phase === "final") {
+        setStatus("stWaiting");
+        showOverlay("endTitle", "endText", false);
+      }
+      return;
+    }
+
+    if (data.t === "buzz" && navigator.vibrate) {
+      // Golpe recibido: un tirón corto. Es lo único que el teléfono "siente" de la pelea.
+      navigator.vibrate(data.long ? 90 : 25);
+    }
+  }
+
+  /* ---------------------------------------------------------------- botones */
+  var held = {};
+  function sendInput(key, down) {
+    if (held[key] === down) return; // solo los flancos, igual que un keydown/keyup
+    held[key] = down;
+    send({ t: "padInput", k: key, d: down });
+  }
+  /* Al perder la conexión (o al irse a segundo plano) hay que soltar TODO: si se cae el wifi
+     con "derecha" apretada, la pantalla nunca recibe el "soltó" y el muñeco camina solo hasta
+     el vacío. */
+  function releaseAll() {
+    Object.keys(held).forEach(function (k) {
+      if (!held[k]) return;
+      held[k] = false;
+      var el = document.querySelector("[data-key='" + k + "']");
+      if (el) el.classList.remove("down");
+    });
+  }
+
+  function bindHold(el, key) {
+    el.setAttribute("data-key", key);
+    function down(e) {
+      e.preventDefault();
+      if (held[key]) return;
+      el.classList.add("down");
+      sendInput(key, true);
+      if (navigator.vibrate) navigator.vibrate(8);
+    }
+    function up(e) {
+      if (e) e.preventDefault();
+      if (!held[key]) return;
+      el.classList.remove("down");
+      sendInput(key, false);
+    }
+    el.addEventListener("pointerdown", down);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+    el.addEventListener("pointerleave", up);
+    /* Si el dedo se va del botón mientras sigue apoyado, el pointerup cae en otro elemento y
+       este botón se quedaría trabado en "apretado" para siempre. */
+    el.addEventListener("lostpointercapture", up);
+  }
+  bindHold($("leftBtn"), "left");
+  bindHold($("rightBtn"), "right");
+  bindHold($("jumpBtn"), "jump");
+  bindHold($("punchBtn"), "punch");
+  bindHold($("kickBtn"), "kick");
+
+  /* ---------------------------------------------------------------- entrar */
+  function tryJoin() {
+    var nick = $("nickInput").value.trim();
+    var code = $("codeInput").value.trim().toUpperCase();
+    if (!nick) { $("joinErr").textContent = t("needNick"); return; }
+    if (code.length < 4) { $("joinErr").textContent = t("needCode"); return; }
+    saveName(nick);
+    myCode = code;
+    $("joinErr").textContent = "";
+    $("joinBtn").disabled = true;
+    $("joinBtn").textContent = t("entering");
+    pending = { t: "padJoin", code: code, nick: nick, token: tokenFor(code) || undefined };
+    if (ws && ws.readyState === 1) send(pending);
+    else connect();
+  }
+  $("joinBtn").addEventListener("click", tryJoin);
+  $("codeInput").addEventListener("keydown", function (e) { if (e.key === "Enter") tryJoin(); });
+  $("nickInput").addEventListener("keydown", function (e) { if (e.key === "Enter") $("codeInput").focus(); });
+
+  /* El QR de la pantalla trae el código en la URL, así que escanear alcanza: solo queda poner
+     el nombre. Tipear "/pad" a mano sigue funcionando, con el campo del código vacío. */
+  var fromUrl = (location.search.match(/[?&]c=([A-Za-z0-9]{1,8})/) || [])[1];
+  if (fromUrl) {
+    $("codeInput").value = fromUrl.toUpperCase();
+    $("joinSub").textContent = t("subCode");
+  } else {
+    $("joinSub").textContent = t("sub");
+  }
+  $("nickInput").value = savedName();
+  if (!$("nickInput").value) $("nickInput").focus();
+
+  /* Volver de tener el teléfono bloqueado o en otra app: puede haberse caído el socket sin que
+     nos enteremos, y seguro nos perdimos el último cartel que mandó la pantalla. */
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState !== "visible") {
+      releaseAll();
+      return;
+    }
+    requestWakeLock();
+    if (!joined) return;
+    if (!ws || ws.readyState !== 1) { tries = 0; connect(); }
+    else send({ t: "padMsg", data: { t: "sync" } });
+  });
+})();
+</script>
+</body>
+</html>

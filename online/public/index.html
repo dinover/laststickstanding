@@ -365,6 +365,25 @@
     flex: none; width: 22px; height: 22px; padding: 0; border-radius: 6px;
     background: transparent; border: 1px solid #2a3050; color: #ff5e7a; box-shadow: none; font-size: 13px;
   }
+  /* --- celulares como control (tarjeta aparte, padCard) ---
+     El QR vive en su propia tarjeta y no adentro del setup local por una razón de tamaño: hay
+     que poder escanearlo desde el sillón, a dos metros de la pantalla, y un QR chiquito metido
+     entre el roster y los botones no se lee. Además el setup ya venía justo de alto con 8
+     jugadores (ver .rosterList.wide). */
+  .padQrWrap { display: flex; justify-content: center; margin: 6px 0 10px; }
+  #padQr { background: #fff; border-radius: 10px; padding: 8px; width: 190px; height: 190px; }
+  .padUrl {
+    font-size: 13px; color: #eaf0ff; background: #12162a; border: 1px solid #2a3050;
+    border-radius: 8px; padding: 9px 10px; word-break: break-all; letter-spacing: .02em;
+  }
+  .padHint { color: #6b7394; font-size: 11px; margin: 8px 0 0; line-height: 1.5; }
+  /* Estado de cada celular ya conectado, en la tarjeta del QR: sirve para saber si el que
+     acaba de escanear entró de verdad, sin tener que volver al roster. */
+  .padPeers { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 12px 0 0; }
+  .padPeers .peer { font-size: 12px; padding: 5px 10px; border-radius: 999px; border: 1px solid #2a3050; background: #12162a; }
+  .padPeers .peer.off { opacity: .45; text-decoration: line-through; }
+  .padPeers .none { color: #6b7394; font-size: 12px; }
+
   #localAddRow { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
   #localAddRow button {
     padding: 6px 10px; font-size: 12px; background: transparent; color: #35f0e0;
@@ -525,7 +544,7 @@
 
       <button type="button" class="modeOption" id="originLocalBtn">
         <strong data-i18n="origin.local">Local</strong>
-        <span class="desc" data-i18n="origin.localDesc">Hasta 8 en esta misma PC: dos se pelean el teclado, el resto con mando.</span>
+        <span class="desc" data-i18n="origin.localDesc">Hasta 8 en esta misma PC: teclado, mandos y los celulares de cada uno.</span>
       </button>
       <!-- "Online" ya crea la sala en el acto, así que los errores del servidor (sin códigos
            libres, sin conexión) tienen que aparecer ACÁ: la tarjeta principal, donde iban antes,
@@ -541,9 +560,12 @@
       <p class="modeLabel" data-i18n="room.modeLabel">MODO DE JUEGO</p>
       <div class="modeChips" id="localModeChips"></div>
       <p class="sub" id="localModeSummary" style="margin:0 0 10px"></p>
-      <p class="sub" data-i18n="local.addPlayers">Sum&aacute; hasta 8 al sill&oacute;n, con teclado o con mando:</p>
+      <p class="sub" data-i18n="local.addPlayers">Sum&aacute; hasta 8 al sill&oacute;n: teclado, mando o celular.</p>
       <div class="rosterList" id="localRoster"></div>
+      <!-- Tres fuentes de input conviven acá: los dos teclados, los mandos, y (padOpenBtn, que
+           arma renderLocalAddRow) los celulares. -->
       <div id="localAddRow"></div>
+      <p class="padHint" id="padHint" style="display:none"></p>
       <div class="roundsRow" id="localRoundsRow" style="display:none">
         <button class="ghost" id="localMinusBtn" type="button">&minus;</button>
         <span id="localRoundsN">3</span> <span data-i18n="word.rounds">rondas</span>
@@ -552,6 +574,21 @@
       <button id="localStartBtn" style="width:100%; margin-top: 10px;" disabled data-i18n="common.startMatch">&iexcl;A pelear!</button>
       <div class="err" id="localErr"></div>
       <div class="hint" data-i18n-html="local.hint">Teclado 1: A/D mover &middot; ESPACIO/W saltar &middot; J pi&ntilde;a &middot; K patada<br>Teclado 2: &larr;/&rarr; mover &middot; &uarr;/CTRL saltar &middot; . pi&ntilde;a &middot; / patada</div>
+    </div>
+
+    <!-- Celulares como control del modo Local. Se llega desde el setup local (padOpenBtn) y se
+         vuelve con el link de abajo; la sala de mandos NO se cierra al volver — el que escanea
+         puede entrar mientras el resto ya está eligiendo modo o incluso peleando. -->
+    <div class="card" id="padCard" style="display:none">
+      <p class="sub" data-i18n="pad.scan">Que cada uno escanee esto con la c&aacute;mara del celular:</p>
+      <div class="padQrWrap"><canvas id="padQr" width="440" height="440"></canvas></div>
+      <p class="sub" style="margin:0 0 6px" data-i18n="pad.orType">O que entren a mano a esta direcci&oacute;n y pongan el c&oacute;digo:</p>
+      <div class="padUrl" id="padUrl">&hellip;</div>
+      <div class="codeShow" id="padCode">----</div>
+      <div class="padPeers" id="padPeers"></div>
+      <p class="padHint" id="padCardHint" data-i18n="pad.hint">Tienen que estar en internet, no hace falta que compartan wifi.</p>
+      <div class="err" id="padErr"></div>
+      <a class="back" id="padBackLink" href="#" data-i18n="pad.back">&lsaquo; volver al sill&oacute;n</a>
     </div>
 
     <div class="card" id="roomCard" style="display:none">
@@ -613,6 +650,10 @@
 <script src="/balance.js"></script>
 <script src="/sim.js"></script>
 <script src="/net-ws.js"></script>
+<!-- Celulares como control del modo Local: el QR con el link y el lado "pantalla" del relay.
+     Los dos solo se usan ahí; el resto del juego anda igual si no se cargan. -->
+<script src="/qr.js"></script>
+<script src="/pad-host.js"></script>
 <script>
 (function () {
   "use strict";
@@ -692,7 +733,7 @@
       "origin.online": "Online",
       "origin.onlineDesc": "Se arma una sala con código: lo pasás y se suman desde donde estén.",
       "origin.local": "Local",
-      "origin.localDesc": "Hasta 8 en esta misma PC: dos se pelean el teclado, el resto con mando.",
+      "origin.localDesc": "Hasta 8 en esta misma PC: teclado, mandos y los celulares de cada uno.",
 
       "mode.rounds": "Por rondas",
       "mode.roundsDesc": "Se juegan las rondas que digas y se cuenta al final. El clásico.",
@@ -718,15 +759,32 @@
 
       "common.startMatch": "¡A pelear!",
 
-      "local.addPlayers": "Sumá hasta 8 al sillón, con teclado o con mando:",
+      "local.addPlayers": "Sumá hasta 8 al sillón: teclado, mando o celular.",
       "local.hint": "Teclado 1: A/D mover · ESPACIO/W saltar · J piña · K patada<br>Teclado 2: ←/→ mover · ↑/CTRL saltar · . piña · / patada",
       "local.full": "Sillón lleno (8/8), no entra nadie más.",
-      "local.noSources": "No queda con qué jugar. Enchufá un mando y tocale un botón para que aparezca.",
       "local.needTwo": "Solo no se puede pelear: sumá a alguien más.",
       "local.keyboard": "Teclado {n}",
       "local.gamepad": "Mando {n}",
       "local.addKeyboard": "+ Teclado {n}",
       "local.addGamepad": "+ Mando {n}",
+      "local.phone": "Celular",
+      "local.phoneOff": "Celular (sin señal)",
+
+      /* --- celulares como control (padCard) --- */
+      "pad.open": "📱 Celular",
+      "pad.scan": "Que cada uno escanee esto con la cámara del celular:",
+      "pad.orType": "O que entren a mano a esta dirección y pongan el código:",
+      "pad.hint": "Tienen que tener internet; no hace falta que compartan el wifi con esta máquina.",
+      "pad.back": "‹ volver al sillón",
+      "pad.opening": "Abriendo la sala de mandos…",
+      "pad.waiting": "Esperando que alguien escanee…",
+      "pad.none": "todavía no entró ninguno",
+      "pad.count": "{n} celular conectado",
+      "pad.countN": "{n} celulares conectados",
+      "pad.reconnecting": "Se cortó con el servidor. Volviendo a levantar la sala de mandos…",
+      "pad.failed": "No se pudo abrir la sala de mandos. Fijate la conexión y probá de nuevo.",
+      "pad.roomHint": "Sala de mandos {code}",
+      "pad.full": "El sillón ya está lleno (8/8).",
 
       "room.share": "Pasá este código y que se sumen:",
       "room.modeLabel": "MODO DE JUEGO",
@@ -843,7 +901,7 @@
       "origin.online": "Online",
       "origin.onlineDesc": "You get a room with a code: pass it around and they join from wherever they are.",
       "origin.local": "Local",
-      "origin.localDesc": "Up to 8 on this one PC: two fight over the keyboard, the rest bring controllers.",
+      "origin.localDesc": "Up to 8 on this one PC: keyboard, controllers, and everyone's phone.",
 
       "mode.rounds": "By rounds",
       "mode.roundsDesc": "Play the number of rounds you set, count them up at the end. The classic.",
@@ -869,15 +927,31 @@
 
       "common.startMatch": "Let's brawl!",
 
-      "local.addPlayers": "Fill the couch, up to 8, on keyboard or controller:",
+      "local.addPlayers": "Fill the couch, up to 8: keyboard, controller or phone.",
       "local.hint": "Keyboard 1: A/D move · SPACE/W jump · J punch · K kick<br>Keyboard 2: ←/→ move · ↑/CTRL jump · . punch · / kick",
       "local.full": "Couch is full (8/8), nobody else fits.",
-      "local.noSources": "Nothing left to play with. Plug in a controller and press a button to make it show up.",
       "local.needTwo": "You can't brawl alone: add someone else.",
       "local.keyboard": "Keyboard {n}",
       "local.gamepad": "Controller {n}",
       "local.addKeyboard": "+ Keyboard {n}",
       "local.addGamepad": "+ Controller {n}",
+      "local.phone": "Phone",
+      "local.phoneOff": "Phone (offline)",
+
+      "pad.open": "📱 Phone",
+      "pad.scan": "Everyone points their phone camera at this:",
+      "pad.orType": "Or they open this address by hand and type the code:",
+      "pad.hint": "They need internet; they don't have to share this machine's wifi.",
+      "pad.back": "‹ back to the couch",
+      "pad.opening": "Opening the controller room…",
+      "pad.waiting": "Waiting for someone to scan…",
+      "pad.none": "nobody's in yet",
+      "pad.count": "{n} phone connected",
+      "pad.countN": "{n} phones connected",
+      "pad.reconnecting": "Lost the server. Bringing the controller room back up…",
+      "pad.failed": "Couldn't open the controller room. Check the connection and try again.",
+      "pad.roomHint": "Controller room {code}",
+      "pad.full": "The couch is already full (8/8).",
 
       "room.share": "Pass this code around:",
       "room.modeLabel": "GAME MODE",
@@ -1315,10 +1389,12 @@
       renderRoster(lastLobbyMsg.players, lastLobbyMsg.owner);
     }
     if ($("customizeCard").style.display === "block") renderHats();
+    if ($("padCard").style.display === "block") renderPadCard();
     if ($("localSetupCard").style.display === "block") {
       renderLocalModeSummary();
       renderLocalRoster();
       renderLocalAddRow();
+      renderPadHint();
     }
     // Solo si está a la vista: showFinal() vuelve a mostrar la pantalla, así que llamarlo con un
     // final viejo ya cerrado la reabriría encima de la partida en curso.
@@ -1872,24 +1948,41 @@
   function relabelAutoLocalNames() {
     localPlayers.forEach(function (p, i) { if (p.auto) p.name = localAutoName(i); });
   }
-  function addLocalPlayer(source) {
+  /* `name` solo llega desde un celular: ahí el jugador ya escribió cómo se llama en su propio
+     teléfono, así que sería absurdo sentarlo como "Jugador 4". Teclados y mandos siguen entrando
+     con el nombre automático, editable en el roster como siempre. */
+  function addLocalPlayer(source, name) {
     var id = nextFreeLocalId();
-    if (id === -1) return;
-    localPlayers.push({
-      id: id, name: localAutoName(localPlayers.length), auto: true,
+    if (id === -1) return null;
+    var player = {
+      id: id, name: name || localAutoName(localPlayers.length), auto: !name,
       color: PLAYER_COLORS[id % PLAYER_COLORS.length], source: source,
       /* El accesorio guardado es de quien está sentado frente a la máquina, así que se lo
          queda el primero que se suma; los demás arrancan pelados. En local no hay una
          pantalla de personalización por jugador y no vale la pena inventarla: el color por
          slot ya alcanza para saber quién es quién en el mismo sillón. */
       hat: localPlayers.length === 0 ? myHat : "none",
-    });
+    };
+    localPlayers.push(player);
     renderLocalRoster();
     renderLocalAddRow();
+    return player;
   }
   function removeLocalPlayer(id) {
+    var gone = localPlayers.filter(function (p) { return p.id === id; })[0];
     localPlayers = localPlayers.filter(function (p) { return p.id !== id; });
     delete localGamepadPrev[id];
+    /* Si al que sacaron era un celular, hay que avisarle: su dueño está mirando un control que
+       a partir de ahora no mueve nada. El servidor le libera el lugar en el acto (no es una
+       caída, es una decisión) y el teléfono vuelve a la pantalla de "entrar con código". */
+    if (gone && gone.source.type === "pad") {
+      PadHost.kick(gone.source.pad, "removed");
+      delete padPeers[gone.source.pad];
+      delete padSent[gone.source.pad];
+      delete padHp[gone.source.pad];
+      renderPadPeers();
+      renderPadHint();
+    }
     renderLocalRoster();
     renderLocalAddRow();
   }
@@ -1907,17 +2000,27 @@
   function renderLocalRoster() {
     var list = $("localRoster");
     list.innerHTML = "";
+    list.classList.toggle("wide", localPlayers.length > 4); // ver .rosterList.wide en el CSS
     localPlayers.forEach(function (p) {
-      var srcLabel = p.source.type === "kb"
-        ? t("local.keyboard", { n: p.source.slot })
-        : t("local.gamepad", { n: p.source.index + 1 });
+      var srcLabel;
+      if (p.source.type === "kb") srcLabel = t("local.keyboard", { n: p.source.slot });
+      else if (p.source.type === "gp") srcLabel = t("local.gamepad", { n: p.source.index + 1 });
+      // Un celular con la pantalla apagada sigue en el sillón (vuelve solo al desbloquearlo),
+      // pero conviene que se note: si nadie mueve a ese palito, ahí está el motivo.
+      else srcLabel = t(p.padOff ? "local.phoneOff" : "local.phone");
       var row = document.createElement("div");
       row.className = "localRow";
       var dot = document.createElement("div");
       dot.className = "dot"; dot.style.color = p.color; dot.style.background = p.color;
       var input = document.createElement("input");
       input.maxLength = 14; input.value = p.name;
-      input.addEventListener("input", function () { p.name = input.value.trim() || p.name; p.auto = false; });
+      input.addEventListener("input", function () {
+        p.name = input.value.trim() || p.name;
+        p.auto = false;
+        // Si lo rebautizaron desde acá, que el teléfono muestre el nombre nuevo y no el que
+        // había escrito su dueño: el que manda es el roster que se ve en la pantalla grande.
+        if (p.source.type === "pad") { padIdentify(p); renderPadPeers(); }
+      });
       var src = document.createElement("span");
       src.className = "src"; src.textContent = srcLabel;
       var rm = document.createElement("button");
@@ -1943,27 +2046,31 @@
       $("localStartBtn").disabled = false;
       return;
     }
-    var any = false;
     if (!localHasKbSlot(1)) {
-      any = true;
       addRow.appendChild(makeLocalAddBtn(t("local.addKeyboard", { n: 1 }), function () { addLocalPlayer({ type: "kb", slot: 1 }); }));
     }
     if (!localHasKbSlot(2)) {
-      any = true;
       addRow.appendChild(makeLocalAddBtn(t("local.addKeyboard", { n: 2 }), function () { addLocalPlayer({ type: "kb", slot: 2 }); }));
     }
     var used = localUsedGamepadIndexes();
     connectedGamepadIndexes().forEach(function (idx) {
       if (used.indexOf(idx) !== -1) return;
-      any = true;
       addRow.appendChild(makeLocalAddBtn(t("local.addGamepad", { n: idx + 1 }), function () { addLocalPlayer({ type: "gp", index: idx }); }));
     });
-    if (!any) {
-      var none = document.createElement("div");
-      none.className = "none";
-      none.textContent = t("local.noSources");
-      addRow.appendChild(none);
-    }
+    /* Siempre disponible: no depende de que haya algo enchufado a esta máquina, que es
+       justamente la gracia. Por eso tampoco existe más el cartel de "no queda con qué jugar" —
+       con los celulares, siempre queda. */
+    var padBtn = makeLocalAddBtn(t("pad.open"), function () {
+      $("localSetupCard").style.display = "none";
+      $("padCard").style.display = "block";
+      // padCard tiene su propio "volver": dejar además el link global sería ofrecer dos veces
+      // lo mismo, y encima cada uno llevaría a un lado distinto.
+      $("backLink").style.display = "none";
+      openPadRoom();
+      renderPadCard();
+    });
+    padBtn.id = "padOpenBtn";
+    addRow.appendChild(padBtn);
     $("localStartBtn").disabled = localPlayers.length < 2;
   }
 
@@ -2005,10 +2112,12 @@
     localGamepadPrev = {};
 
     Sim.resetToLobby();
-    localPlayers.forEach(function (p) { Sim.addPlayer(p.id); });
+    localMatchIds = {};
+    localPlayers.forEach(function (p) { Sim.addPlayer(p.id); localMatchIds[p.id] = true; });
     // El segundo parámetro es el modo caracol de desktop/sim.js: acá ya no se ofrece, pero la
     // firma es compartida con el build de escritorio, así que va false y listo.
     Sim.startMatch(totalRoundsPick, false, { mode: selectedMode });
+    padSent = {}; padHp = {}; // que el próximo syncPads() les mande el cartel nuevo a todos
 
     stopLocalSetupPoll();
     $("originCard").style.display = "none";
@@ -2030,12 +2139,24 @@
     $("roundBanner").classList.remove("show");
     localGamepadPrev = {};
     Sim.resetToLobby();
-    localPlayers.forEach(function (p) { Sim.addPlayer(p.id); });
+    /* El sillón puede haber cambiado desde la partida anterior: los celulares que se sumaron a
+       mitad de la última ronda estaban esperando justamente esta revancha para entrar. Por eso
+       se rearman también names/colors/hats y no solo el roster del Sim. */
+    names = {}; colors = {}; hats = {};
+    localMatchIds = {};
+    localPlayers.forEach(function (p) {
+      names[p.id] = p.name; colors[p.id] = p.color; hats[p.id] = p.hat;
+      Sim.addPlayer(p.id);
+      localMatchIds[p.id] = true;
+    });
     Sim.startMatch(totalRoundsPick, false, { mode: selectedMode });
+    padSent = {}; padHp = {};
   }
 
   function exitLocal() {
     localActive = false;
+    closePadRoom();
+    localMatchIds = {};
     Sim.resetToLobby();
     myId = null;
     names = {}; colors = {}; hats = {};
@@ -2095,6 +2216,274 @@
       });
       localGamepadPrev[p.id] = cur;
     });
+  }
+
+  /* ---------------------------------------------------------------- celulares como control */
+  /* Tercera fuente de input del modo Local, además de los dos teclados y los mandos. La
+     simulación sigue corriendo acá (nada de esto toca el Sim del servidor): el celular manda
+     "apreté izquierda" y esta máquina lo enchufa a Sim.handleInput exactamente igual que si
+     fuera una tecla. Ver online/public/pad-host.js (el cable) y pad.html (lo que se abre en el
+     teléfono).
+
+     Consecuencia práctica: no hace falta que los teléfonos estén en el mismo wifi. Van al mismo
+     servidor que el resto del juego, así que el que está de visita con datos móviles también
+     juega. */
+  var padRoomOpen = false;
+  var padWired = false;
+  var padPeers = {};      // padId -> { name, connected }; lo que muestra la tarjeta del QR
+  var padSent = {};       // padId -> último estado mandado, para no repetir el mismo cartel
+  var padHp = {};         // padId -> hp del frame anterior (para el tirón al recibir un golpe)
+  var padBuzzT = {};      // padId -> cuándo fue el último tirón, para no vibrar sin parar
+  /* Quiénes entraron DE VERDAD a la partida en curso. No alcanza con localPlayers: un celular
+     que se suma con la pelea empezada queda en el sillón pero no en el Sim (agregarlo a mitad de
+     ronda sería un muñeco cayendo del cielo), así que sus botones no tienen que hacer nada hasta
+     la próxima. Y ojo con eso: Sim.handleInput() crea el jugador si no existe (ensurePlayer),
+     o sea que reenviarle input a alguien fuera de la partida METE un fantasma en el mapa. */
+  var localMatchIds = {};
+
+  function padPlayerFor(padId) {
+    for (var i = 0; i < localPlayers.length; i++) {
+      var p = localPlayers[i];
+      if (p.source.type === "pad" && p.source.pad === padId) return p;
+    }
+    return null;
+  }
+
+  function padCount() {
+    var n = 0;
+    for (var id in padPeers) if (padPeers[id] && padPeers[id].connected) n++;
+    return n;
+  }
+
+  /* Le dice a un teléfono quién es: nombre y color del slot que le tocó. El color es lo que
+     hace que mirando el teléfono sepas cuál de los ocho palitos sos. */
+  function padIdentify(p) {
+    if (!p || p.source.type !== "pad") return;
+    PadHost.sendTo(p.source.pad, { t: "you", name: p.name, color: p.color });
+  }
+
+  function padStateFor(p) {
+    if (!localActive) return { phase: "lobby" };
+    if (!localMatchIds[p.id]) return { phase: "pending" }; // se sumó tarde: juega la próxima
+    var sp = Sim.getPlayers()[p.id];
+    return { phase: Sim.getPhase(), alive: !sp || sp.alive !== false };
+  }
+
+  /* Un solo lugar que mantiene a los teléfonos al día, llamado desde frameLoop. Es polling y no
+     eventos a propósito: las cosas que le importan al que mira su teléfono (¿ya empezó?, ¿me
+     mataron?) salen de un estado que cambia adentro de la simulación, no de mensajes que
+     podamos interceptar. Solo se manda cuando el estado CAMBIA, así que en reposo no cuesta
+     nada. */
+  function syncPads() {
+    if (!padRoomOpen) return;
+    var now = performance.now();
+    for (var i = 0; i < localPlayers.length; i++) {
+      var p = localPlayers[i];
+      if (p.source.type !== "pad") continue;
+      var pad = p.source.pad;
+      var st = padStateFor(p);
+      var key = st.phase + "|" + (st.alive === false ? "0" : "1");
+      if (padSent[pad] !== key) {
+        padSent[pad] = key;
+        PadHost.sendTo(pad, { t: "phase", phase: st.phase, alive: st.alive !== false });
+      }
+      if (!localActive || !localMatchIds[p.id]) { delete padHp[pad]; continue; }
+      var sp = Sim.getPlayers()[p.id];
+      if (!sp) continue;
+      var prev = padHp[pad];
+      /* El quemado de la lava resta vida tick a tick: sin el corte por tiempo, el teléfono
+         vibraría sin parar durante todo el rato que dura. */
+      if (prev != null && sp.hp < prev - 0.5 && now - (padBuzzT[pad] || 0) > 300) {
+        padBuzzT[pad] = now;
+        PadHost.sendTo(pad, { t: "buzz", long: !sp.alive });
+      }
+      padHp[pad] = sp.hp;
+    }
+  }
+
+  /* Al perder el celular (pantalla bloqueada, wifi que se cae) hay que soltarle todo: si se fue
+     con "derecha" apretada, el muñeco sigue caminando solo hasta el vacío. Mismo criterio que
+     clearInputs() del servidor cuando alguien se reconecta. */
+  function padReleaseInputs(p) {
+    if (!localActive || !localMatchIds[p.id]) return;
+    ["left", "right", "jump", "punch", "kick"].forEach(function (k) {
+      Sim.handleInput(p.id, k, false);
+    });
+  }
+
+  function renderPadPeers() {
+    var box = $("padPeers");
+    if (!box) return;
+    box.innerHTML = "";
+    var ids = Object.keys(padPeers);
+    if (!ids.length) {
+      var none = document.createElement("div");
+      none.className = "none";
+      none.textContent = padRoomOpen ? t("pad.waiting") : t("pad.opening");
+      box.appendChild(none);
+      return;
+    }
+    ids.forEach(function (id) {
+      var peer = padPeers[id];
+      var el = document.createElement("div");
+      el.className = "peer" + (peer.connected ? "" : " off");
+      var p = padPlayerFor(Number(id));
+      el.textContent = (p && p.name) || peer.name;
+      if (p) el.style.borderColor = p.color;
+      box.appendChild(el);
+    });
+  }
+
+  /* Línea de estado en el setup local, para el que ya cerró la tarjeta del QR y quiere saber si
+     la sala sigue en pie y cuánta gente entró. */
+  function renderPadHint() {
+    var hint = $("padHint");
+    if (!padRoomOpen) {
+      hint.style.display = "none";
+      return;
+    }
+    var n = padCount();
+    hint.textContent = t("pad.roomHint", { code: PadHost.getCode() || "----" }) + " · " +
+      (n ? t(n === 1 ? "pad.count" : "pad.countN", { n: n }) : t("pad.none"));
+    hint.style.display = "block";
+  }
+
+  function renderPadCard() {
+    var code = PadHost.getCode();
+    $("padCode").textContent = code || "----";
+    var url = PadHost.joinUrl();
+    // Sin el "https://" adelante: lo que hay que tipear en el celular es lo de después, y el
+    // esquema solo hace más larga una dirección que alguien va a copiar mirando la pantalla.
+    $("padUrl").textContent = url.replace(/^https?:\/\//, "");
+    if (code) {
+      var ok = QR.draw($("padQr"), url, { dark: "#05060d", light: "#ffffff" });
+      // Si QR.draw fallara (link larguísimo), queda el código a mano, que igual alcanza.
+      if (!ok) $("padQr").style.display = "none";
+      else $("padQr").style.display = "";
+    }
+    renderPadPeers();
+    renderPadHint();
+  }
+
+  function wirePadHost() {
+    if (padWired) return;
+    padWired = true;
+
+    PadHost.on("created", function (info) {
+      padRoomOpen = true;
+      $("padErr").textContent = "";
+      /* Sala recuperada tras un F5 de esta pantalla: los teléfonos siguieron conectados del
+         otro lado, así que hay que volver a sentarlos en el sillón. */
+      (info.pads || []).forEach(function (peer) {
+        padPeers[peer.pad] = { name: peer.name, connected: peer.connected };
+        if (!padPlayerFor(peer.pad) && localPlayers.length < LOCAL_MAX) {
+          addLocalPlayer({ type: "pad", pad: peer.pad }, peer.name);
+        }
+        var p = padPlayerFor(peer.pad);
+        if (p) { p.padOff = !peer.connected; padIdentify(p); }
+      });
+      padSent = {};
+      renderLocalRoster();
+      renderLocalAddRow();
+      renderPadCard();
+    });
+
+    PadHost.on("join", function (msg) {
+      padPeers[msg.pad] = { name: msg.name, connected: true };
+      var p = padPlayerFor(msg.pad);
+      if (!p) {
+        if (localPlayers.length >= LOCAL_MAX) {
+          // El sillón está lleno: mejor decírselo al teléfono que dejarlo con un control que no
+          // mueve nada. El motivo viaja para que muestre el cartel correcto.
+          PadHost.kick(msg.pad, "full");
+          delete padPeers[msg.pad];
+          $("padErr").textContent = t("pad.full");
+          renderPadPeers();
+          return;
+        }
+        p = addLocalPlayer({ type: "pad", pad: msg.pad }, msg.name);
+      } else {
+        p.padOff = false;
+        if (msg.name) { p.name = msg.name; p.auto = false; }
+        renderLocalRoster();
+      }
+      padSent[msg.pad] = null; // que reciba el cartel de la fase actual, aunque no haya cambiado
+      padIdentify(p);
+      syncPads();
+      renderPadPeers();
+      renderPadHint();
+      renderLocalAddRow(); // el botón de empezar depende de cuánta gente hay
+    });
+
+    PadHost.on("leave", function (msg) {
+      if (padPeers[msg.pad]) padPeers[msg.pad].connected = false;
+      var p = padPlayerFor(msg.pad);
+      if (p) {
+        p.padOff = true;
+        padReleaseInputs(p);
+        renderLocalRoster();
+      }
+      renderPadPeers();
+      renderPadHint();
+    });
+
+    /* Se le venció la gracia: ese teléfono no vuelve. Sale del sillón. Si la partida está en
+       curso su muñeco queda igual dando vueltas (sacarlo del Sim a mitad de ronda deja la ronda
+       trabada, mismo problema que dropBody() en el servidor), pero no lo arrastramos a la
+       revancha. */
+    PadHost.on("gone", function (msg) {
+      delete padPeers[msg.pad];
+      var p = padPlayerFor(msg.pad);
+      if (p) removeLocalPlayer(p.id);
+      renderPadPeers();
+      renderPadHint();
+    });
+
+    PadHost.on("input", function (msg) {
+      var p = padPlayerFor(msg.pad);
+      if (!p) return;
+      if (!localActive || !localMatchIds[p.id]) return; // ver el comentario de localMatchIds
+      Sim.handleInput(p.id, msg.k, !!msg.d);
+    });
+
+    PadHost.on("msg", function (msg) {
+      // Único mensaje que mandan los teléfonos por su cuenta: "me desperté, ¿en qué andábamos?".
+      if (msg.data && msg.data.t === "sync") {
+        padSent[msg.pad] = null;
+        syncPads();
+      }
+    });
+
+    PadHost.on("status", function (state) {
+      if (state === "ready") { $("padErr").textContent = ""; return; }
+      if (state === "reconnecting") { $("padErr").textContent = t("pad.reconnecting"); return; }
+      if (state === "error") {
+        padRoomOpen = false;
+        $("padErr").textContent = t("pad.failed");
+        renderPadHint();
+      }
+    });
+  }
+
+  function openPadRoom() {
+    wirePadHost();
+    if (!padRoomOpen) PadHost.open();
+  }
+
+  /* Cerrar la sala de mandos cuando se abandona el modo Local. Dejarla viva significaría ocho
+     personas con un control en la mano que ya no mueve nada, y una sala colgada en el servidor
+     hasta que venza sola. */
+  function closePadRoom() {
+    if (!padRoomOpen && !PadHost.getCode()) return;
+    PadHost.close();
+    padRoomOpen = false;
+    padPeers = {};
+    padSent = {};
+    padHp = {};
+    localPlayers = localPlayers.filter(function (p) { return p.source.type !== "pad"; });
+    renderLocalRoster();
+    renderLocalAddRow();
+    renderPadHint();
   }
 
   /* ---------------------------------------------------------------- personalización del stick */
@@ -2253,6 +2642,10 @@
   function frameLoop(now) {
     var frameDt = Math.min(40, Math.max(0, now - lastFrame));
     lastFrame = now;
+
+    // Celulares-control: se hace la boba si no hay sala de mandos abierta (o sea, siempre que
+    // no se esté jugando en modo Local con teléfonos).
+    syncPads();
 
     if (practiceActive) {
       practiceAiTick(frameDt);
@@ -2690,6 +3083,7 @@
     // práctica arriba — un solo paso atrás, no directo al inicio.
     if ($("localSetupCard").style.display === "block") {
       stopLocalSetupPoll();
+      closePadRoom();
       $("localSetupCard").style.display = "none";
       $("originCard").style.display = "block";
       return;
@@ -2758,6 +3152,16 @@
   });
   $("roomPlusBtn").addEventListener("click", function () {
     Net.setRounds(Math.min(20, roomRoundsPick + 1));
+  });
+
+  $("padBackLink").addEventListener("click", function (e) {
+    e.preventDefault();
+    $("padCard").style.display = "none";
+    $("localSetupCard").style.display = "block";
+    $("backLink").style.display = "inline";
+    renderLocalRoster();
+    renderLocalAddRow();
+    renderPadHint();
   });
 
   $("localStartBtn").addEventListener("click", startLocalMatch);

@@ -220,6 +220,58 @@ otra sala al toque, sin recargar la página. Si eras el dueño, la sala le pasa 
 próximo conectado; si eras el último, la sala queda con gracia de 60s por si alguien vuelve a
 entrar con el código (mismo comportamiento que ya existía para una desconexión).
 
+## Celulares como control del modo Local
+
+El modo Local (hasta 8 en la misma máquina) tenía dos fuentes de input: dos esquemas de teclado
+y los mandos. Ahora hay una tercera, el celular de cada uno, con la misma idea de una consola de
+living: la pantalla grande muestra y el teléfono es el joystick.
+
+**Lo importante: la simulación NO se mueve de lugar.** En modo Local el `Sim` sigue corriendo en
+el navegador que tiene el juego a la vista; el servidor no simula nada, solo pasa mensajes. Por
+eso el código vive en un mapa aparte (`padRooms`) que no comparte absolutamente nada con las
+salas de partida (`rooms`): no hay sim, ni roster, ni puntaje, ni fases que validar.
+
+Flujo completo:
+
+1. En el setup Local, **📱 Sumar celulares** abre `padCard`: un QR grande, la dirección escrita
+   y un código de 4 letras. El QR lo genera `public/qr.js` (implementación propia, modo byte,
+   corrección M, versiones 1 a 10) para no depender de un CDN ni de una dependencia npm.
+2. Cada teléfono abre `/pad` (la URL del QR ya lleva `?c=CÓDIGO`, así que escanear alcanza),
+   escribe su nombre y entra. Aparece solo en el roster del sillón, con el color del slot que le
+   tocó, y ese mismo color le tiñe el control del teléfono — mirando el teléfono sabés cuál de
+   los ocho palitos sos.
+3. Sus botones llegan al anfitrión como `{t:"padInput", pad, k, d}` y se enchufan derecho a
+   `Sim.handleInput()`, exactamente igual que una tecla.
+
+**No hace falta compartir wifi.** Los teléfonos hablan con el mismo servidor que el resto del
+juego, así que el que está de visita con datos móviles entra igual.
+
+Detalles que cuestan caro si se pasan por alto:
+
+- **`Sim.handleInput()` crea el jugador si no existe** (`ensurePlayer`). Un celular que se suma
+  con la pelea ya empezada queda en el sillón pero NO en la partida (`localMatchIds`), y su
+  input se descarta hasta la revancha; reenviárselo al Sim metería un muñeco fantasma en el mapa.
+  El teléfono, mientras tanto, muestra "entrás en la próxima".
+- **Al perder un celular hay que soltarle todo.** Si se bloquea la pantalla con "derecha"
+  apretada, el anfitrión nunca recibe el "soltó" y el muñeco camina solo hasta el vacío
+  (`padReleaseInputs`, mismo criterio que `clearInputs()` del servidor al reconectar).
+- **Los teléfonos se reconectan con token**, como los jugadores de una sala online, pero con una
+  gracia más larga (120 s contra 30 s): un celular se apaga la pantalla solo a los 30 segundos y
+  perder el lugar por eso sería absurdo. El teléfono además pide `screen.wakeLock` para que no
+  se apague en medio de una ronda.
+- **La pantalla también se recupera de un F5**: el anfitrión guarda su token en `sessionStorage`
+  y al volver reclama la MISMA sala, con la misma gente adentro y el mismo código (los teléfonos
+  ven "se fue la pantalla" y después "volvió", sin escanear de nuevo). Si no vuelve en 60 s, la
+  sala se destruye y los teléfonos vuelven a la pantalla de entrar con código.
+- **El estado de los carteles del teléfono (esperando / a pelear / eliminado / se terminó) se
+  manda por polling desde `frameLoop`, no por eventos**, y solo cuando cambia: lo que le importa
+  al que mira su teléfono sale de adentro de la simulación, no de mensajes que se puedan
+  interceptar. Un teléfono que estuvo dormido pide `{t:"sync"}` al despertarse en vez de esperar
+  el próximo cambio.
+
+Archivos: `public/pad.html` (el control), `public/pad-host.js` (el lado pantalla),
+`public/qr.js` (el QR), y la sección "salas de mandos" de `server.js` (el cable).
+
 ## Efectos visuales (stickman.js / fx.js — compartido, no solo web)
 
 Estos tres viven en los archivos compartidos, así que escritorio y Steam los reciben gratis —

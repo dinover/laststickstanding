@@ -43,6 +43,19 @@ const EMPTY_ROOM_GRACE_MS = 60000;
    wifi se recupere, y como el ausente no se defiende, en la práctica lo matan mucho antes. */
 const REJOIN_GRACE_MS = 30000;
 
+/* --- salas de mandos (celulares como control del modo Local) ---
+   Ver la sección "salas de mandos" más abajo para el por qué. Acá solo los números:
+
+   PAD_MAX es 8 igual que MAX_PLAYERS — el sillón local no puede tener más gente que una sala
+   online. PAD_GRACE_MS es más generoso que REJOIN_GRACE_MS a propósito: un celular se apaga la
+   pantalla solo a los 30 s, y si al volver perdió su lugar la partida local se queda con un
+   muñeco huérfano y su dueño mirando. Al anfitrión (la PC con el juego) se le guarda menos: si
+   la pestaña del juego se cerró, no hay a dónde volver. */
+const PAD_MAX = 8;
+const PAD_GRACE_MS = 120000;
+const PAD_HOST_GRACE_MS = 60000;
+const PAD_KEYS = ["left", "right", "jump", "punch", "kick"];
+
 /* Mismo alfabeto que net.js: sin 0/O/1/I, para poder dictar el código en voz alta. */
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -74,6 +87,14 @@ const STATIC = {
   "/": ["public/index.html", "text/html; charset=utf-8"],
   "/index.html": ["public/index.html", "text/html; charset=utf-8"],
   "/net-ws.js": ["public/net-ws.js", "text/javascript; charset=utf-8"],
+  /* La página que se abre en el celular cuando se usa como control del modo Local, más los dos
+     scripts que solo hacen falta para eso (el QR con el link, y el lado "anfitrión" del relay).
+     "/pad" a secas existe además de "/pad.html" porque es lo que se tipea a mano cuando no se
+     puede escanear el QR — cuanto más corto, mejor. */
+  "/pad": ["public/pad.html", "text/html; charset=utf-8"],
+  "/pad.html": ["public/pad.html", "text/html; charset=utf-8"],
+  "/pad-host.js": ["public/pad-host.js", "text/javascript; charset=utf-8"],
+  "/qr.js": ["public/qr.js", "text/javascript; charset=utf-8"],
   "/stickman.js": ["../stickman.js", "text/javascript; charset=utf-8"],
   "/fx.js": ["../fx.js", "text/javascript; charset=utf-8"],
   "/world.js": ["../world.js", "text/javascript; charset=utf-8"],
@@ -91,7 +112,7 @@ const server = http.createServer((req, res) => {
 
   if (url === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ ok: true, rooms: rooms.size, players: countPlayers() }));
+    res.end(JSON.stringify({ ok: true, rooms: rooms.size, players: countPlayers(), padRooms: padRooms.size }));
     return;
   }
 
@@ -128,10 +149,14 @@ function randomCode() {
   return s;
 }
 
+/* Chequea los DOS mapas (partidas y salas de mandos): son espacios de códigos distintos y
+   nunca se consultan cruzados, pero que el mismo "K7QM" sea una partida online y a la vez el
+   código para enchufar celulares a otra máquina es exactamente la clase de coincidencia que
+   después nadie entiende cuando alguien se equivoca de pantalla. */
 function freeCode() {
   for (let i = 0; i < 50; i++) {
     const c = randomCode();
-    if (!rooms.has(c)) return c;
+    if (!rooms.has(c) && !padRooms.has(c)) return c;
   }
   return null;
 }
@@ -349,8 +374,11 @@ function compressSnapshot(snap, room) {
 }
 
 /* ------------------------------------------------------------------ mensajería */
+/* Tolera un ws nulo a propósito: un pad ausente (celular con la pantalla apagada) conserva su
+   lugar en la sala pero no tiene socket, y quien le manda algo no debería tener que preguntar
+   cada vez — ver las salas de mandos, más abajo. */
 function send(ws, obj) {
-  if (ws.readyState === 1) ws.send(JSON.stringify(obj));
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
 }
 
 function broadcast(room, obj) {
@@ -578,6 +606,252 @@ function sweepAbsent(room) {
   if (changed) pushLobby(room);
 }
 
+/* ------------------------------------------------------------------ salas de mandos
+   Una "sala de mandos" no simula nada: es un cable. El modo Local corre entero en la máquina
+   que tiene el juego a la vista (ahí vive el Sim, como siempre), y esto solo le acerca los
+   botones de los celulares que se suman como control — la misma idea de la consola: la pantalla
+   grande muestra, el teléfono es el joystick.
+
+   Por eso NO reusa `rooms`: no hay simulación, ni roster, ni puntaje, ni fases, ni nada que
+   validar del gameplay. Hay un anfitrión (la pestaña del juego), hasta PAD_MAX teléfonos, y un
+   relay de mensajitos entre ellos. Todo lo que decide quién juega, con qué color y en qué slot
+   lo sigue decidiendo el cliente anfitrión, que es el único que sabe qué hay en el sillón
+   (teclados y mandos incluidos, que el servidor no ve ni tiene por qué ver).
+
+   El único mensaje que el servidor mira de verdad es "padInput", y solo para chequear que la
+   acción exista: es el que llega ~20 veces por segundo y el que llegaría envenenado si alguien
+   se pusiera a mandar basura a mano. El resto viaja opaco dentro de `data`. */
+
+/** @type {Map<string, PadRoom>} */
+const padRooms = new Map();
+
+function createPadRoom(ws) {
+  const code = freeCode();
+  if (!code) return null;
+  const room = {
+    code,
+    ws,                      // socket del anfitrión (la pantalla que corre el juego)
+    token: crypto.randomUUID(), // para recuperar la MISMA sala tras un F5 del anfitrión
+    hostGoneSince: null,
+    pads: new Map(),         // padId -> { id, name, ws, token, connected, goneSince }
+  };
+  padRooms.set(code, room);
+  ws._padRoom = room;
+  ws._padHost = true;
+  return room;
+}
+
+/* Limpia las marcas que dejó una sala de mandos en un socket. Los sockets de los pads y el del
+   anfitrión son SIEMPRE distintos (el anfitrión abre una conexión aparte de la del juego, ver
+   pad-host.js), así que nunca hay que preocuparse por pisar ws._room. */
+function padDetach(ws) {
+  if (!ws) return;
+  ws._padRoom = null;
+  ws._padId = null;
+  ws._padHost = false;
+}
+
+function destroyPadRoom(room) {
+  for (const pad of room.pads.values()) {
+    if (pad.ws) {
+      send(pad.ws, { t: "padClosed" });
+      padDetach(pad.ws);
+    }
+  }
+  if (room.ws) padDetach(room.ws);
+  padRooms.delete(room.code);
+}
+
+function freePadSlot(room) {
+  for (let id = 0; id < PAD_MAX; id++) if (!room.pads.has(id)) return id;
+  return null;
+}
+
+/* Lo que el anfitrión necesita saber de los pads que ya estaban cuando vuelve de un F5: quiénes
+   son y si están conectados. El token no viaja: es de cada teléfono y de nadie más. */
+function padList(room) {
+  return [...room.pads.values()].map((p) => ({ pad: p.id, name: p.name, connected: p.connected }));
+}
+
+function padHostSend(room, obj) {
+  if (room.ws && room.ws.readyState === 1) send(room.ws, obj);
+}
+
+/* Alta (o reclamo) de un celular. El token lo guarda el teléfono en sessionStorage y sirve para
+   volver a SU lugar cuando se apaga la pantalla o se cae el wifi — sin eso, cada bloqueo de
+   pantalla lo devolvería como un jugador nuevo y el sillón se llenaría de fantasmas. */
+function padJoin(room, ws, nickRaw, tokenRaw) {
+  const name = cleanNick(nickRaw);
+  const token = String(tokenRaw || "");
+
+  let pad = null;
+  if (token) {
+    for (const p of room.pads.values()) if (p.token === token) { pad = p; break; }
+  }
+
+  if (pad) {
+    /* Vuelve el mismo teléfono: si el socket viejo sigue figurando abierto (el servidor puede
+       tardar un ciclo de heartbeat en enterarse de que se cayó), gana el que presenta el token. */
+    if (pad.ws && pad.ws !== ws) {
+      padDetach(pad.ws);
+      try { pad.ws.terminate(); } catch (e) { /* ya estaba muerto */ }
+    }
+    pad.ws = ws;
+    pad.connected = true;
+    pad.goneSince = null;
+    pad.name = name;
+  } else {
+    const id = freePadSlot(room);
+    if (id === null) return { err: "full" };
+    pad = { id, name, ws, token: crypto.randomUUID(), connected: true, goneSince: null };
+    room.pads.set(id, pad);
+  }
+
+  ws._padRoom = room;
+  ws._padId = pad.id;
+  ws._padHost = false;
+
+  send(ws, { t: "padJoined", code: room.code, pad: pad.id, token: pad.token, name: pad.name });
+  padHostSend(room, { t: "padJoin", pad: pad.id, name: pad.name, resumed: !!token });
+  return { pad };
+}
+
+/* Un pad que se va NO libera el slot en el acto: queda "ausente" hasta que venza PAD_GRACE_MS
+   (ver sweepPadRooms). El anfitrión se entera igual para poder soltarle las teclas que hayan
+   quedado apretadas — si se desconectó con "derecha" apretada, el muñeco seguiría caminando
+   solo hasta caerse del mapa. */
+function padLeave(ws) {
+  const room = ws._padRoom;
+  if (!room || !padRooms.has(room.code)) { padDetach(ws); return; }
+
+  if (ws._padHost) {
+    /* Se fue la pantalla. Los teléfonos quedan enganchados un rato por si es un F5 (el
+       anfitrión vuelve con su token y retoma la misma sala, con la misma gente adentro). */
+    room.ws = null;
+    room.hostGoneSince = Date.now();
+    for (const pad of room.pads.values()) send(pad.ws, { t: "padHostGone" });
+    padDetach(ws);
+    return;
+  }
+
+  const pad = room.pads.get(ws._padId);
+  if (pad && pad.ws === ws) {
+    pad.connected = false;
+    pad.goneSince = Date.now();
+    pad.ws = null;
+    padHostSend(room, { t: "padLeave", pad: pad.id });
+  }
+  padDetach(ws);
+}
+
+/* Barrido de las salas de mandos: pads ausentes que ya no vuelven y salas cuyo anfitrión cerró
+   el juego. Corre junto al de las partidas (mismo setInterval, ver más abajo). */
+function sweepPadRooms() {
+  const now = Date.now();
+  for (const room of [...padRooms.values()]) {
+    if (!room.ws && room.hostGoneSince && now - room.hostGoneSince > PAD_HOST_GRACE_MS) {
+      destroyPadRoom(room);
+      continue;
+    }
+    for (const pad of [...room.pads.values()]) {
+      if (pad.connected || !pad.goneSince) continue;
+      if (now - pad.goneSince < PAD_GRACE_MS) continue;
+      room.pads.delete(pad.id);
+      padHostSend(room, { t: "padGone", pad: pad.id });
+    }
+  }
+}
+
+/* Mensajes de una sala de mandos. Devuelve true si el mensaje era de este mundo (y ya se
+   atendió), así handleMessage puede cortar antes de meterse con las salas de partida. */
+function handlePadMessage(ws, msg) {
+  /* --- lado anfitrión --- */
+  if (msg.t === "padCreate") {
+    if (ws._padRoom || ws._room) return true; // un socket es o pantalla, o teléfono, o jugador
+    const token = String(msg.token || "");
+    if (token) {
+      for (const room of padRooms.values()) {
+        if (room.token !== token) continue;
+        /* Volvió la pantalla (F5, o la pestaña que se durmió). Retoma su sala tal cual estaba;
+           los teléfonos ni se enteran más allá del aviso para que salgan del cartel de "se fue
+           la pantalla". */
+        if (room.ws && room.ws !== ws) {
+          padDetach(room.ws);
+          try { room.ws.terminate(); } catch (e) { /* ya estaba muerto */ }
+        }
+        room.ws = ws;
+        room.hostGoneSince = null;
+        ws._padRoom = room;
+        ws._padHost = true;
+        send(ws, { t: "padCreated", code: room.code, token: room.token, pads: padList(room), resumed: true });
+        for (const pad of room.pads.values()) send(pad.ws, { t: "padHostBack" });
+        return true;
+      }
+    }
+    const room = createPadRoom(ws);
+    if (!room) send(ws, { t: "err", msg: "No hay códigos libres, probá de nuevo.", code: "noCodes" });
+    else send(ws, { t: "padCreated", code: room.code, token: room.token, pads: [] });
+    return true;
+  }
+
+  if (msg.t === "padTo" || msg.t === "padAll" || msg.t === "padKick" || msg.t === "padClose") {
+    const room = ws._padRoom;
+    if (!room || !ws._padHost || !padRooms.has(room.code)) return true;
+
+    if (msg.t === "padClose") {
+      destroyPadRoom(room);
+      return true;
+    }
+    if (msg.t === "padAll") {
+      for (const pad of room.pads.values()) send(pad.ws, { t: "padMsg", data: msg.data });
+      return true;
+    }
+    const pad = room.pads.get(Number(msg.pad));
+    if (!pad) return true;
+    if (msg.t === "padTo") {
+      send(pad.ws, { t: "padMsg", data: msg.data });
+      return true;
+    }
+    // padKick: lo sacó el anfitrión de la lista (o no había lugar). Se le avisa y se libera ya
+    // el slot, sin gracia: no es una caída, es una decisión.
+    send(pad.ws, { t: "padKicked", reason: msg.reason || null });
+    if (pad.ws) padDetach(pad.ws);
+    room.pads.delete(pad.id);
+    return true;
+  }
+
+  /* --- lado teléfono --- */
+  if (msg.t === "padJoin") {
+    if (ws._room || ws._padHost) return true;
+    const code = String(msg.code || "").toUpperCase().trim();
+    const room = padRooms.get(code);
+    if (!room) {
+      send(ws, { t: "padErr", code: "noRoom" });
+      return true;
+    }
+    if (ws._padRoom && ws._padRoom !== room) padLeave(ws);
+    const res = padJoin(room, ws, msg.nick, msg.token);
+    if (res.err) send(ws, { t: "padErr", code: res.err });
+    return true;
+  }
+
+  if (msg.t === "padInput" || msg.t === "padMsg") {
+    const room = ws._padRoom;
+    if (!room || ws._padHost || ws._padId == null || !padRooms.has(room.code)) return true;
+    if (msg.t === "padInput") {
+      // Lo único que se valida del teléfono: que la acción exista. El resto (a qué jugador
+      // corresponde este pad, si la partida arrancó) lo sabe el anfitrión, no el servidor.
+      if (PAD_KEYS.indexOf(msg.k) === -1) return true;
+      padHostSend(room, { t: "padInput", pad: ws._padId, k: msg.k, d: !!msg.d });
+    } else {
+      padHostSend(room, { t: "padMsg", pad: ws._padId, data: msg.data });
+    }
+    return true;
+  }
+
+  return false;
+}
+
 function handleMessage(ws, raw) {
   let msg;
   try {
@@ -595,6 +869,11 @@ function handleMessage(ws, raw) {
     send(ws, { t: "pong", ts: msg.ts });
     return;
   }
+
+  /* Salas de mandos (celulares como control del modo Local): viven en su propio mapa y no
+     tocan nada de las partidas, así que se resuelven acá arriba y listo. Ver la sección
+     "salas de mandos". */
+  if (handlePadMessage(ws, msg)) return;
 
   /* --- fuera de sala --- */
   if (msg.t === "create") {
@@ -755,8 +1034,10 @@ wss.on("connection", (ws) => {
     handleMessage(ws, data.toString());
   });
 
-  ws.on("close", () => leaveRoom(ws));
-  ws.on("error", () => leaveRoom(ws));
+  /* Los dos, siempre: un socket es jugador de una sala O pantalla/teléfono de una sala de
+     mandos, nunca las dos cosas, y cada función se hace la boba si el socket no era suyo. */
+  ws.on("close", () => { leaveRoom(ws); padLeave(ws); });
+  ws.on("error", () => { leaveRoom(ws); padLeave(ws); });
 });
 
 /* Un cliente que se va sin cerrar limpio (se le corta el wifi, cierra la tapa del notebook)
@@ -790,6 +1071,7 @@ setInterval(() => {
    jugador que ya no va a volver. */
 setInterval(() => {
   const now = Date.now();
+  sweepPadRooms();
   for (const room of [...rooms.values()]) {
     sweepAbsent(room);
     if (connectedCount(room) === 0 && room.emptySince && now - room.emptySince > EMPTY_ROOM_GRACE_MS) {
@@ -805,6 +1087,7 @@ server.listen(PORT, "0.0.0.0", () => {
 function shutdown() {
   console.log("cerrando…");
   for (const room of [...rooms.values()]) destroyRoom(room);
+  for (const room of [...padRooms.values()]) destroyPadRoom(room);
   wss.close();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();
