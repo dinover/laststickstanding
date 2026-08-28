@@ -432,7 +432,7 @@ function blendPose(fromPose, toPose, frac) {
    El id viaja por la red: online/server.js valida contra esta misma lista antes de repartirla
    en el "lobby", así que agregar uno acá exige agregarlo allá o el servidor lo descarta. */
 var ACCESSORY_IDS = ["none", "horns", "halo", "tophat", "cap", "crown", "poop", "cowboy",
-                     "party", "bunny", "antennae", "arrow", "mohawk", "flame", "propeller"];
+                     "party", "bunny", "antennae", "arrow", "mohawk", "flame", "propeller", "orbit"];
 
 var HEAD_RX = 7.6, HEAD_RY = 8.8; // mismo elipse que dibuja la cabeza al final de drawStickman
 
@@ -444,7 +444,7 @@ var HEAD_RX = 7.6, HEAD_RY = 8.8; // mismo elipse que dibuja la cabeza al final 
    que es lo que ocupa la cabeza pelada con su halo de glow. */
 var ACCESSORY_REACH = {
   none: 15, horns: 20, halo: 26, tophat: 26, cap: 17, crown: 20, poop: 23, cowboy: 19,
-  party: 28, bunny: 27, antennae: 24, arrow: 15, mohawk: 22, flame: 29, propeller: 29,
+  party: 28, bunny: 27, antennae: 24, arrow: 15, mohawk: 22, flame: 29, propeller: 29, orbit: 32,
 };
 
 /* Cuánto hay que subir el cartel de un jugador por su accesorio. El margen de 17 (y no 15) deja
@@ -659,6 +659,26 @@ function drawAccessory(ctx, kind, headX, headY, headLean, facing, t, snail) {
       ctx.beginPath(); ctx.ellipse(s * 5, 0, 5, 1.5, 0, 0, Math.PI * 2); accPaint(ctx, "#ffc247", "#fff3c4", 1);
     }
     ctx.restore();
+
+  } else if (kind === "orbit") {
+    // El logro máximo (completar HARDCORE): un anillo de fragmentos de energía que gira sin
+    // parar sobre la cabeza, alternando los dos colores del bioma Neón — el mismo que reaparece
+    // como sala secreta a lo largo de toda la Historia.
+    var ORBIT_N = 5, ORBIT_R = 13, ORBIT_COLORS = ["#ff2ed6", "#35f0e0"];
+    for (i = 0; i < ORBIT_N; i++) {
+      var oAng = t * 2.4 + (i / ORBIT_N) * Math.PI * 2;
+      var ox = Math.cos(oAng) * ORBIT_R, oy = -17 + Math.sin(oAng) * ORBIT_R * 0.42;
+      var ocol = ORBIT_COLORS[i % 2];
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.rotate(oAng);
+      if (!snail) { ctx.shadowColor = ocol; ctx.shadowBlur = 7; }
+      ctx.beginPath();
+      ctx.moveTo(0, -3.2); ctx.lineTo(1.8, 0); ctx.lineTo(0, 3.2); ctx.lineTo(-1.8, 0);
+      ctx.closePath();
+      accPaint(ctx, ocol, "#ffffff", 0.8);
+      ctx.restore();
+    }
   }
 
   ctx.restore();

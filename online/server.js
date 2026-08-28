@@ -80,7 +80,7 @@ const PLAYER_COLORS = [
    quien los dibuja): si acá falta uno, el servidor lo baja a "none" y el resto de la sala
    nunca lo ve, aunque el cliente que lo eligió se lo dibuje a sí mismo. */
 const ACCESSORY_IDS = ["none", "horns", "halo", "tophat", "cap", "crown", "poop", "cowboy",
-                       "party", "bunny", "antennae", "arrow", "mohawk", "flame", "propeller"];
+                       "party", "bunny", "antennae", "arrow", "mohawk", "flame", "propeller", "orbit"];
 
 /* ------------------------------------------------------------------ archivos estáticos */
 const STATIC = {

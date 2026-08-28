@@ -330,6 +330,7 @@
     background: #12162a; color: #eaf0ff; border: 1px solid #2a3050; box-shadow: none;
   }
   .hatGrid button.selected { border-color: #35f0e0; box-shadow: 0 0 0 1px #35f0e0 inset; }
+  .hatGrid button.locked { opacity: .35; cursor: not-allowed; }
   #hatName { color: #9aa3bd; font-size: 12px; min-height: 16px; margin: 0 0 16px; }
 
   /* Tarjetas de tema (Práctica Libre): snapshot real del fondo de cada bioma, generado con las
@@ -760,6 +761,11 @@
       "hat.mohawk": "Cresta",
       "hat.flame": "Prendido fuego",
       "hat.propeller": "Gorro con hélice",
+      "hat.orbit": "Corona Orbital",
+      "hat.lockedEasy": "Completá Modo Historia en Fácil para desbloquearlo",
+      "hat.lockedMedium": "Completá Modo Historia en Media para desbloquearlo",
+      "hat.lockedHard": "Completá Modo Historia en Difícil para desbloquearlo",
+      "hat.lockedMystery": "??? — hay algo más para el que llegue hasta el final de HARDCORE",
       "lobby.create": "Crear sala",
       "lobby.join": "Unirme a una sala",
       "lobby.practice": "Juego en solitario",
@@ -966,6 +972,11 @@
       "hat.mohawk": "Mohawk",
       "hat.flame": "On fire",
       "hat.propeller": "Propeller beanie",
+      "hat.orbit": "Orbital Crown",
+      "hat.lockedEasy": "Clear Story Mode on Easy to unlock it",
+      "hat.lockedMedium": "Clear Story Mode on Medium to unlock it",
+      "hat.lockedHard": "Clear Story Mode on Hard to unlock it",
+      "hat.lockedMystery": "??? — there's something extra for whoever makes it through HARDCORE",
       "lobby.create": "Create room",
       "lobby.join": "Join a room",
       "lobby.practice": "Solo mode",
@@ -2081,14 +2092,17 @@
   var STORY_KEY = "lss-story";
 
   function loadStoryState() {
-    var out = { run: null, unlocks: { hardcoreUnlocked: false } };
+    var out = { run: null, unlocks: { clearedEasy: false, clearedMedium: false, clearedHard: false, clearedHardcore: false } };
     try {
       var raw = localStorage.getItem(STORY_KEY);
       if (raw) {
         var parsed = JSON.parse(raw);
         if (parsed && typeof parsed === "object") {
           out.run = parsed.run || null;
-          out.unlocks = parsed.unlocks || out.unlocks;
+          // Object.assign, no reemplazo directo: un `lss-story` viejo (antes de que existieran
+          // los accesorios desbloqueables) no tiene estas claves, y sin mergear quedarían
+          // undefined en vez de false.
+          out.unlocks = Object.assign({}, out.unlocks, parsed.unlocks || {});
         }
       }
     } catch (e) { /* incógnito o storage bloqueado */ }
@@ -2165,7 +2179,13 @@
   function storyFinishGame() {
     var cleanClear = storySkippedSecretBiomes.length === 0;
     var wasHardcore = storyDifficulty === "hardcore";
-    if (storyDifficulty === "hard") storyState.unlocks.hardcoreUnlocked = true;
+    // Cada dificultad completada desbloquea un accesorio de personalización (ver renderHats):
+    // Fácil -> hélice, Media -> prendido fuego, Difícil -> corona (y habilita elegir Hardcore),
+    // Hardcore -> el accesorio secreto ("orbit").
+    if (storyDifficulty === "easy") storyState.unlocks.clearedEasy = true;
+    else if (storyDifficulty === "medium") storyState.unlocks.clearedMedium = true;
+    else if (storyDifficulty === "hard") storyState.unlocks.clearedHard = true;
+    else if (storyDifficulty === "hardcore") storyState.unlocks.clearedHardcore = true;
     storyState.run = null;
     saveStoryState();
 
@@ -3080,8 +3100,20 @@
   var ACCESSORY_GLYPHS = {
     none: "—", horns: "😈", halo: "😇", tophat: "🎩", cap: "🧢", crown: "👑", poop: "💩",
     cowboy: "🤠", party: "🎉", bunny: "🐰", antennae: "👽", arrow: "🏹", mohawk: "🤘",
-    flame: "🔥", propeller: "🚁",
+    flame: "🔥", propeller: "🚁", orbit: "💫",
   };
+
+  /* Accesorios que solo se pueden ELEGIR completando Modo Historia (ver storyFinishGame).
+     "mystery" (orbit, el premio de HARDCORE) no muestra ni su glyph ni su nombre hasta
+     desbloquearlo — los demás sí muestran el glyph real, solo deshabilitados, con una pista. */
+  function accessoryLockInfo(id) {
+    var u = storyState.unlocks;
+    if (id === "propeller" && !u.clearedEasy) return { hintKey: "hat.lockedEasy" };
+    if (id === "flame" && !u.clearedMedium) return { hintKey: "hat.lockedMedium" };
+    if (id === "crown" && !u.clearedHard) return { hintKey: "hat.lockedHard" };
+    if (id === "orbit" && !u.clearedHardcore) return { hintKey: "hat.lockedMystery", mystery: true };
+    return null;
+  }
 
   function renderSwatches() {
     var grid = $("swatchGrid");
@@ -3104,17 +3136,26 @@
     var grid = $("hatGrid");
     grid.innerHTML = "";
     ACCESSORY_IDS.forEach(function (id) {
+      var lock = accessoryLockInfo(id);
       var b = document.createElement("button");
       b.type = "button";
-      b.className = id === customizePreviewHat ? "selected" : "";
-      b.textContent = ACCESSORY_GLYPHS[id] || "?";
-      b.title = t("hat." + id);
-      b.addEventListener("click", function () {
-        customizePreviewHat = id;
-        Array.prototype.forEach.call(grid.children, function (el) { el.classList.remove("selected"); });
-        b.classList.add("selected");
-        $("hatName").textContent = t("hat." + id);
-      });
+      b.className = (id === customizePreviewHat ? "selected" : "") + (lock ? " locked" : "");
+      if (lock && lock.mystery) {
+        b.textContent = "🔒";
+      } else {
+        b.textContent = ACCESSORY_GLYPHS[id] || "?";
+      }
+      b.title = lock ? t(lock.hintKey) : t("hat." + id);
+      if (lock) {
+        b.disabled = true;
+      } else {
+        b.addEventListener("click", function () {
+          customizePreviewHat = id;
+          Array.prototype.forEach.call(grid.children, function (el) { el.classList.remove("selected"); });
+          b.classList.add("selected");
+          $("hatName").textContent = t("hat." + id);
+        });
+      }
       grid.appendChild(b);
     });
     $("hatName").textContent = t("hat." + customizePreviewHat);
@@ -3618,7 +3659,7 @@
       $("storyMediumBtn").classList.remove("selected");
       $("storyHardBtn").classList.remove("selected");
       $("storyHardcoreBtn").classList.remove("selected");
-      $("storyHardcoreBtn").style.display = storyState.unlocks.hardcoreUnlocked ? "block" : "none";
+      $("storyHardcoreBtn").style.display = storyState.unlocks.clearedHard ? "block" : "none";
       storySelectedDifficulty = "easy";
       $("storyDiffCard").style.display = "block";
     }
