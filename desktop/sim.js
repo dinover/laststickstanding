@@ -51,6 +51,12 @@ var Sim = (function () {
     kick:  { dur: 280, cooldown: 380, damage: 16, reach: 44, kbX: 3.2, kbY: -2, hitStun: 180, hitStop: 55, trauma: 0.5, squash: 0.55 },
   };
 
+  /* Balance de Modo Historia (build web): las NPC pegan un poco más suave, el jugador ("héroe")
+     pega más fuerte y aguanta más golpes — así se puede plantar contra varios NPC a la vez sin
+     que sea una masacre inmediata, sin tocar el balance del resto de los modos (isBot/isHero
+     nunca son true fuera de ahí). "No mucho más" vida: 125, no el doble. */
+  var NPC_DAMAGE_MULT = 0.8, HERO_DAMAGE_MULT = 1.25, HERO_MAX_HP = 125;
+
   var ORB_SPAWN_MS = 10000, ORB_POWER_MS = 8000, ORB_PICKUP_R = 28;
   /* Rey de la Colina: el círculo tarda HILL_APPEAR_DELAY_MS en aparecer por primera vez, queda
      activo HILL_ACTIVE_MS y al vencer salta a otra plataforma sin pausa entre medio. Cada
@@ -165,9 +171,11 @@ var Sim = (function () {
       /* Exclusivo del modo Historia (build web, ver online/public/index.html): los NPCs de un
          mismo bioma son equipo entre sí, nunca se pegan. isBot siempre es false para jugadores
          reales, así que este chequeo nunca se activa en ningún otro modo/build. */
-      isBot: false,
+      isBot: false, isHero: false,
     };
   }
+
+  function maxHpFor(p) { return p.isHero ? HERO_MAX_HP : 100; }
 
   function ensurePlayer(id) { if (!players[id]) players[id] = newPlayer(id); return players[id]; }
 
@@ -212,7 +220,7 @@ var Sim = (function () {
       var plat = plats[i % plats.length];
       p.x = computeSpawnX(plat, hazards);
       p.y = -20 - i * 50;
-      p.vx = 0; p.vy = 0; p.hp = 100; p.alive = true;
+      p.vx = 0; p.vy = 0; p.hp = maxHpFor(p); p.alive = true;
       p.attack = null; p.attackCooldown = 0;
       p.power = null; p.burnT = 0; p.burnTickT = 0; p.burnFlashT = 0; p.slowT = 0;
       p.jumpsLeft = MAX_JUMPS;
@@ -280,7 +288,7 @@ var Sim = (function () {
     var plat = plats[Math.floor(Math.random() * plats.length)];
     p.x = computeSpawnX(plat, currentMap.hazards || []);
     p.y = -20 - Math.random() * 60;
-    p.vx = 0; p.vy = 0; p.kbx = 0; p.hp = 100;
+    p.vx = 0; p.vy = 0; p.kbx = 0; p.hp = maxHpFor(p);
     p.attack = null; p.attackCooldown = 0;
     p.power = null; p.burnT = 0; p.burnTickT = 0; p.burnFlashT = 0; p.slowT = 0;
     p.jumpsLeft = MAX_JUMPS; p.hitStunT = 0; p.deathFadeT = 0;
@@ -729,7 +737,12 @@ var Sim = (function () {
           if (facingOk && dy < 60) {
             p.attack.hitSet[oid] = true;
             var dmg = atk.damage;
+            // Balance exclusivo de Modo Historia: isBot/isHero siempre son false en el resto de
+            // los builds/modos, así que este ajuste nunca se activa fuera de ahí.
+            if (p.isBot) dmg *= NPC_DAMAGE_MULT;
+            else if (p.isHero) dmg *= HERO_DAMAGE_MULT;
             if (o.power && o.power.type === "tierra") dmg = Math.round(dmg * ARMOR_MULT);
+            dmg = Math.round(dmg);
             var kbX = atk.kbX;
             var kbY = atk.kbY;
             o.hp -= dmg;
@@ -805,7 +818,7 @@ var Sim = (function () {
       ctx.fillStyle = "rgba(0,0,0,.5)";
       ctx.fillRect(p.x - bw / 2, hudY - 24, bw, 5);
       ctx.fillStyle = color;
-      ctx.fillRect(p.x - bw / 2, hudY - 24, bw * Math.max(0, p.hp) / 100, 5);
+      ctx.fillRect(p.x - bw / 2, hudY - 24, bw * Math.max(0, p.hp) / maxHpFor(p), 5);
     }
 
     if (!snailMode) {

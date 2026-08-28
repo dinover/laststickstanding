@@ -2194,6 +2194,7 @@
     botAiState = {};
     Sim.resetToLobby();
     Sim.addPlayer(PRACTICE_ME);
+    Sim.getPlayers()[PRACTICE_ME].isHero = true;
     storyBotIds = [];
     for (var i = 0; i < npcCount; i++) {
       var id = 2 + i;
