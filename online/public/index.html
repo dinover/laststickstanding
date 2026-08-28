@@ -146,14 +146,100 @@
     color: #9aa3bd; cursor: pointer; font-size: 15px; padding: 0; line-height: 1;
     display: flex; align-items: center; justify-content: center;
   }
-  #audioMenu { display: none; position: absolute; top: 42px; right: 0; width: 190px; background: rgba(10,12,24,.92); border: 1px solid #2a3050; border-radius: 10px; padding: 12px 14px; color: #eaf0ff; box-sizing: border-box; }
-  #audioMenu.show { display: block; }
-  #audioMenu label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: #eaf0ff; font-size: 12px; }
-  #audioMenu label span { width: 46px; flex-shrink: 0; }
-  #audioMenu input[type="range"] { flex: 1; min-width: 0; accent-color: #35f0e0; display: block; }
-  #audioMenu .muteRow { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; color: #eaf0ff; }
-  #audioMenu button#muteBtn { background: transparent; border: 1px solid #2a3050; color: #9aa3bd; border-radius: 999px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
-  #audioMenu button#muteBtn.active { color: #ff3d63; border-color: #ff3d63; }
+  #audioMenu {
+    display: none; position: absolute; top: 42px; right: 0; width: 232px;
+    background: rgba(10,12,24,.92); backdrop-filter: blur(8px);
+    border: 1px solid #2a3050; border-radius: 12px; padding: 14px 16px; color: #eaf0ff;
+    box-sizing: border-box; box-shadow: 0 14px 34px rgba(0,0,0,.45);
+  }
+  #audioMenu.show { display: block; animation: audioMenuIn .14s ease-out; }
+  @keyframes audioMenuIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+  .audioMenuHead {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid #2a3050;
+  }
+  .audioMenuHead span { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #6b7394; }
+  #muteToggleBtn {
+    width: 26px; height: 26px; border-radius: 50%; border: 1px solid #2a3050; background: transparent;
+    color: #9aa3bd; font-size: 12px; padding: 0; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; line-height: 1;
+  }
+  #muteToggleBtn.active { color: #ff3d63; border-color: #ff3d63; }
+
+  .volRow { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; transition: opacity .15s ease; }
+  .volRow:last-child { margin-bottom: 0; }
+  #audioMenu.muted .volRow { opacity: .4; }
+  .volIcon { font-size: 12px; width: 14px; text-align: center; flex-shrink: 0; opacity: .8; }
+  .volLabel { font-size: 11px; color: #9aa3bd; width: 38px; flex-shrink: 0; }
+  .volPct {
+    font-size: 10px; color: #6b7394; width: 28px; flex-shrink: 0; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Slider con relleno de verdad: la barrita de abajo (::before del wrap) es el "vacío", y
+     .sliderFill (ancho en % seteado por JS) pinta el tramo ya recorrido — el <input> nativo
+     queda transparente encima, solo para capturar el drag/click. Hace falta duplicar el thumb
+     en -webkit-/-moz- porque no hay forma estándar de pedir "un control de rango" sin elegir
+     motor; los dos quedan iguales a propósito. */
+  .sliderWrap { position: relative; flex: 1; min-width: 0; height: 16px; display: flex; align-items: center; }
+  .sliderWrap::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+    height: 4px; border-radius: 999px; background: #1c2140;
+  }
+  .sliderFill {
+    position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 4px; width: 0%;
+    border-radius: 999px; background: #35f0e0; box-shadow: 0 0 6px rgba(53,240,224,.6);
+    pointer-events: none;
+  }
+  .sliderWrap input[type="range"] {
+    position: relative; z-index: 1; -webkit-appearance: none; appearance: none;
+    width: 100%; height: 16px; margin: 0; background: transparent; cursor: pointer;
+  }
+  .sliderWrap input[type="range"]::-webkit-slider-runnable-track { height: 16px; background: transparent; }
+  .sliderWrap input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 13px; height: 13px; margin-top: 1.5px; border-radius: 50%;
+    background: #eaf0ff; border: 2px solid #35f0e0; box-shadow: 0 0 6px rgba(53,240,224,.7);
+    cursor: pointer; transition: transform .12s ease;
+  }
+  .sliderWrap input[type="range"]::-webkit-slider-thumb:hover,
+  .sliderWrap input[type="range"]::-webkit-slider-thumb:active { transform: scale(1.2); }
+  .sliderWrap input[type="range"]::-moz-range-track { height: 4px; border-radius: 999px; background: transparent; }
+  .sliderWrap input[type="range"]::-moz-range-thumb {
+    width: 13px; height: 13px; border-radius: 50%; background: #eaf0ff; border: 2px solid #35f0e0;
+    box-shadow: 0 0 6px rgba(53,240,224,.7); cursor: pointer; transition: transform .12s ease;
+  }
+  .sliderWrap input[type="range"]::-moz-range-thumb:hover,
+  .sliderWrap input[type="range"]::-moz-range-thumb:active { transform: scale(1.2); }
+
+  /* Cuenta de usuario: mismo molde que #audioPanel/#audioMenu (dropdown anclado al ícono),
+     reutilizado tal cual en vez de armar un segundo mecanismo de abrir/cerrar. */
+  #authPanel { position: relative; }
+  #authToggle {
+    width: 34px; height: 34px; border-radius: 50%; border: 1px solid #2a3050; background: rgba(10,12,24,.6);
+    color: #9aa3bd; cursor: pointer; font-size: 15px; padding: 0; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #authToggle.loggedIn { color: #35f0e0; border-color: #35f0e0; }
+  #authMenu {
+    display: none; position: absolute; top: 42px; right: 0; width: 220px;
+    background: rgba(10,12,24,.92); backdrop-filter: blur(8px);
+    border: 1px solid #2a3050; border-radius: 12px; padding: 14px 16px; color: #eaf0ff;
+    box-sizing: border-box; box-shadow: 0 14px 34px rgba(0,0,0,.45);
+  }
+  #authMenu.show { display: block; animation: audioMenuIn .14s ease-out; }
+  #authMenu input {
+    font-size: 12px; padding: 9px 12px; margin-bottom: 8px; text-align: left; letter-spacing: normal;
+  }
+  #authMenu button { font-size: 12px; padding: 10px; margin-top: 2px; }
+  #authMenu .authErr { color: #ff8a9a; font-size: 11px; margin: -2px 0 8px; min-height: 13px; line-height: 1.4; }
+  #authMenu .authErr:empty { display: none; }
+  #authToggleModeLink {
+    display: block; text-align: center; margin-top: 10px; font-size: 11px; color: #6b7394; text-decoration: none;
+  }
+  #authToggleModeLink:hover { color: #9aa3bd; }
+  #authWhoami { font-size: 13px; color: #eaf0ff; margin-bottom: 12px; text-align: center; }
+  #authWhoami b { color: #35f0e0; }
 
   #roundBanner {
     position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
@@ -465,10 +551,47 @@
     <div id="audioPanel">
       <button id="audioToggle" title="Audio">&#9834;</button>
       <div id="audioMenu">
-        <label><span>SFX</span> <input type="range" id="sfxRange" min="0" max="1" step="0.01" /></label>
-        <label><span data-i18n="audio.music">M&uacute;sica</span> <input type="range" id="musicRange" min="0" max="1" step="0.01" /></label>
-        <label><span>Master</span> <input type="range" id="masterRange" min="0" max="1" step="0.01" /></label>
-        <div class="muteRow"><span data-i18n="audio.mute">Silenciar</span><button id="muteBtn">OFF</button></div>
+        <div class="audioMenuHead">
+          <span data-i18n="audio.title">Audio</span>
+          <button id="muteToggleBtn" type="button" data-i18n-title="audio.mute" title="Silenciar">&#128266;</button>
+        </div>
+        <div class="volRow">
+          <span class="volIcon">&#128264;</span>
+          <span class="volLabel" data-i18n="audio.sfx">SFX</span>
+          <div class="sliderWrap"><div class="sliderFill" id="sfxFill"></div><input type="range" id="sfxRange" min="0" max="1" step="0.01" /></div>
+          <span class="volPct" id="sfxPct">0%</span>
+        </div>
+        <div class="volRow">
+          <span class="volIcon">&#127925;</span>
+          <span class="volLabel" data-i18n="audio.music">M&uacute;sica</span>
+          <div class="sliderWrap"><div class="sliderFill" id="musicFill"></div><input type="range" id="musicRange" min="0" max="1" step="0.01" /></div>
+          <span class="volPct" id="musicPct">0%</span>
+        </div>
+        <div class="volRow">
+          <span class="volIcon">&#127911;</span>
+          <span class="volLabel" data-i18n="audio.master">Master</span>
+          <div class="sliderWrap"><div class="sliderFill" id="masterFill"></div><input type="range" id="masterRange" min="0" max="1" step="0.01" /></div>
+          <span class="volPct" id="masterPct">0%</span>
+        </div>
+      </div>
+    </div>
+    <div id="authPanel">
+      <button id="authToggle" type="button" data-i18n-title="auth.title" title="Cuenta">&#128100;</button>
+      <div id="authMenu">
+        <div id="authLoggedOut">
+          <div class="audioMenuHead"><span data-i18n="auth.title">Cuenta</span></div>
+          <div class="authErr" id="authErr"></div>
+          <input type="text" id="authUsername" maxlength="20" autocomplete="username" data-i18n-ph="auth.username" placeholder="Usuario" />
+          <input type="password" id="authPassword" maxlength="72" autocomplete="current-password" data-i18n-ph="auth.password" placeholder="Contrase&ntilde;a" />
+          <input type="password" id="authPasswordConfirm" maxlength="72" autocomplete="new-password" data-i18n-ph="auth.passwordConfirm" placeholder="Confirmar contrase&ntilde;a" style="display:none" />
+          <button id="authSubmitBtn" type="button" style="width:100%" data-i18n="auth.login">Iniciar sesi&oacute;n</button>
+          <a href="#" id="authToggleModeLink" data-i18n="auth.createLink">Crear cuenta nueva</a>
+        </div>
+        <div id="authLoggedIn" style="display:none">
+          <div class="audioMenuHead"><span data-i18n="auth.title">Cuenta</span></div>
+          <div id="authWhoami"></div>
+          <button id="authLogoutBtn" type="button" style="width:100%" data-i18n="auth.logout">Cerrar sesi&oacute;n</button>
+        </div>
       </div>
     </div>
   </div>
@@ -706,6 +829,9 @@
      Los dos solo se usan ahí; el resto del juego anda igual si no se cargan. -->
 <script src="/qr.js"></script>
 <script src="/pad-host.js"></script>
+<!-- Único recurso externo de toda la página (todo lo demás es local): el cliente de Supabase
+     para cuentas de usuario (ver online/public/index.html más abajo, sección "cuentas"). -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 (function () {
   "use strict";
@@ -735,8 +861,28 @@
       "hud.koth": "REY DE LA COLINA — {map}",
       "hud.orbking": "REY DEL ORBE — {map}",
 
+      "audio.title": "Audio",
+      "audio.sfx": "SFX",
       "audio.music": "Música",
+      "audio.master": "Master",
       "audio.mute": "Silenciar",
+
+      "auth.title": "Cuenta",
+      "auth.username": "Usuario",
+      "auth.password": "Contraseña",
+      "auth.passwordConfirm": "Confirmar contraseña",
+      "auth.login": "Iniciar sesión",
+      "auth.createLink": "Crear cuenta nueva",
+      "auth.createBtn": "Crear cuenta",
+      "auth.backToLogin": "Ya tengo cuenta",
+      "auth.logout": "Cerrar sesión",
+      "auth.loggedInAs": "Conectado como",
+      "auth.errUsernameFormat": "El usuario tiene que tener de 3 a 20 letras/números, sin espacios ni acentos",
+      "auth.errShortPass": "La contraseña tiene que tener al menos 6 caracteres",
+      "auth.errMismatch": "Las contraseñas no coinciden",
+      "auth.errTaken": "Ese usuario ya existe",
+      "auth.errBadLogin": "Usuario o contraseña incorrectos",
+      "auth.errGeneric": "Algo salió mal. Probá de nuevo.",
 
       "lobby.sub": "Ocho palitos, una plataforma y uno solo que queda parado.",
       "lobby.yourName": "Tu nombre",
@@ -946,8 +1092,28 @@
       "hud.koth": "KING OF THE HILL — {map}",
       "hud.orbking": "ORB KING — {map}",
 
+      "audio.title": "Audio",
+      "audio.sfx": "SFX",
       "audio.music": "Music",
+      "audio.master": "Master",
       "audio.mute": "Mute",
+
+      "auth.title": "Account",
+      "auth.username": "Username",
+      "auth.password": "Password",
+      "auth.passwordConfirm": "Confirm password",
+      "auth.login": "Log in",
+      "auth.createLink": "Create a new account",
+      "auth.createBtn": "Create account",
+      "auth.backToLogin": "I already have an account",
+      "auth.logout": "Log out",
+      "auth.loggedInAs": "Logged in as",
+      "auth.errUsernameFormat": "Username must be 3-20 letters/numbers, no spaces or accents",
+      "auth.errShortPass": "Password must be at least 6 characters",
+      "auth.errMismatch": "Passwords don't match",
+      "auth.errTaken": "That username is already taken",
+      "auth.errBadLogin": "Wrong username or password",
+      "auth.errGeneric": "Something went wrong. Try again.",
 
       "lobby.sub": "Eight stick figures, one platform, and only one left standing.",
       "lobby.yourName": "Your name",
@@ -2110,6 +2276,9 @@
   }
   function saveStoryState() {
     try { localStorage.setItem(STORY_KEY, JSON.stringify(storyState)); } catch (e) { /* incógnito */ }
+    // authUpsertProfile (definida en la sección de cuentas, más abajo) ya se fija sola si hay
+    // sesión — sin cuenta esto es un no-op, el progreso sigue siendo 100% local como siempre.
+    if (authUser) authUpsertProfile({ story_unlocks: storyState.unlocks, story_run: storyState.run });
   }
   var storyState = loadStoryState();
 
@@ -3055,6 +3224,7 @@
   }
   function saveProfile(p) {
     try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch (e) { /* incógnito o storage bloqueado */ }
+    if (authUser) authUpsertProfile({ display_name: p.name || null, color: p.color, hat: p.hat });
   }
 
   var profile = loadProfile();
@@ -3827,24 +3997,242 @@
 
   /* ---------------------------------------------------------------- panel de audio */
   (function () {
-    var s = AudioManager.getSettings();
-    var sfxRange = $("sfxRange"), musicRange = $("musicRange"), masterRange = $("masterRange");
-    var muteBtn = $("muteBtn");
-    sfxRange.value = s.sfx; musicRange.value = s.music; masterRange.value = s.master;
-    muteBtn.textContent = s.muted ? "ON" : "OFF";
-    muteBtn.classList.toggle("active", s.muted);
+    var rows = [
+      { range: $("sfxRange"), fill: $("sfxFill"), pct: $("sfxPct"), set: AudioManager.setSfxVolume, key: "sfx" },
+      { range: $("musicRange"), fill: $("musicFill"), pct: $("musicPct"), set: AudioManager.setMusicVolume, key: "music" },
+      { range: $("masterRange"), fill: $("masterFill"), pct: $("masterPct"), set: AudioManager.setMasterVolume, key: "master" },
+    ];
+    var muteBtn = $("muteToggleBtn");
+    var menu = $("audioMenu");
 
-    $("audioToggle").addEventListener("click", function () { $("audioMenu").classList.toggle("show"); });
-    sfxRange.addEventListener("input", function () { AudioManager.setSfxVolume(parseFloat(sfxRange.value)); });
-    musicRange.addEventListener("input", function () { AudioManager.setMusicVolume(parseFloat(musicRange.value)); });
-    masterRange.addEventListener("input", function () { AudioManager.setMasterVolume(parseFloat(masterRange.value)); });
+    // El relleno visual (sliderFill) y el % son puro reflejo del value del <input> nativo — no
+    // hay estado propio que mantener aparte, así que una sola función sirve para el init y
+    // para cada evento "input".
+    function syncRow(row) {
+      var pct = Math.round(parseFloat(row.range.value) * 100);
+      row.fill.style.width = pct + "%";
+      row.pct.textContent = pct + "%";
+    }
+    function syncMute(muted) {
+      muteBtn.textContent = muted ? "🔇" : "🔊"; // 🔇 / 🔊
+      muteBtn.classList.toggle("active", muted);
+      menu.classList.toggle("muted", muted);
+    }
+
+    var s = AudioManager.getSettings();
+    rows.forEach(function (row) {
+      row.range.value = s[row.key];
+      syncRow(row);
+      row.range.addEventListener("input", function () {
+        row.set(parseFloat(row.range.value));
+        syncRow(row);
+      });
+    });
+    syncMute(s.muted);
+
+    $("audioToggle").addEventListener("click", function (e) {
+      e.stopPropagation();
+      menu.classList.toggle("show");
+    });
+    // Un dropdown que solo se cierra tocando de nuevo el mismo botón se siente pegado — cualquier
+    // click afuera (o Escape) lo cierra, como cualquier menú de este tipo.
+    document.addEventListener("click", function (e) {
+      if (menu.classList.contains("show") && !$("audioPanel").contains(e.target)) menu.classList.remove("show");
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") menu.classList.remove("show");
+    });
     muteBtn.addEventListener("click", function () {
       var muted = !AudioManager.getSettings().muted;
       AudioManager.setMuted(muted);
-      muteBtn.textContent = muted ? "ON" : "OFF";
-      muteBtn.classList.toggle("active", muted);
+      syncMute(muted);
     });
   })();
+
+  /* ---------------------------------------------------------------- cuentas de usuario */
+  /* Supabase Auth de verdad (email+password) por debajo, pero el jugador solo ve usuario y
+     contraseña: cada usuario se mapea a un email sintético que nunca se muestra. Es una capa
+     OPCIONAL encima de lo que ya existe — sin sesión, todo sigue siendo 100% local como
+     siempre (ver loadStoryState/loadProfile). Con sesión, el progreso de Historia y el perfil
+     (nombre/color/accesorio) se reflejan en la tabla `profiles` de Supabase para que sobrevivan
+     el dispositivo. Las salas (Online/Local) no se enteran de nada de esto — siguen efímeras. */
+  var AUTH_EMAIL_DOMAIN = "@laststickstanding.local";
+  var sb = window.supabase.createClient(
+    "https://kglguvgprvrmgwnanwah.supabase.co",
+    "sb_publishable_zs1YSW3c-v7WHIT4CbR-yQ_EtEE7DKd"
+  );
+  var authUser = null; // { id, username } una vez logueado
+  var authMode = "login"; // "login" | "signup"
+
+  function authUsernameValid(u) { return /^[a-z0-9_]{3,20}$/.test(u); }
+  function authEmailFor(u) { return u.toLowerCase() + AUTH_EMAIL_DOMAIN; }
+  function authSetErr(msg) { $("authErr").textContent = msg || ""; }
+
+  function authFriendlyError(err) {
+    var msg = (err && err.message) || "";
+    if (/already registered|already exists/i.test(msg)) return t("auth.errTaken");
+    if (/invalid login credentials/i.test(msg)) return t("auth.errBadLogin");
+    return t("auth.errGeneric");
+  }
+
+  function authSetMode(mode) {
+    authMode = mode;
+    $("authPasswordConfirm").style.display = mode === "signup" ? "block" : "none";
+    $("authSubmitBtn").textContent = t(mode === "signup" ? "auth.createBtn" : "auth.login");
+    $("authToggleModeLink").textContent = t(mode === "signup" ? "auth.backToLogin" : "auth.createLink");
+    authSetErr("");
+  }
+
+  function authUpdateToggleUI() {
+    var btn = $("authToggle");
+    btn.classList.toggle("loggedIn", !!authUser);
+    btn.textContent = authUser ? authUser.username.charAt(0).toUpperCase() : "👤";
+  }
+
+  function authShowLoggedIn(username) {
+    $("authLoggedOut").style.display = "none";
+    $("authLoggedIn").style.display = "block";
+    var el = $("authWhoami");
+    el.textContent = "";
+    el.appendChild(document.createTextNode(t("auth.loggedInAs") + " "));
+    var b = document.createElement("b"); b.textContent = username;
+    el.appendChild(b);
+  }
+
+  function authShowLoggedOut() {
+    $("authLoggedIn").style.display = "none";
+    $("authLoggedOut").style.display = "block";
+    $("authUsername").value = ""; $("authPassword").value = ""; $("authPasswordConfirm").value = "";
+    authSetMode("login");
+  }
+
+  function authFetchProfile(userId) {
+    return sb.from("profiles").select("*").eq("id", userId).single().then(function (res) {
+      if (res.error) throw res.error;
+      return res.data;
+    });
+  }
+
+  // UPDATE, no upsert: la fila de perfil siempre existe de antemano (la crea sola el trigger
+  // on_auth_user_created apenas se registra, ver la migración), así que nunca hace falta un
+  // INSERT acá — y conviene, porque el upsert de Supabase arma un INSERT ON CONFLICT por abajo,
+  // que exige columnas NOT NULL (username) aunque la fila ya exista y solo se vaya a actualizar.
+  // Sin `await` en todo este archivo (ver el resto del script): Supabase v2 devuelve promesas
+  // igual, así que .then()/.catch() alcanza sin cambiar el estilo del resto del código.
+  function authUpsertProfile(fields) {
+    if (!authUser) return;
+    var payload = Object.assign({ updated_at: new Date().toISOString() }, fields);
+    sb.from("profiles").update(payload).eq("id", authUser.id).then(function (res) {
+      if (res.error) console.error("[auth] no se pudo guardar el perfil:", res.error.message);
+    });
+  }
+
+  function storyStateIsEmpty(unlocks, run) {
+    unlocks = unlocks || {};
+    return !run && !unlocks.clearedEasy && !unlocks.clearedMedium && !unlocks.clearedHard && !unlocks.clearedHardcore;
+  }
+
+  /* Se llama una sola vez, justo después de loguearse (login o registro) o al restaurar sesión
+     al abrir la página. Sin merge inteligente a propósito (así lo pidió Dan, "simple"): si la
+     cuenta ya tenía progreso de verdad, ese manda; si estaba vacía (cuenta recién creada) y
+     había progreso local, ese se sube como punto de partida. */
+  function authApplyProfile(row) {
+    var localEmpty = storyStateIsEmpty(storyState.unlocks, storyState.run);
+    var remoteEmpty = storyStateIsEmpty(row.story_unlocks, row.story_run);
+
+    if (remoteEmpty && !localEmpty) {
+      authUpsertProfile({
+        username: authUser.username, display_name: profile.name || null,
+        color: myColor, hat: myHat,
+        story_unlocks: storyState.unlocks, story_run: storyState.run,
+      });
+    } else {
+      storyState.unlocks = Object.assign(
+        { clearedEasy: false, clearedMedium: false, clearedHard: false, clearedHardcore: false },
+        row.story_unlocks || {}
+      );
+      storyState.run = row.story_run || null;
+      saveStoryState(); // re-sincroniza, pero ya llegó igual de Supabase — no hace red de más en la práctica
+      if (row.color) myColor = row.color;
+      if (row.hat && ACCESSORY_IDS.indexOf(row.hat) !== -1) myHat = row.hat;
+      var nm = row.display_name || authUser.username;
+      $("nickInputMain").value = nm;
+      profile = { name: nm, color: myColor, hat: myHat };
+      saveProfile(profile);
+    }
+    if ($("customizeCard").style.display === "block") renderHats();
+  }
+
+  function authOnLoggedIn(user, username) {
+    authUser = { id: user.id, username: username };
+    authUpdateToggleUI();
+    authShowLoggedIn(username);
+    return authFetchProfile(user.id).then(authApplyProfile);
+  }
+
+  $("authToggle").addEventListener("click", function (e) {
+    e.stopPropagation();
+    $("authMenu").classList.toggle("show");
+  });
+  document.addEventListener("click", function (e) {
+    var menu = $("authMenu");
+    if (menu.classList.contains("show") && !$("authPanel").contains(e.target)) menu.classList.remove("show");
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") $("authMenu").classList.remove("show");
+  });
+
+  $("authToggleModeLink").addEventListener("click", function (e) {
+    e.preventDefault();
+    authSetMode(authMode === "login" ? "signup" : "login");
+  });
+
+  $("authSubmitBtn").addEventListener("click", function () {
+    var username = $("authUsername").value.trim().toLowerCase();
+    var password = $("authPassword").value;
+    authSetErr("");
+    if (!authUsernameValid(username)) { authSetErr(t("auth.errUsernameFormat")); return; }
+    if (!password || password.length < 6) { authSetErr(t("auth.errShortPass")); return; }
+    if (authMode === "signup" && password !== $("authPasswordConfirm").value) {
+      authSetErr(t("auth.errMismatch")); return;
+    }
+
+    $("authSubmitBtn").disabled = true;
+    var email = authEmailFor(username);
+    var call = authMode === "signup"
+      ? sb.auth.signUp({ email: email, password: password })
+      : sb.auth.signInWithPassword({ email: email, password: password });
+
+    call.then(function (res) {
+      if (res.error) throw res.error;
+      var user = res.data.user;
+      if (!user) throw new Error("sin usuario");
+      return authOnLoggedIn(user, username);
+    }).then(function () {
+      $("authMenu").classList.remove("show");
+    }).catch(function (err) {
+      authSetErr(authFriendlyError(err));
+    }).then(function () {
+      $("authSubmitBtn").disabled = false;
+    });
+  });
+
+  $("authLogoutBtn").addEventListener("click", function () {
+    sb.auth.signOut().then(function () {
+      authUser = null;
+      authUpdateToggleUI();
+      authShowLoggedOut();
+    });
+  });
+
+  // Restaurar sesión al abrir la página: el SDK ya guarda el token solo (su propia clave de
+  // localStorage), así que alcanza con preguntarle si hay una sesión viva.
+  sb.auth.getSession().then(function (res) {
+    var session = res.data && res.data.session;
+    if (!session) return;
+    var username = (session.user.email || "").split("@")[0];
+    return authOnLoggedIn(session.user, username);
+  }).catch(function (err) { console.error("[auth] no se pudo restaurar la sesión:", err); });
 
   /* Idioma: se aplica ANTES que nada para que no se llegue a ver un parpadeo del castellano del
      HTML cuando el navegador está en inglés. El botón alterna entre los dos únicos idiomas. */
