@@ -357,7 +357,10 @@ function compressSnapshot(snap, room) {
     p.burnFlashT = Math.round(p.burnFlashT);
     p.slowT = Math.round(p.slowT);
     if (p.attack) p.attack = { type: p.attack.type, t: Math.round(p.attack.t), dur: p.attack.dur };
-    if (p.power) p.power = { type: p.power.type, t: Math.round(p.power.t) };
+    // power ahora es flags por tipo (fuego/hielo/tierra/aire) + t compartido, no un `type` único
+    // — hace falta para la sala secreta de Modo Historia, que activa los 4 a la vez (ver
+    // desktop/sim.js: grantAllPowers). Se copian los booleans tal cual, sean los que sean.
+    if (p.power) p.power = Object.assign({}, p.power, { t: Math.round(p.power.t) });
   }
 
   if (snap.orb) snap.orb = { type: snap.orb.type, x: r(snap.orb.x, 1), y: r(snap.orb.y, 1), bornT: Math.round(snap.orb.bornT) };

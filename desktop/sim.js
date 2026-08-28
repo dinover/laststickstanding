@@ -419,6 +419,14 @@ var Sim = (function () {
     orb = { type: type, x: x, y: pl.y - 30, bornT: 0 };
   }
 
+  // Exclusivo de Modo Historia (sala secreta): los 4 poderes juntos, mismo timer que un orbe
+  // normal (ORB_POWER_MS). No lo usa ningún otro modo/build — inerte si nadie lo llama.
+  function grantAllPowers(id) {
+    var p = players[id];
+    if (!p) return;
+    p.power = { fuego: true, hielo: true, tierra: true, aire: true, t: ORB_POWER_MS };
+  }
+
   function updateOrbs(dt) {
     if (phase !== "fight") return;
     orbTimer -= dt;
@@ -430,7 +438,8 @@ var Sim = (function () {
       if (!p || !p.alive) continue;
       var dx = p.x - orb.x, dy = (p.y - 20) - orb.y;
       if (dx * dx + dy * dy < ORB_PICKUP_R * ORB_PICKUP_R) {
-        p.power = { type: orb.type, t: ORB_POWER_MS };
+        p.power = { t: ORB_POWER_MS };
+        p.power[orb.type] = true;
         AudioManager.on.uiClick();
         orb = null;
         break;
@@ -620,7 +629,7 @@ var Sim = (function () {
     }
     var dtScale = dt / 16.6667;
     var speedMult = 1;
-    if (p.power && p.power.type === "aire") speedMult *= AIR_SPEED_MULT;
+    if (p.power && p.power.aire) speedMult *= AIR_SPEED_MULT;
     if (p.slowT > 0) speedMult *= SLOW_MULT;
     var spd = SPEED * speedMult;
     if (p.hitStunT > 0) {
@@ -650,7 +659,7 @@ var Sim = (function () {
       var type = p.kickEdge ? "kick" : "punch";
       var def = ATTACKS[type];
       p.attack = { type: type, t: def.dur, dur: def.dur, hitSet: {} };
-      var cdMult = (p.power && p.power.type === "aire") ? AIR_COOLDOWN_MULT : 1;
+      var cdMult = (p.power && p.power.aire) ? AIR_COOLDOWN_MULT : 1;
       // El cooldown es por tipo de ataque, no compartido: así una piña puede ser literalmente
       // el doble de rápida que una patada en vez de quedar frenada por el mismo temporizador.
       p.attackCooldown = def.cooldown * cdMult;
@@ -741,15 +750,15 @@ var Sim = (function () {
             // los builds/modos, así que este ajuste nunca se activa fuera de ahí.
             if (p.isBot) dmg *= NPC_DAMAGE_MULT;
             else if (p.isHero) dmg *= HERO_DAMAGE_MULT;
-            if (o.power && o.power.type === "tierra") dmg = Math.round(dmg * ARMOR_MULT);
+            if (o.power && o.power.tierra) dmg = Math.round(dmg * ARMOR_MULT);
             dmg = Math.round(dmg);
             var kbX = atk.kbX;
             var kbY = atk.kbY;
             o.hp -= dmg;
             if (matchStats[p.id]) matchStats[p.id].hitsLanded++;
             if (matchStats[oid]) matchStats[oid].hitsTaken++;
-            if (p.power && p.power.type === "fuego") { o.burnT = BURN_MS; o.burnTickT = BURN_TICK_MS; o.burnFlashT = 220; }
-            if (p.power && p.power.type === "hielo") o.slowT = SLOW_MS;
+            if (p.power && p.power.fuego) { o.burnT = BURN_MS; o.burnTickT = BURN_TICK_MS; o.burnFlashT = 220; }
+            if (p.power && p.power.hielo) o.slowT = SLOW_MS;
             o.kbx = (o.kbx || 0) + p.facing * kbX;
             o.vy += kbY;
             if (kbY < 0) o.grounded = false;
@@ -795,7 +804,7 @@ var Sim = (function () {
        si ambos coinciden (pegar mientras tenés aire activo). Bien exagerada a propósito — más
        fantasmas, capturados más seguido, bastante más visibles — porque el objetivo es que se
        note "esto se mueve rapidísimo" de un vistazo, no una sutileza. */
-    if (p.power && p.power.type === "aire" && p.alive && !snailMode) {
+    if (p.power && p.power.aire && p.alive && !snailMode) {
       Trails.push(p, performance.now(), { key: "_airTrail", maxGhosts: 6, minIntervalMs: 18 });
       Trails.draw(ctx, p, function (gctx, ghost) { drawStickman(gctx, ghost, color, null, hat); },
         { key: "_airTrail", baseAlpha: 0.05, alphaSpread: 0.34 });
@@ -829,7 +838,12 @@ var Sim = (function () {
 
       // Mismo glyph que el orbe (ver drawOrb): mientras el power sigue activo, arriba del
       // nombre, para que se sepa de un vistazo quién tiene qué sin tener que memorizar colores.
-      var glyph = p.power && ORB_GLYPHS[p.power.type];
+      // Con la sala secreta de Modo Historia puede haber más de un tipo activo a la vez, así
+      // que se concatenan todos los glyphs vigentes en vez de asumir uno solo.
+      var glyph = "";
+      if (p.power) {
+        for (var pk in ORB_GLYPHS) if (p.power[pk]) glyph += ORB_GLYPHS[pk];
+      }
       if (glyph) {
         ctx.save();
         ctx.globalAlpha = 0.85;
@@ -1138,6 +1152,7 @@ var Sim = (function () {
     getAttacks: getAttacks,
     startMatch: startMatch, resetToLobby: resetToLobby, forceEndMatch: forceEndMatch,
     spawnPortal: spawnPortal, spawnVoidHole: spawnVoidHole, clearWorldObjects: clearWorldObjects,
+    grantAllPowers: grantAllPowers,
     step: step, draw: draw, snapshot: snapshot,
     getPhase: function () { return phase; },
     getRoster: function () { return roster; },

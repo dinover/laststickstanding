@@ -2215,6 +2215,9 @@
   function storyEnterSecretRoom() {
     storyInSecretRoom = true;
     storySpawnLevel("neon", storyNpcCountFor(storyBiomeIdx, storyLevel) + 2);
+    // Los 4 poderes juntos, el gancho de la sala secreta — dura lo mismo que un orbe normal
+    // (ORB_POWER_MS en sim.js, 8s), no un número aparte que se pueda desincronizar del real.
+    Sim.grantAllPowers(PRACTICE_ME);
   }
 
   function storyOnWin() {
