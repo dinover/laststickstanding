@@ -231,6 +231,18 @@
   #playAgainBtn { margin-top: 6px; }
   #againWait { color: #6b7394; font-size: 12px; margin-top: 6px; display: none; }
 
+  /* Narrativa de bioma / felicidades de Modo Historia: mismo molde que #finalScreen (pantalla
+     completa, oculta salvo .show) pero con cuerpo de texto en vez de un ranking. */
+  #storyMsgScreen {
+    position: absolute; inset: 0; z-index: 20; display: none;
+    background: radial-gradient(circle at 50% 30%, rgba(255,46,214,.08), transparent 60%), #05060d;
+    flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+    text-align: center; padding: 0 24px; box-sizing: border-box;
+  }
+  #storyMsgScreen.show { display: flex; }
+  #storyMsgScreen h1 { font-size: 30px; color: #35f0e0; text-shadow: 0 0 16px rgba(53,240,224,.5); margin: 0; }
+  #storyMsgScreen p { max-width: 480px; color: #eaf0ff; font-size: 15px; line-height: 1.6; margin: 0; }
+
   #lobbyBg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; object-fit: cover; }
   #lobbyVignette { position: absolute; inset: 0; z-index: 2; background: radial-gradient(circle at 50% 45%, rgba(5,6,13,.32), rgba(5,6,13,.88) 78%); }
   #wrap.playing #lobbyBg, #wrap.playing #lobbyVignette, #wrap.playing .atmosphere { display: none; }
@@ -486,8 +498,41 @@
         <button id="createBtn" data-i18n="lobby.create">Crear sala</button>
         <button class="ghost" id="joinShowBtn" data-i18n="lobby.join">Unirme a una sala</button>
       </div>
-      <button class="ghost" id="practiceBtn" style="width:100%; margin-top:10px;" data-i18n="lobby.practice">Pr&aacute;ctica libre</button>
+      <button class="ghost" id="practiceBtn" style="width:100%; margin-top:10px;" data-i18n="lobby.practice">Juego en solitario</button>
       <div class="err" id="mainErr"></div>
+    </div>
+
+    <div class="card" id="soloCard" style="display:none">
+      <p class="sub" data-i18n="solo.pick">&iquest;Entrenamiento sin fin, o vas por la Historia?</p>
+      <button type="button" class="modeOption" id="soloTrainingBtn">
+        <strong data-i18n="solo.training">Entrenamiento infinito</strong>
+        <span class="desc" data-i18n="solo.trainingDesc">Elegís rival y mapa, jugás las rondas que quieras.</span>
+      </button>
+      <button type="button" class="modeOption" id="soloStoryBtn">
+        <strong data-i18n="solo.story">Modo Historia</strong>
+        <span class="desc" data-i18n="solo.storyDesc">Atravesá los biomas y convertite en el Last Stick Standing.</span>
+      </button>
+    </div>
+
+    <div class="card" id="storyDiffCard" style="display:none">
+      <p class="sub" data-i18n="story.pickDiff">&iquest;Con qu&eacute; dificultad arrancamos?</p>
+      <button type="button" class="modeOption selected" id="storyEasyBtn" data-diff="easy">
+        <strong data-i18n="practice.easy">F&aacute;cil</strong>
+        <span class="desc" data-i18n="story.easyDesc">2 niveles por bioma.</span>
+      </button>
+      <button type="button" class="modeOption" id="storyMediumBtn" data-diff="medium">
+        <strong data-i18n="practice.medium">Media</strong>
+        <span class="desc" data-i18n="story.mediumDesc">3 niveles por bioma.</span>
+      </button>
+      <button type="button" class="modeOption" id="storyHardBtn" data-diff="hard">
+        <strong data-i18n="practice.hard">Dif&iacute;cil</strong>
+        <span class="desc" data-i18n="story.hardDesc">5 niveles por bioma.</span>
+      </button>
+      <button type="button" class="modeOption" id="storyHardcoreBtn" data-diff="hardcore" style="display:none">
+        <strong data-i18n="story.hardcore">HARDCORE</strong>
+        <span class="desc" data-i18n="story.hardcoreDesc">5 niveles por bioma, con NPCs de más en cada uno.</span>
+      </button>
+      <button id="storyStartBtn" style="width:100%; margin-top: 4px;" data-i18n="story.start">Empezar</button>
     </div>
 
     <div class="card" id="customizeCard" style="display:none">
@@ -641,6 +686,12 @@
     <button id="playAgainBtn" data-i18n="final.playAgain">Revancha</button>
     <div id="againWait" data-i18n="final.waitHost">A ver si el anfitri&oacute;n se anima a la revancha&hellip;</div>
   </div>
+
+  <div id="storyMsgScreen">
+    <h1 id="storyMsgTitle"></h1>
+    <p id="storyMsgBody"></p>
+    <button id="storyMsgContinueBtn"></button>
+  </div>
 </div>
 
 <script src="/stickman.js"></script>
@@ -673,7 +724,9 @@
       "hud.endMatch": "Cortarla acá",
       "hud.leavePractice": "Listo, ya practiqué",
       "hud.leaveLocal": "Cortar la local",
-      "hud.practiceTitle": "PRÁCTICA LIBRE",
+      "hud.leaveStory": "Dejarlo acá",
+      "hud.practiceTitle": "ENTRENAMIENTO",
+      "hud.storyTitle": "MODO HISTORIA",
       "hud.localTitle": "LOCAL",
       "hud.round": "RONDA {n}",
       "hud.roundOf": "RONDA {n} / {total} — {map}",
@@ -709,7 +762,7 @@
       "hat.propeller": "Gorro con hélice",
       "lobby.create": "Crear sala",
       "lobby.join": "Unirme a una sala",
-      "lobby.practice": "Práctica libre",
+      "lobby.practice": "Juego en solitario",
       "lobby.next": "Siguiente",
       "lobby.back": "‹ volver",
       "lobby.save": "Guardar",
@@ -723,6 +776,42 @@
       "practice.hardDesc": "Reacciona antes que vos, cuida el borde y no te perdona una.",
       "practice.pickMap": "¿Dónde entrenamos? El mismo mapa todas las rondas.",
       "practice.start": "Empezar práctica",
+
+      "solo.pick": "¿Entrenamiento sin fin, o vas por la Historia?",
+      "solo.training": "Entrenamiento infinito",
+      "solo.trainingDesc": "Elegís rival y mapa, jugás las rondas que quieras.",
+      "solo.story": "Modo Historia",
+      "solo.storyDesc": "Atravesá los biomas y convertite en el Last Stick Standing.",
+
+      "story.pickDiff": "¿Con qué dificultad arrancamos?",
+      "story.easyDesc": "2 niveles por bioma.",
+      "story.mediumDesc": "3 niveles por bioma.",
+      "story.hardDesc": "5 niveles por bioma.",
+      "story.hardcore": "HARDCORE",
+      "story.hardcoreDesc": "5 niveles por bioma, con NPCs de más en cada uno.",
+      "story.start": "Empezar",
+      "story.continue": "Seguir",
+      "story.levelBanner": "{biome} — NIVEL {n} / {total}",
+      "story.secretBanner": "SALA SECRETA",
+      "story.narrative.ruinas": "Dicen que en las Ruinas quedó parado el último que peleó en serio. Andá a averiguar si es cierto.",
+      "story.narrative.volcan": "Saliste de las Ruinas de una pieza. El Volcán no le tiene respeto a nadie — ni a los que siguen de pie.",
+      "story.narrative.bosque": "En el Bosque se esconden los que se cansaron de pelear. Vos todavía no.",
+      "story.narrative.nieve": "Solo queda la Nieve. Ahí se termina de ver quién es el último en pie.",
+      "story.congrats.ruinas": "Bien. ¿No era tan difícil, no?",
+      "story.congrats.volcan": "Ah, seguís acá. Vamos bien.",
+      "story.congrats.bosque": "Bo! Llegaste más lejos de lo que pensé.",
+      "story.finalTitle": "SOS EL LAST STICK STANDING",
+      "story.finalTitleHardcore": "SOS EL LAST STICK STANDING",
+      "story.finalBody": "Todos los biomas, todas las rondas. No quedó nadie más parado que vos.",
+      "story.finalHardcoreBody": "HARDCORE. Ni el Bosque, ni el Volcán, ni nada te paró. Felicidades — ahora andá a tocar pasto.",
+      "story.finalCleanClear": "Y no le tuviste miedo a ni un solo agujero de vacío.",
+      "story.finalSkippedSecrets": "Eso sí, a más de una sala secreta le sacaste el cuerpo.",
+      "story.finalRecommend.medium": "¿Probamos con Media?",
+      "story.finalRecommend.hard": "¿Te animás a Difícil?",
+      "story.finalRecommend.hardcore": "HARDCORE recién se desbloqueó. ¿Te animás?",
+      "story.finalContinue": "Volver",
+      "story.tauntTitle": "¿Te gusta lo fácil, eh?",
+      "story.tauntBody": "Van varias salas secretas que esquivaste seguidas. Nadie te va a juzgar… bueno, un poco sí.",
 
       "join.codePlaceholder": "CÓDIGO DE SALA",
       "join.connect": "Entrar",
@@ -841,7 +930,9 @@
       "hud.endMatch": "Call it here",
       "hud.leavePractice": "Done practicing",
       "hud.leaveLocal": "End local match",
-      "hud.practiceTitle": "FREE PRACTICE",
+      "hud.leaveStory": "Call it here",
+      "hud.practiceTitle": "TRAINING",
+      "hud.storyTitle": "STORY MODE",
       "hud.localTitle": "LOCAL",
       "hud.round": "ROUND {n}",
       "hud.roundOf": "ROUND {n} / {total} — {map}",
@@ -877,7 +968,7 @@
       "hat.propeller": "Propeller beanie",
       "lobby.create": "Create room",
       "lobby.join": "Join a room",
-      "lobby.practice": "Free practice",
+      "lobby.practice": "Solo mode",
       "lobby.next": "Next",
       "lobby.back": "‹ back",
       "lobby.save": "Save",
@@ -891,6 +982,42 @@
       "practice.hardDesc": "Reacts before you do, hugs the edge and forgives nothing.",
       "practice.pickMap": "Where are we training? Same map every round.",
       "practice.start": "Start practice",
+
+      "solo.pick": "Endless training, or going for the Story?",
+      "solo.training": "Infinite training",
+      "solo.trainingDesc": "Pick your rival and map, play as many rounds as you want.",
+      "solo.story": "Story Mode",
+      "solo.storyDesc": "Cross every biome and become the Last Stick Standing.",
+
+      "story.pickDiff": "What difficulty do we start with?",
+      "story.easyDesc": "2 levels per biome.",
+      "story.mediumDesc": "3 levels per biome.",
+      "story.hardDesc": "5 levels per biome.",
+      "story.hardcore": "HARDCORE",
+      "story.hardcoreDesc": "5 levels per biome, with extra NPCs on every one.",
+      "story.start": "Start",
+      "story.continue": "Continue",
+      "story.levelBanner": "{biome} — LEVEL {n} / {total}",
+      "story.secretBanner": "SECRET ROOM",
+      "story.narrative.ruinas": "They say the last one who really fought stayed standing in the Ruins. Go find out if it's true.",
+      "story.narrative.volcan": "You made it out of the Ruins in one piece. The Volcano doesn't respect anyone — not even the ones still standing.",
+      "story.narrative.bosque": "The Forest hides the ones who got tired of fighting. Not you, though. Not yet.",
+      "story.narrative.nieve": "Only the Snow is left. That's where it really gets decided who's the last one standing.",
+      "story.congrats.ruinas": "Good. Wasn't so hard, was it?",
+      "story.congrats.volcan": "Huh, still here. We're doing fine.",
+      "story.congrats.bosque": "Whoa. You got further than I expected.",
+      "story.finalTitle": "YOU ARE THE LAST STICK STANDING",
+      "story.finalTitleHardcore": "YOU ARE THE LAST STICK STANDING",
+      "story.finalBody": "Every biome, every round. Nobody else is left standing but you.",
+      "story.finalHardcoreBody": "HARDCORE. Not the Forest, not the Volcano, nothing stopped you. Congratulations — now go touch grass.",
+      "story.finalCleanClear": "And you never once flinched at a void hole.",
+      "story.finalSkippedSecrets": "Though you did dodge more than one secret room.",
+      "story.finalRecommend.medium": "Want to try Medium?",
+      "story.finalRecommend.hard": "Feel like trying Hard?",
+      "story.finalRecommend.hardcore": "HARDCORE just unlocked. You up for it?",
+      "story.finalContinue": "Back",
+      "story.tauntTitle": "You like it easy, huh?",
+      "story.tauntBody": "That's several secret rooms in a row you skipped. Nobody's judging… okay, maybe a little.",
 
       "join.codePlaceholder": "ROOM CODE",
       "join.connect": "Go in",
@@ -1301,8 +1428,22 @@
     // defecto de desktop/sim.js sin querer, así que el combate no se sentía igual que en una
     // sala real.
     attacks: BALANCE.attacks,
+    onPortalEnter: function () { storyOnPortalEnter(); },
+    onVoidEnter: function () { storyOnVoidEnter(); },
     onPhaseChange: function (info) {
-      if (!(practiceActive || localActive)) return;
+      if (!(practiceActive || localActive || storyActive)) return;
+
+      if (storyActive && info.t === "roundStart") {
+        hideScoreReveal();
+        var rbs = $("roundBanner");
+        rbs.textContent = storyInSecretRoom
+          ? t("story.secretBanner")
+          : t("story.levelBanner", { biome: t("biome." + STORY_BIOMES[storyBiomeIdx]), n: storyLevel, total: STORY_LEVELS[storyDifficulty] });
+        rbs.classList.add("show");
+        var fts = $("fightText");
+        fts.classList.remove("show"); void fts.offsetWidth; fts.classList.add("show");
+        return;
+      }
 
       if (info.t === "roundStart") {
         // Mismo criterio que Net.on("round") online: si la ronda anterior terminó con el reveal
@@ -1357,6 +1498,10 @@
       $("room").innerHTML = "<b></b>";
       $("room").firstChild.textContent = t("hud.practiceTitle");
       $("endMatchBtn").textContent = t("hud.leavePractice");
+    } else if (storyActive) {
+      $("room").innerHTML = "<b></b>";
+      $("room").firstChild.textContent = t("hud.storyTitle");
+      $("endMatchBtn").textContent = t("hud.leaveStory");
     } else if (localActive) {
       $("room").innerHTML = "<b></b>";
       $("room").firstChild.textContent = t("hud.localTitle");
@@ -1424,7 +1569,7 @@
      Net.on("round") / onPhaseChange) porque este scoreboard pasó a ser la única fuente. */
   function renderWinsScoreboard() {
     var el = $("winsScoreboard");
-    var mode = practiceActive ? "infinite" : localActive ? selectedMode : Net.getMode();
+    var mode = (practiceActive || storyActive) ? "infinite" : localActive ? selectedMode : Net.getMode();
     if (mode !== "wins") { el.classList.remove("show"); return; }
     el.classList.add("show");
     var scores = Sim.getScores();
@@ -1636,10 +1781,16 @@
   var PRACTICE_ME = 1, PRACTICE_AI = 2;
   var practiceActive = false;
   var practiceDifficulty = "medium";
-  var practiceAiAccum = 0;
-  var practiceAiPathCommitted = false; // ver practiceAiTick: evita que un salto al azar arrastre a la IA a un hueco
-  var practiceAiNeedsDoubleJump = false; // el hop elegido por el pathfinding requiere el segundo salto
   var ROOM_HTML_DEFAULT = $("room").innerHTML;
+
+  /* Estado de decisión de IA, uno por bot activo — antes era un único juego de variables
+     globales porque Práctica Libre solo tenía un bot fijo (PRACTICE_AI). Modo Historia reusa la
+     misma lógica de pathfinding con N ids en simultáneo, cada uno con su propio reloj de
+     decisión y sus propias banderas de pathCommitted/needsDoubleJump (ver runBotAi). */
+  var botAiState = {};
+  function getBotAiState(id) {
+    return botAiState[id] || (botAiState[id] = { accum: 0, pathCommitted: false, needsDoubleJump: false });
+  }
 
   var PRACTICE_DIFFS = {
     easy:   { decisionMs: 260, attackChance: 0.55, chaseSlack: 46, edgeMargin: 30, jumpChance: 0.015 },
@@ -1720,24 +1871,27 @@
      hacía rebotar en el mismo lugar o tirarse a un vacío sin salida. Ataca solo si está en
      rango horizontal Y vertical de verdad. Los booleans left/right quedan sostenidos como un
      input humano; jump/punch/kick son "edges" que Sim ya limpia un frame después. */
-  function practiceAiTick(dt) {
+  /* Decide el input de UN bot (`id`) contra el jugador humano (PRACTICE_ME), con su propio
+     reloj de decisión y sus propias banderas de pathfinding en `st` (ver getBotAiState) — así
+     Modo Historia puede llamar esto una vez por bot activo sin que se pisen entre sí. */
+  function runBotAi(id, dt, cfg) {
+    var st = getBotAiState(id);
     var players = Sim.getPlayers();
-    var ai = players[PRACTICE_AI], me = players[PRACTICE_ME];
+    var ai = players[id], me = players[PRACTICE_ME];
     if (!ai || !me) return;
 
-    practiceAiAccum += dt;
-    if (practiceAiAccum < PRACTICE_DIFFS[practiceDifficulty].decisionMs) return;
-    practiceAiAccum = 0;
+    st.accum += dt;
+    if (st.accum < cfg.decisionMs) return;
+    st.accum = 0;
 
     if (!ai.alive || !me.alive) {
-      Sim.handleInput(PRACTICE_AI, "left", false);
-      Sim.handleInput(PRACTICE_AI, "right", false);
-      practiceAiPathCommitted = false;
-      practiceAiNeedsDoubleJump = false;
+      Sim.handleInput(id, "left", false);
+      Sim.handleInput(id, "right", false);
+      st.pathCommitted = false;
+      st.needsDoubleJump = false;
       return;
     }
 
-    var cfg = PRACTICE_DIFFS[practiceDifficulty];
     var dx = me.x - ai.x, absDx = Math.abs(dx);
     var dy = me.y - ai.y;
     var wantLeft = false, wantRight = false, wantJump = false;
@@ -1755,23 +1909,23 @@
         var goRight = (target.x + target.w / 2) > (cur.x + cur.w / 2);
         wantRight = goRight; wantLeft = !goRight;
         wantJump = target.y < cur.y; // el próximo salto del camino está más arriba
-        practiceAiPathCommitted = true;
-        practiceAiNeedsDoubleJump = path.dbl;
+        st.pathCommitted = true;
+        st.needsDoubleJump = path.dbl;
       } else {
         // Sin camino conocido: mejor quedarse quieta que arriesgarse a un hueco sin fondo.
-        practiceAiPathCommitted = false;
-        practiceAiNeedsDoubleJump = false;
+        st.pathCommitted = false;
+        st.needsDoubleJump = false;
       }
     } else if (aiIdx < 0) {
       /* En el aire. Solo se ajusta hacia el rival si venimos de un salto/caída REALMENTE
-         decidido por el pathfinding (practiceAiPathCommitted) — un salto de relleno al azar sin
+         decidido por el pathfinding (st.pathCommitted) — un salto de relleno al azar sin
          plataforma de destino no debe arrastrarnos hacia ningún lado, porque eso es justo lo que
          la hacía cruzar un hueco que no tenía por qué cruzar y caer al vacío. */
-      if (practiceAiPathCommitted && absDx > 2) { wantRight = dx > 0; wantLeft = dx < 0; }
+      if (st.pathCommitted && absDx > 2) { wantRight = dx > 0; wantLeft = dx < 0; }
     } else {
       // Misma plataforma (o el rival también está en el aire): combate normal, terreno conocido.
-      practiceAiPathCommitted = false;
-      practiceAiNeedsDoubleJump = false;
+      st.pathCommitted = false;
+      st.needsDoubleJump = false;
       ambientJumpOk = true;
       if (absDx > cfg.chaseSlack) {
         wantRight = dx > 0; wantLeft = dx < 0;
@@ -1781,16 +1935,16 @@
       }
     }
 
-    Sim.handleInput(PRACTICE_AI, "left", wantLeft);
-    Sim.handleInput(PRACTICE_AI, "right", wantRight);
+    Sim.handleInput(id, "left", wantLeft);
+    Sim.handleInput(id, "right", wantRight);
 
     if (ai.grounded && (wantJump || (ambientJumpOk && Math.random() < cfg.jumpChance))) {
-      Sim.handleInput(PRACTICE_AI, "jump", true);
-    } else if (!ai.grounded && practiceAiNeedsDoubleJump && ai.jumpsLeft > 0) {
+      Sim.handleInput(id, "jump", true);
+    } else if (!ai.grounded && st.needsDoubleJump && ai.jumpsLeft > 0) {
       // El hop elegido por el pathfinding necesita el segundo salto (ver buildPlatformGraph):
       // ya despegó del suelo, ahora hay que pedirlo mientras sigue en el aire.
-      Sim.handleInput(PRACTICE_AI, "jump", true);
-      practiceAiNeedsDoubleJump = false; // gastado — no insistir cada tick de ahí al aterrizaje
+      Sim.handleInput(id, "jump", true);
+      st.needsDoubleJump = false; // gastado — no insistir cada tick de ahí al aterrizaje
     }
 
     var attacks = Sim.getAttacks();
@@ -1799,9 +1953,11 @@
     // otra plataforma, fuera de alcance vertical, y quedaba tirando golpes al aire sin parar.
     var verticalOk = Math.abs(dy) < 60;
     if (verticalOk && ai.attackCooldown <= 0 && absDx < attacks.kick.reach && Math.random() < cfg.attackChance) {
-      Sim.handleInput(PRACTICE_AI, absDx <= attacks.punch.reach ? "punch" : "kick", true);
+      Sim.handleInput(id, absDx <= attacks.punch.reach ? "punch" : "kick", true);
     }
   }
+
+  function practiceAiTick(dt) { runBotAi(PRACTICE_AI, dt, PRACTICE_DIFFS[practiceDifficulty]); }
 
   function selectPracticeDifficulty(diff) {
     practiceDifficulty = diff;
@@ -1869,7 +2025,7 @@
 
   function enterPractice() {
     practiceActive = true;
-    practiceAiAccum = 0;
+    botAiState = {};
     myId = PRACTICE_ME;
     // Antes nameFor() mostraba "Vos" para myId sin necesidad de esto — ahora que nameFor()
     // siempre devuelve el nombre real, práctica necesita el propio, igual que online.
@@ -1907,9 +2063,307 @@
     // un paso anterior, sin esto se ve por encima/al lado de choiceCard en vez de en su lugar.
     $("practiceCard").style.display = "none";
     $("practiceThemeCard").style.display = "none";
+    $("soloCard").style.display = "none";
     $("choiceCard").style.display = "block";
     startLobbyBackground();
   }
+
+  /* ---------------------------------------------------------------- modo historia (solitario) */
+  /* Un jugador humano (PRACTICE_ME) contra N NPCs que son equipo entre sí (isBot, ver
+     desktop/sim.js) atravesando 4 biomas en orden fijo. Corre 100% en el navegador, igual que
+     Práctica Libre — cada "nivel" es su propio Sim.startMatch() de una ronda; ganar o perder se
+     detecta acá (storyCheckOutcome), no con el sistema de rondas/eliminación de Sim, porque ese
+     está pensado para "todos contra todos" y acá son N-contra-1 en equipo. */
+  var STORY_BIOMES = ["ruinas", "volcan", "bosque", "nieve"];
+  var STORY_LEVELS = { easy: 2, medium: 3, hard: 5, hardcore: 5 };
+  var STORY_SECRET_LEVEL_INDEX = { easy: 1, medium: 2, hard: 3 }; // hardcore: siempre el último nivel
+  var STORY_SKIP_TAUNT_THRESHOLD = 3;
+  var STORY_KEY = "lss-story";
+
+  function loadStoryState() {
+    var out = { run: null, unlocks: { hardcoreUnlocked: false } };
+    try {
+      var raw = localStorage.getItem(STORY_KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          out.run = parsed.run || null;
+          out.unlocks = parsed.unlocks || out.unlocks;
+        }
+      }
+    } catch (e) { /* incógnito o storage bloqueado */ }
+    return out;
+  }
+  function saveStoryState() {
+    try { localStorage.setItem(STORY_KEY, JSON.stringify(storyState)); } catch (e) { /* incógnito */ }
+  }
+  var storyState = loadStoryState();
+
+  var storyActive = false;
+  var storyDifficulty = null;
+  var storyBiomeIdx = 0, storyLevel = 1;
+  var storyBotIds = [];
+  var storyResolved = false;
+  var storyMessageShowing = false;
+  var storyMsgContinueHandler = null;
+  var storyPendingPortalAction = null;
+  var storyInSecretRoom = false;
+  var storySecretOriginLevel = null;
+  var storyVoidAvailableThisLevel = false;
+  var storySkipStreak = 0;
+  var storySkippedSecretBiomes = []; // biomas donde había secreto y se lo salteó, en esta corrida
+  var storySecretTakenBiomes = [];   // biomas donde se ganó la sala secreta, en esta corrida
+
+  function storyNpcCountFor(biomeIdx, level) {
+    var base = biomeIdx + 1;
+    return storyDifficulty === "hardcore" ? base + (level - 1) : base;
+  }
+
+  function storyLevelHasSecret() {
+    if (storyDifficulty === "hardcore") return storyLevel === STORY_LEVELS.hardcore;
+    return storyLevel === STORY_SECRET_LEVEL_INDEX[storyDifficulty];
+  }
+
+  function storySaveRun() {
+    storyState.run = {
+      difficulty: storyDifficulty, biomeIdx: storyBiomeIdx, level: storyLevel,
+      skipStreak: storySkipStreak,
+      skippedSecretBiomes: storySkippedSecretBiomes, secretTakenBiomes: storySecretTakenBiomes,
+    };
+    saveStoryState();
+  }
+
+  function showStoryMessage(title, body, btnLabel, onContinue) {
+    storyMessageShowing = true;
+    $("storyMsgTitle").textContent = title;
+    $("storyMsgBody").textContent = body;
+    $("storyMsgContinueBtn").textContent = btnLabel;
+    $("storyMsgScreen").classList.add("show");
+    storyMsgContinueHandler = onContinue;
+  }
+
+  function showStoryNarrative(biomeIdx, onContinue) {
+    var biomeId = STORY_BIOMES[biomeIdx];
+    showStoryMessage(t("biome." + biomeId), t("story.narrative." + biomeId), t("story.continue"), onContinue);
+  }
+
+  function showStoryBiomeCongrats(biomeIdx, onContinue) {
+    var biomeId = STORY_BIOMES[biomeIdx];
+    showStoryMessage(t("biome." + biomeId), t("story.congrats." + biomeId), t("story.continue"), onContinue);
+  }
+
+  function storyGoToNextBiomeWithCongrats() {
+    var finishedIdx = storyBiomeIdx;
+    showStoryBiomeCongrats(finishedIdx, function () {
+      storyBiomeIdx++;
+      storyLevel = 1;
+      storySaveRun();
+      showStoryNarrative(storyBiomeIdx, storyStartLevel);
+    });
+  }
+
+  function storyFinishGame() {
+    var cleanClear = storySkippedSecretBiomes.length === 0;
+    var wasHardcore = storyDifficulty === "hardcore";
+    if (storyDifficulty === "hard") storyState.unlocks.hardcoreUnlocked = true;
+    storyState.run = null;
+    saveStoryState();
+
+    var parts = [];
+    parts.push(t(wasHardcore ? "story.finalHardcoreBody" : "story.finalBody"));
+    parts.push(t(cleanClear ? "story.finalCleanClear" : "story.finalSkippedSecrets"));
+    if (!wasHardcore) {
+      var nextDiff = storyDifficulty === "easy" ? "medium" : storyDifficulty === "medium" ? "hard" : "hardcore";
+      parts.push(t("story.finalRecommend." + nextDiff));
+    }
+    showStoryMessage(t(wasHardcore ? "story.finalTitleHardcore" : "story.finalTitle"), parts.join(" "), t("story.finalContinue"), exitStory);
+  }
+
+  // Sin esto, cada nivel (al ser su propio startMatch de una sola ronda) caería siempre en
+  // MAP0 — la "ronda 1" fija que usa cualquier match nuevo (ver nextRound() en desktop/sim.js).
+  // Forzar un archetype de verdad es lo que hace que cada nivel sea una variación distinta del
+  // bioma y no siempre la misma plataforma inicial. "colina" queda afuera: es el archetype sin
+  // hazards pensado para Rey de la Colina, no para pelear.
+  function pickStoryArchetype() {
+    var ids = MapArchetypes.ids.filter(function (id) { return id !== "colina"; });
+    return ids[Math.floor(Math.random() * ids.length)];
+  }
+
+  function storySpawnLevel(biomeId, npcCount) {
+    storyResolved = false;
+    botAiState = {};
+    Sim.resetToLobby();
+    Sim.addPlayer(PRACTICE_ME);
+    storyBotIds = [];
+    for (var i = 0; i < npcCount; i++) {
+      var id = 2 + i;
+      Sim.addPlayer(id);
+      Sim.getPlayers()[id].isBot = true;
+      names[id] = t("player.npc") + " " + (i + 1);
+      storyBotIds.push(id);
+    }
+    Sim.startMatch(1, false, { mode: "infinite", biome: biomeId, mapArchetype: pickStoryArchetype() });
+  }
+
+  function storyStartLevel() {
+    storyInSecretRoom = false;
+    storySpawnLevel(STORY_BIOMES[storyBiomeIdx], storyNpcCountFor(storyBiomeIdx, storyLevel));
+    storySaveRun();
+  }
+
+  function storyEnterSecretRoom() {
+    storyInSecretRoom = true;
+    storySpawnLevel("neon", storyNpcCountFor(storyBiomeIdx, storyLevel) + 2);
+  }
+
+  function storyOnWin() {
+    if (storyInSecretRoom) {
+      storyInSecretRoom = false;
+      storySecretTakenBiomes.push(storyBiomeIdx);
+      storySaveRun();
+      var isLastBiomeS = storyBiomeIdx >= STORY_BIOMES.length - 1;
+      if (isLastBiomeS) {
+        Sim.spawnPortal("#ffc247");
+        storyPendingPortalAction = storyFinishGame;
+      } else {
+        Sim.spawnPortal(Biomes.get(STORY_BIOMES[storyBiomeIdx + 1]).accentText);
+        storyPendingPortalAction = storyGoToNextBiomeWithCongrats;
+      }
+      return;
+    }
+
+    var hasSecret = storyLevelHasSecret();
+    var isLastLevelOfBiome = storyLevel >= STORY_LEVELS[storyDifficulty];
+    var isLastBiome = storyBiomeIdx >= STORY_BIOMES.length - 1;
+
+    if (isLastLevelOfBiome && isLastBiome) {
+      Sim.spawnPortal("#ffc247");
+      storyPendingPortalAction = storyFinishGame;
+    } else if (isLastLevelOfBiome) {
+      Sim.spawnPortal(Biomes.get(STORY_BIOMES[storyBiomeIdx + 1]).accentText);
+      storyPendingPortalAction = storyGoToNextBiomeWithCongrats;
+    } else {
+      Sim.spawnPortal(Biomes.get(STORY_BIOMES[storyBiomeIdx]).accentText);
+      storyPendingPortalAction = function () { storyLevel++; storyStartLevel(); };
+    }
+
+    if (hasSecret) {
+      storySecretOriginLevel = storyLevel;
+      storyVoidAvailableThisLevel = true;
+      Sim.spawnVoidHole();
+    }
+  }
+
+  function storyOnLoss() {
+    if (storyInSecretRoom) {
+      storyInSecretRoom = false;
+      storyLevel = storySecretOriginLevel;
+    } else {
+      storyLevel = 1; // checkpoint: vuelve al inicio del bioma
+    }
+    storySaveRun();
+    setTimeout(function () { if (storyActive) storyStartLevel(); }, 1400);
+  }
+
+  function storyCheckOutcome() {
+    if (storyResolved) return;
+    var human = Sim.getPlayers()[PRACTICE_ME];
+    if (!human) return;
+    if (!human.alive) { storyResolved = true; Sim.forceEndMatch(); storyOnLoss(); return; }
+    var botsAlive = storyBotIds.some(function (id) { var b = Sim.getPlayers()[id]; return b && b.alive; });
+    if (!botsAlive) { storyResolved = true; Sim.forceEndMatch(); storyOnWin(); }
+  }
+
+  function storyOnPortalEnter() {
+    if (!storyActive) return;
+    var action = storyPendingPortalAction; storyPendingPortalAction = null;
+    Sim.clearWorldObjects();
+    var showTaunt = false;
+    if (storyVoidAvailableThisLevel && !storyInSecretRoom) {
+      storySkippedSecretBiomes.push(storyBiomeIdx);
+      if (storyDifficulty !== "hardcore") {
+        storySkipStreak++;
+        if (storySkipStreak >= STORY_SKIP_TAUNT_THRESHOLD) { showTaunt = true; storySkipStreak = 0; }
+      }
+      storySaveRun();
+    }
+    storyVoidAvailableThisLevel = false;
+    if (showTaunt) showStoryMessage(t("story.tauntTitle"), t("story.tauntBody"), t("story.continue"), action || function () {});
+    else if (action) action();
+  }
+
+  function storyOnVoidEnter() {
+    if (!storyActive) return;
+    storyPendingPortalAction = null;
+    Sim.clearWorldObjects();
+    storyVoidAvailableThisLevel = false;
+    storySkipStreak = 0;
+    storyEnterSecretRoom();
+  }
+
+  function storySetupSession() {
+    myId = PRACTICE_ME;
+    names = {}; names[PRACTICE_ME] = $("nickInputMain").value.trim() || t("player.default");
+    colors = {}; hats = {}; if (myColor) colors[PRACTICE_ME] = myColor;
+    hats[PRACTICE_ME] = myHat;
+    finalShown = false;
+    hideScoreReveal();
+    Sim.resetToLobby();
+    updateSessionLabels();
+    $("endMatchBtn").classList.add("show");
+    $("wrap").classList.add("playing");
+    $("pingIndicator").classList.remove("show");
+    stopLobbyBackground();
+  }
+
+  function enterStory(difficulty) {
+    storyDifficulty = difficulty;
+    storyBiomeIdx = 0; storyLevel = 1;
+    storySkipStreak = 0; storySkippedSecretBiomes = []; storySecretTakenBiomes = [];
+    storyActive = true;
+    storySetupSession();
+    storySaveRun();
+    showStoryNarrative(0, storyStartLevel);
+  }
+
+  function resumeStory() {
+    var run = storyState.run;
+    storyDifficulty = run.difficulty;
+    storyBiomeIdx = run.biomeIdx; storyLevel = run.level;
+    storySkipStreak = run.skipStreak || 0;
+    storySkippedSecretBiomes = run.skippedSecretBiomes || [];
+    storySecretTakenBiomes = run.secretTakenBiomes || [];
+    storyActive = true;
+    storySetupSession();
+    storyStartLevel();
+  }
+
+  function exitStory() {
+    storyActive = false;
+    Sim.resetToLobby();
+    myId = null;
+    names = {}; colors = {}; hats = {};
+    hideScoreReveal();
+
+    $("wrap").classList.remove("playing");
+    $("roundBanner").classList.remove("show");
+    $("endMatchBtn").classList.remove("show");
+    $("storyMsgScreen").classList.remove("show");
+    storyMessageShowing = false;
+    updateSessionLabels();
+    storyState.run = null;
+    saveStoryState();
+    $("soloCard").style.display = "none";
+    $("storyDiffCard").style.display = "none";
+    $("choiceCard").style.display = "block";
+    startLobbyBackground();
+  }
+
+  function storyAiTick(dt) {
+    var cfg = PRACTICE_DIFFS[storyDifficulty === "hardcore" ? "hard" : storyDifficulty];
+    storyBotIds.forEach(function (id) { runBotAi(id, dt, cfg); });
+  }
+
 
   /* ---------------------------------------------------------------- modo local (sin red) */
   /* Mismo espíritu que Práctica Libre (Sim corre de verdad acá, no en un servidor) pero con
@@ -2734,6 +3188,18 @@
       return;
     }
 
+    if (storyActive) {
+      if (!storyMessageShowing) {
+        storyAiTick(frameDt);
+        Sim.step(frameDt);
+        storyCheckOutcome();
+      }
+      renderTopbar();
+      Sim.draw(ctx, now, frameDt);
+      requestAnimationFrame(frameLoop);
+      return;
+    }
+
     if (localActive) {
       pollLocalGamepads();
       Sim.step(frameDt);
@@ -2962,7 +3428,7 @@
   function refreshPingUI() {
     var el = $("pingIndicator");
     var ms = Net.getPing();
-    if (practiceActive || localActive || ms === null) {
+    if (practiceActive || localActive || storyActive || ms === null) {
       el.classList.remove("show");
       return;
     }
@@ -3129,8 +3595,52 @@
   $("practiceBtn").addEventListener("click", function () {
     $("mainErr").textContent = "";
     $("choiceCard").style.display = "none";
-    $("practiceCard").style.display = "block";
+    $("soloCard").style.display = "block";
     $("backLink").style.display = "inline";
+  });
+
+  $("soloTrainingBtn").addEventListener("click", function () {
+    $("soloCard").style.display = "none";
+    $("practiceCard").style.display = "block";
+  });
+
+  $("soloStoryBtn").addEventListener("click", function () {
+    $("soloCard").style.display = "none";
+    if (storyState.run) {
+      $("backLink").style.display = "none";
+      resumeStory();
+    } else {
+      $("storyEasyBtn").classList.add("selected");
+      $("storyMediumBtn").classList.remove("selected");
+      $("storyHardBtn").classList.remove("selected");
+      $("storyHardcoreBtn").classList.remove("selected");
+      $("storyHardcoreBtn").style.display = storyState.unlocks.hardcoreUnlocked ? "block" : "none";
+      storySelectedDifficulty = "easy";
+      $("storyDiffCard").style.display = "block";
+    }
+  });
+
+  var storySelectedDifficulty = "easy";
+  [["storyEasyBtn", "easy"], ["storyMediumBtn", "medium"], ["storyHardBtn", "hard"], ["storyHardcoreBtn", "hardcore"]].forEach(function (pair) {
+    $(pair[0]).addEventListener("click", function () {
+      storySelectedDifficulty = pair[1];
+      ["storyEasyBtn", "storyMediumBtn", "storyHardBtn", "storyHardcoreBtn"].forEach(function (id) {
+        $(id).classList.toggle("selected", id === pair[0]);
+      });
+    });
+  });
+
+  $("storyStartBtn").addEventListener("click", function () {
+    $("storyDiffCard").style.display = "none";
+    $("backLink").style.display = "none";
+    enterStory(storySelectedDifficulty);
+  });
+
+  $("storyMsgContinueBtn").addEventListener("click", function () {
+    $("storyMsgScreen").classList.remove("show");
+    storyMessageShowing = false;
+    var cb = storyMsgContinueHandler; storyMsgContinueHandler = null;
+    if (cb) cb();
   });
 
   $("practiceNextBtn").addEventListener("click", function () {
@@ -3156,6 +3666,18 @@
       $("practiceCard").style.display = "block";
       return;
     }
+    if ($("practiceCard").style.display === "block" || $("storyDiffCard").style.display === "block") {
+      $("practiceCard").style.display = "none";
+      $("storyDiffCard").style.display = "none";
+      $("soloCard").style.display = "block";
+      return;
+    }
+    if ($("soloCard").style.display === "block") {
+      $("soloCard").style.display = "none";
+      $("choiceCard").style.display = "block";
+      $("backLink").style.display = "none";
+      return;
+    }
     // localSetupCard → originCard: son pasos de la MISMA decisión ("crear sala"), igual que
     // práctica arriba — un solo paso atrás, no directo al inicio.
     if ($("localSetupCard").style.display === "block") {
@@ -3176,6 +3698,8 @@
     $("joinCard").style.display = "none";
     $("originCard").style.display = "none";
     $("practiceCard").style.display = "none";
+    $("soloCard").style.display = "none";
+    $("storyDiffCard").style.display = "none";
     $("roomCard").style.display = "none";
     $("choiceCard").style.display = "block";
     $("backLink").style.display = "none";
@@ -3245,6 +3769,7 @@
   $("startBtn").addEventListener("click", function () { Net.start(); });
   $("endMatchBtn").addEventListener("click", function () {
     if (practiceActive) exitPractice();
+    else if (storyActive) exitStory();
     else if (localActive) exitLocal();
     else Net.endMatch();
   });

@@ -162,6 +162,10 @@ var Sim = (function () {
       hitStunT: 0, hitDir: 1, jumpAnticT: 0, deathFadeT: 0,
       power: null, burnT: 0, burnTickT: 0, burnFlashT: 0, slowT: 0,
       jumpsLeft: MAX_JUMPS, hillMs: 0, orbMs: 0,
+      /* Exclusivo del modo Historia (build web, ver online/public/index.html): los NPCs de un
+         mismo bioma son equipo entre sí, nunca se pegan. isBot siempre es false para jugadores
+         reales, así que este chequeo nunca se activa en ningún otro modo/build. */
+      isBot: false,
     };
   }
 
@@ -451,6 +455,88 @@ var Sim = (function () {
     }
   }
 
+  /* ---------------------------------------------------------------- portal / agujero de vacío */
+  /* Exclusivos del modo Historia (build web, ver online/public/index.html): objetos que
+     index.html manda aparecer cuando el jugador gana la pelea de un nivel, para que camine hasta
+     ellos y decida cómo seguir. Ningún otro modo/build los usa — quedan inertes (portal/voidHole
+     en null) salvo que alguien llame spawnPortal()/spawnVoidHole(). Modelados sobre el mismo
+     patrón del power-orb (spawnOrb/updateOrbs/drawOrb) de arriba: un objeto, overlap por
+     distancia, listo. Solo el jugador humano los dispara — los NPCs (isBot) nunca cuentan para
+     el overlap, así que un bot parado arriba no hace nada. */
+  var WORLD_OBJECT_R = 34;
+  var portal = null, voidHole = null;
+  var onPortalEnter = function () {}, onVoidEnter = function () {};
+
+  function pickWorldObjectSpot() {
+    var plats = currentMap.platforms;
+    var pl = plats[Math.floor(Math.random() * plats.length)];
+    var pad = Math.min(30, pl.w / 3);
+    var lo = pl.x + pad, hi = pl.x + pl.w - pad;
+    var x = hi > lo ? lo + Math.random() * (hi - lo) : pl.x + pl.w / 2;
+    return { x: x, y: pl.y - 36 };
+  }
+
+  function spawnPortal(color) {
+    var spot = pickWorldObjectSpot();
+    portal = { x: spot.x, y: spot.y, color: color || "#35f0e0", bornT: 0 };
+  }
+
+  function spawnVoidHole() {
+    var spot = pickWorldObjectSpot();
+    voidHole = { x: spot.x, y: spot.y, bornT: 0 };
+  }
+
+  function clearWorldObjects() { portal = null; voidHole = null; }
+
+  function worldObjectOverlap(obj) {
+    if (!obj) return false;
+    for (var i = 0; i < roster.length; i++) {
+      var p = players[roster[i]];
+      if (!p || !p.alive || p.isBot) continue;
+      var dx = p.x - obj.x, dy = (p.y - 20) - obj.y;
+      if (dx * dx + dy * dy < WORLD_OBJECT_R * WORLD_OBJECT_R) return true;
+    }
+    return false;
+  }
+
+  function updateWorldObjects(dt) {
+    if (portal) {
+      portal.bornT += dt;
+      if (worldObjectOverlap(portal)) { portal = null; onPortalEnter(); }
+    }
+    if (voidHole) {
+      voidHole.bornT += dt;
+      if (worldObjectOverlap(voidHole)) { voidHole = null; onVoidEnter(); }
+    }
+  }
+
+  // "Círculo grande que se deforma": radio ondulado por ángulo en vez de un círculo perfecto,
+  // la onda avanza con bornT así queda vivo sin ser una animación de sprites.
+  function drawWorldObject(ctx, obj, fillColor, strokeColor) {
+    if (!obj) return;
+    var t = obj.bornT * 0.003;
+    ctx.save();
+    ctx.translate(obj.x, obj.y);
+    if (!snailMode) { ctx.shadowColor = strokeColor; ctx.shadowBlur = 22; }
+    ctx.beginPath();
+    var steps = 24;
+    for (var i = 0; i <= steps; i++) {
+      var a = (i / steps) * Math.PI * 2;
+      var r = WORLD_OBJECT_R + Math.sin(a * 3 + t * 2) * 6;
+      var x = Math.cos(a) * r, y = Math.sin(a) * r * 0.7;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = fillColor; ctx.globalAlpha = 0.3; ctx.fill();
+    ctx.strokeStyle = strokeColor; ctx.globalAlpha = 0.9; ctx.lineWidth = 3; ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawWorldObjects(ctx) {
+    if (portal) drawWorldObject(ctx, portal, portal.color, portal.color);
+    if (voidHole) drawWorldObject(ctx, voidHole, "#05030a", "#a054ff");
+  }
+
   /* ---------------------------------------------------------------- rey del orbe */
   /* Cuenta, para cada jugador vivo, cuánto tiempo lleva con un power activo (cualquier tipo —
      p.power lo pone updateOrbs()/pickup, y stepPlayer ya lo va apagando solo al vencer su
@@ -630,6 +716,7 @@ var Sim = (function () {
           if (oid === p.id) continue;
           var o = players[oid];
           if (!o || !o.alive || p.attack.hitSet[oid]) continue;
+          if (p.isBot && o.isBot) continue; // NPCs del modo Historia: mismo equipo, no se pegan
           var atk = ATTACKS[p.attack.type];
           var reach = atk.reach;
           var dx = o.x - p.x;
@@ -754,6 +841,8 @@ var Sim = (function () {
     if (opts.nameFor) nameFor = opts.nameFor;
     if (opts.hatFor) hatFor = opts.hatFor;
     if (opts.onPhaseChange) onPhaseChange = opts.onPhaseChange;
+    if (opts.onPortalEnter) onPortalEnter = opts.onPortalEnter;
+    if (opts.onVoidEnter) onVoidEnter = opts.onVoidEnter;
 
     /* Ajuste de combate por build. Merge campo por campo (no reemplazo del objeto) para que
        quien pise solo `damage` no se lleve puesto el resto de la definición del ataque. */
@@ -825,6 +914,7 @@ var Sim = (function () {
     hillTimer = 0;
     hillLastPlatformIdx = -1;
     orbkingTimer = 0;
+    clearWorldObjects();
     currentRound = 0;
     nextRound();
   }
@@ -846,6 +936,7 @@ var Sim = (function () {
     hillTimer = 0;
     hillLastPlatformIdx = -1;
     orbkingTimer = 0;
+    clearWorldObjects();
     AudioManager.on.toLobby();
   }
 
@@ -855,6 +946,7 @@ var Sim = (function () {
     for (var si = 0; si < idsToStep.length; si++) stepPlayer(players[idsToStep[si]], dt, damageEnabled);
     resolvePlayerCollisions(idsToStep);
     updateOrbs(dt);
+    updateWorldObjects(dt);
     if (gameMode === "koth") updateHill(dt);
     else if (gameMode === "orbking") updateOrbHold(dt);
 
@@ -880,6 +972,7 @@ var Sim = (function () {
     Camera.begin(ctx, W, H);
     drawMap(ctx, now, dt);
     drawOrb(ctx);
+    drawWorldObjects(ctx);
     if (gameMode === "koth") drawHill(ctx);
     var ids = phase === "lobby" ? Object.keys(players).map(Number) : roster;
     for (var i = 0; i < ids.length; i++) drawPlayer(ctx, players[ids[i]]);
@@ -1027,6 +1120,7 @@ var Sim = (function () {
     setSnailMode: setSnailMode, getSnailMode: getSnailMode,
     getAttacks: getAttacks,
     startMatch: startMatch, resetToLobby: resetToLobby, forceEndMatch: forceEndMatch,
+    spawnPortal: spawnPortal, spawnVoidHole: spawnVoidHole, clearWorldObjects: clearWorldObjects,
     step: step, draw: draw, snapshot: snapshot,
     getPhase: function () { return phase; },
     getRoster: function () { return roster; },
