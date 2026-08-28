@@ -704,6 +704,10 @@ var Sim = (function () {
     if (p.y > H + 60) {
       if (inLobby) { p.x = 100 + Math.random() * (W - 200); p.y = -40; p.vy = 0; p.vx = 0; }
       else if (damageEnabled) { eliminate(p); }
+      /* Fuera de "fight" (p.ej. "final", esperando el portal de Modo Historia) el daño está
+         apagado a propósito — pero sin este else alguien que se cae del mapa ahí quedaba en
+         caída libre para siempre, sin eliminar y sin repositor, imposible de recuperar. */
+      else if (p.alive) { respawnPlayer(p); }
     }
 
     if (damageEnabled && p.alive && World.checkHazards(p, currentMap, PW)) { eliminate(p); }

@@ -3484,7 +3484,7 @@
     // Modo Local se resuelve ANTES de llegar acá (ver los handlers de abajo): ahí una sola tecla
     // puede pertenecer a un jugador distinto según qué esquema de teclado tenga asignado, así
     // que hace falta saber el id antes de llamar a Sim.handleInput.
-    if (practiceActive) Sim.handleInput(PRACTICE_ME, action, down);
+    if (practiceActive || storyActive) Sim.handleInput(PRACTICE_ME, action, down);
     else Net.sendInput(action, down);
   }
   function localPlayerForKbSlot(slot) {
