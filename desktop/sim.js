@@ -57,7 +57,7 @@ var Sim = (function () {
      nunca son true fuera de ahí). "No mucho más" vida: 125, no el doble. */
   var NPC_DAMAGE_MULT = 0.8, HERO_DAMAGE_MULT = 1.25, HERO_MAX_HP = 125;
 
-  var ORB_SPAWN_MS = 10000, ORB_POWER_MS = 8000, ORB_PICKUP_R = 28;
+  var ORB_SPAWN_MS = 5000, ORB_POWER_MS = 8000, ORB_PICKUP_R = 28;
   /* Rey de la Colina: el círculo tarda HILL_APPEAR_DELAY_MS en aparecer por primera vez, queda
      activo HILL_ACTIVE_MS y al vencer salta a otra plataforma sin pausa entre medio. Cada
      milisegundo parado adentro suma hacia HILL_TARGET_MS (30 s de acumulado total, no seguido);
