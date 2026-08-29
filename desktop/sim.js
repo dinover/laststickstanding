@@ -56,6 +56,7 @@ var Sim = (function () {
      que sea una masacre inmediata, sin tocar el balance del resto de los modos (isBot/isHero
      nunca son true fuera de ahí). "No mucho más" vida: 125, no el doble. */
   var NPC_DAMAGE_MULT = 0.8, HERO_DAMAGE_MULT = 1.25, HERO_MAX_HP = 125;
+  var NPC_ATTACK_COOLDOWN_MULT = 1.35; // NPCs pegan un 35% menos seguido
 
   var ORB_SPAWN_MS = 5000, ORB_POWER_MS = 8000, ORB_PICKUP_R = 28;
   /* Rey de la Colina: el círculo tarda HILL_APPEAR_DELAY_MS en aparecer por primera vez, queda
@@ -660,6 +661,10 @@ var Sim = (function () {
       var def = ATTACKS[type];
       p.attack = { type: type, t: def.dur, dur: def.dur, hitSet: {} };
       var cdMult = (p.power && p.power.aire) ? AIR_COOLDOWN_MULT : 1;
+      // Balance de Modo Historia: además de pegar más suave (NPC_DAMAGE_MULT), las NPC también
+      // pegan un poco menos seguido — nunca se activa fuera de ahí porque isBot siempre es
+      // false en el resto de los modos/builds.
+      if (p.isBot) cdMult *= NPC_ATTACK_COOLDOWN_MULT;
       // El cooldown es por tipo de ataque, no compartido: así una piña puede ser literalmente
       // el doble de rápida que una patada en vez de quedar frenada por el mismo temporizador.
       p.attackCooldown = def.cooldown * cdMult;

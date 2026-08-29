@@ -268,8 +268,23 @@ function drawOrbitAura(ctx, cx, midY, halfW, halfH, t, color) {
 // pose bone-by-bone instead of a generic blob around the whole body: every segment the rig
 // already draws (thigh, shin, upper arm, forearm, spine, neck) gets its own little overlay.
 var CURRENT_AURA = null;
+// En desktop/sim.js (build web/online), p.power pasó a ser flags por tipo (fuego/hielo/tierra/
+// aire) + t compartido, no un `type` único — hace falta para la sala secreta de Modo Historia,
+// que activa los 4 a la vez (ver desktop/sim.js: grantAllPowers). stickman.js es COMPARTIDO
+// también por steam/sim.js, que a propósito no se tocó (build independiente) y sigue mandando
+// la forma vieja {type, t} — de ahí el chequeo de `power.type` primero, así ninguno de los dos
+// se rompe. Mostrar un solo aura alcanza: no hay forma linda de superponer las 4 a la vez.
+function firstActivePower(power) {
+  if (!power) return null;
+  if (power.type) return power.type;
+  if (power.fuego) return "fuego";
+  if (power.hielo) return "hielo";
+  if (power.tierra) return "tierra";
+  if (power.aire) return "aire";
+  return null;
+}
 function beginPowerAura(p) {
-  if (p.power) CURRENT_AURA = { type: p.power.type, t: p.idleT || 0 };
+  if (p.power) CURRENT_AURA = { type: firstActivePower(p.power), t: p.idleT || 0 };
   // Una VÍCTIMA quemándose (burnT) o congelada (slowT) — infligido por OTRO jugador con ese
   // poder — no tiene p.power propio, así que antes se quedaba sin este aura y dependía solo
   // del recolor+glow (fuego) o de nada en absoluto (hielo no tenía ni eso: el aura de cristales
@@ -849,7 +864,7 @@ function drawStickman(ctx, p, color, dbg, hat) {
   if (snail) {
     if (p.burnT > 0) drawColor = POWER_COLORS.fuego;
     else if (p.slowT > 0) drawColor = POWER_COLORS.hielo;
-    else if (p.power) drawColor = POWER_COLORS[p.power.type];
+    else if (p.power) drawColor = POWER_COLORS[firstActivePower(p.power)];
   } else if (p.burnT > 0) {
     // Recolor + el shadowBlur que ya se aplica más abajo a drawColor = el "borde exterior"
     // con glow que antes solo pasaba en snail mode. Antes de esto, en modo normal quien se
@@ -871,7 +886,7 @@ function drawStickman(ctx, p, color, dbg, hat) {
   // "swirling around the figure", the gusts sell "hugging each limb".
   if (!snail) {
     beginPowerAura(p);
-    if (p.power && p.power.type === "aire") {
+    if (p.power && p.power.aire) {
       var auraMidY = (headY + feet) / 2 - 4, auraHalfH = (feet - headY) / 2 + 6;
       drawOrbitAura(ctx, hipX, auraMidY, 17, auraHalfH, p.idleT || 0, POWER_COLORS.aire);
       ctx.strokeStyle = drawColor; ctx.fillStyle = drawColor; // restore before the rig itself

@@ -119,7 +119,10 @@
   /* Solo aparece en modo infinito, solo para el anfitrión, solo mientras la partida corre — el
      único modo que no termina solo, así que necesita una salida manual. */
   #endMatchBtn {
-    position: absolute; top: 14px; right: 64px; z-index: 6; display: none;
+    /* right corrido de 64 a 116: #topRight sumó un tercer ícono (cuenta de usuario) y a 64
+       quedaba montado encima de "Audio". 116 deja lugar a los tres círculos de 34px + sus
+       gaps sin volver a pisarlos. */
+    position: absolute; top: 14px; right: 116px; z-index: 6; display: none;
     padding: 8px 14px; font-size: 11px; letter-spacing: .04em;
     background: transparent; color: #ff8a9a; border: 1px solid #4a2432; box-shadow: none;
   }
