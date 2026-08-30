@@ -1,27 +1,11 @@
-# Last Stick Standing — build de escritorio (sin Steam)
+# Last Stick Standing — build de escritorio
 
-Versión instalable para jugar online entre amigos, cada uno desde su PC, **sin pasar por
-Steam** (que cobra USD 100 para publicar) ni por ningún otro store. La conexión es
-peer-to-peer vía WebRTC (PeerJS), igual que `index.html`, pero:
-
-- con **paridad total** con la V2 del juego (kick separado, power-orbs elementales, modo
-  caracol, audio) — el `index.html` viejo se había quedado atrás en mecánicas, esta versión no;
-- empaquetada como una app instalable de Windows, no una página que hay que abrir a mano.
-
-No modifica nada de `screen.html`, `controller.html`, `sdk.js`, `net.js` ni `index.html` — esos
-siguen funcionando exactamente igual. Esta carpeta reutiliza sin tocar `../stickman.js`,
-`../fx.js`, `../world.js`, `../audio.js` y **el mismo `../net.js`** (PeerJS) que ya usa
-`index.html`; lo único nuevo es `sim.js` (simulación con paridad V2), `game.html` (la pantalla,
-con la UI/UX de `index.html` pero al día) y el empaquetado Electron (`main.js` + `package.json`).
-
-## Cómo funciona la conexión
-
-Uno de los jugadores hace clic en **"Crear sala"**: eso genera un código de 4 letras (vía
-PeerJS, que usa un broker gratuito público solo para el "handshake" inicial). Los demás eligen
-**"Unirme a una sala"** y escriben ese código. A partir de ahí todo el tráfico del juego viaja
-directo entre las PCs (WebRTC), sin pasar por ningún servidor propio. Todos necesitan internet;
-no hace falta abrir puertos ni configurar router en la gran mayoría de los casos (WebRTC hace
-NAT traversal solo).
+Versión instalable de Windows: una ventana que se conecta directo al server online
+(`../online`, corriendo en la VM de Oracle Cloud — ver
+[`../oracle/README-oracle.md`](../oracle/README-oracle.md)). No es P2P ni Steam: es el mismo
+juego que corre en `https://147-15-101-103.nip.io`, mostrado en una ventana propia en vez de un
+navegador. No hay ninguna copia local de `sim.js`, `game.html` ni lógica de red — `main.js` solo
+apunta la ventana a esa URL.
 
 ## Correr en desarrollo
 
@@ -31,22 +15,42 @@ npm install
 npm start
 ```
 
+Para probar contra un server local (`../online/server.js`) en vez de producción:
+
+```bash
+LSS_SERVER_URL=http://localhost:8080 npm start
+```
+
 ## Generar el instalador
 
 ```bash
 npm run dist
 ```
 
-Esto genera un instalador NSIS (`dist/Last Stick Standing Setup <version>.exe`) que cualquiera
-puede descargar y ejecutar en Windows — no necesita cuenta de Steam, no necesita nada instalado
-de antes. Para distribuirlo: subilo a donde prefieras (Google Drive, WeTransfer, itch.io — itch
-es gratis y no cobra nada por publicar, a diferencia de Steam) y compartí el link con tus
-amigos.
+Esto genera un instalador NSIS (`dist/Last Stick Standing Setup <version>.exe`) que instala el
+juego en `%LocalAppData%\Programs\Last Stick Standing`, crea accesos directos (escritorio + menú
+Inicio) y queda listado en **Configuración → Aplicaciones** de Windows para desinstalar desde
+ahí. No necesita Steam ni ninguna cuenta — al abrirlo, la ventana se conecta sola al server
+online.
+
+`build/installer.nsi` es un script NSIS propio, no el que arma electron-builder por default. El
+generado automáticamente (para asistido u one-click) tiene un paso interno que se auto-compila,
+se auto-ejecuta para escribirse su propio desinstalador, y después lo empaqueta adentro del
+instalador final — y ese paso específico no funcionó en esta máquina (probado elevado, desde
+PowerShell puro, con la última versión de `electron-builder`, con oneClick tanto en true como en
+false: siempre falla igual, incluso ejecutando a mano el .exe intermedio que se supone que se
+autoescribe el desinstalador). `build/installer.nsi` es el patrón NSIS clásico de toda la vida en
+un solo paso — instala, hace `WriteUninstaller` una vez, escribe la entrada de registro de
+desinstalación — sin nada de esa maquinaria. Si algún día hace falta tocar el instalador (agregar
+un ícono, un idioma, una página), es ese archivo.
 
 ## Notas
 
-- Como es P2P por WebRTC, si el host tiene una conexión muy restrictiva (NAT simétrico
-  corporativo, por ejemplo) puede fallar la conexión directa; para el caso normal de "amigos
-  jugando desde sus casas" funciona sin configuración adicional.
-- Si más adelante quieren mecánicas nuevas, tocan `sim.js` acá (y opcionalmente
-  `../steam/sim.js` si mantienen las dos versiones) — `screen.html` sigue totalmente aparte.
+- Necesita internet (se conecta al mismo server que usa la versión web). Si falla la conexión al
+  arrancar, muestra `offline.html` con un botón de reintentar en vez de la pantalla de error de
+  Chromium.
+- Si la IP de la VM cambia alguna vez, hay que actualizar `SERVER_URL` en `main.js` (mismo caso
+  que el resto de los lugares que referencian `147-15-101-103.nip.io` — ver
+  [`../oracle/README-oracle.md`](../oracle/README-oracle.md)).
+- Reemplaza los builds viejos `desktop/` (PeerJS) y `steam/` (Steamworks) — ninguno de los dos
+  sigue en el repo.

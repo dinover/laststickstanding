@@ -1,20 +1,27 @@
-/* Electron main process for the desktop/PeerJS build of Last Stick Standing. No Steamworks,
-   no store account needed — just a plain window pointed at game.html, which does its own
-   WebRTC room plumbing via net.js/PeerJS exactly like the browser index.html does. Requires
-   an internet connection (PeerJS's public broker + WebRTC), but nothing else. */
+/* Electron main process for the desktop build of Last Stick Standing. No local sim, no P2P,
+   no Steamworks — just a window pointed at the same authoritative WebSocket server the browser
+   build uses (games/laststickstanding/online). net-ws.js builds its WS url from location.host,
+   so loading the server's own page here gets a fully working game for free. */
 const { app, BrowserWindow } = require("electron");
 const path = require("path");
+
+const SERVER_URL = process.env.LSS_SERVER_URL || "https://147-15-101-103.nip.io";
 
 function createWindow() {
   var win = new BrowserWindow({
     width: 1024, height: 640,
     autoHideMenuBar: true,
+    icon: path.join(__dirname, "..", "LSS icon.png"),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
-  win.loadFile(path.join(__dirname, "game.html"));
+
+  win.loadURL(SERVER_URL);
+  win.webContents.on("did-fail-load", function () {
+    win.loadFile(path.join(__dirname, "offline.html"));
+  });
 }
 
 app.whenReady().then(function () {
