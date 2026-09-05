@@ -103,7 +103,7 @@ function makeReachability(consts) {
 
 /* Espacio de diseño de los archetypes: TODOS los builders de acá abajo escriben sus posiciones
    con estos números, que son los de siempre. generateMap estira el layout resultante al tamaño
-   real del mundo (hoy 1.2x, ver W/H en desktop/sim.js). Hacerlo así y no reescribiendo las
+   real del mundo (hoy 1.2x, ver W/H en online/sim.js). Hacerlo así y no reescribiendo las
    constantes significa que cambiar el tamaño del mapa es tocar dos números en sim.js, y que un
    archetype nuevo se escribe con las mismas coordenadas familiares que los siete que ya están. */
 var DESIGN_W = 960, DESIGN_H = 540;
@@ -1146,7 +1146,7 @@ var World = (function () {
   }
 
   /* Estira un layout escrito en coordenadas de diseño al mundo real de W x H. Público porque el
-     mapa inicial (MAP0, en desktop/sim.js — el de la ronda 1 de casi toda partida) está escrito
+     mapa inicial (MAP0, en online/sim.js — el de la ronda 1 de casi toda partida) está escrito
      en las mismas coordenadas que los archetypes de este archivo y necesita el mismo trato: sin
      pasarlo por acá quedaba pegado arriba a la izquierda, con una franja muerta abajo y a la
      derecha, mientras los mapas procedurales sí ocupaban toda la pantalla. */

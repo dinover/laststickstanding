@@ -231,7 +231,7 @@ var Particles = (function () {
 
    opts.key lets a caller keep its OWN independent trail (different buffer, different tuning)
    without clobbering another caller's — e.g. the attack-hit trail below and the aire-power
-   speed trail (desktop/sim.js's drawPlayer) can both be active on the same player at once
+   speed trail (online/sim.js's drawPlayer) can both be active on the same player at once
    without fighting over ghost count or overwriting each other's snapshots. Callers that don't
    pass opts get byte-identical behavior to before (key "_trail", 3 ghosts, alpha 0.10-0.26). */
 var Trails = {

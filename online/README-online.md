@@ -37,10 +37,12 @@ Es la tercera forma de jugar online, al lado de las que ya existen:
   disparaba la simulación y los guests no simulaban. El servidor los graba y los manda en el
   snapshot.
 
-## No hay una cuarta copia de sim.js
+## No hay una segunda copia de sim.js
 
-`sim-host.js` **lee y evalúa** `../stickman.js`, `../fx.js`, `../world.js` y `../desktop/sim.js`
-tal cual, en un contexto `vm` de Node por sala. Un cambio de gameplay en `desktop/sim.js` lo toma
+`sim-host.js` **lee y evalúa** `../stickman.js`, `../fx.js`, `../world.js` y `./sim.js`
+tal cual, en un contexto `vm` de Node por sala. (`sim.js` vivía en `desktop/` cuando el build
+de escritorio simulaba por su cuenta; desde que ese build pasó a ser una ventana apuntada acá,
+la simulación es del servidor y vive con él.) Un cambio de gameplay en `online/sim.js` lo toma
 este servidor sin ningún paso de porteo.
 
 Un contexto por sala porque `sim.js` guarda todo su estado en variables de módulo: con un solo
@@ -64,7 +66,7 @@ código. Andá a `http://localhost:8080/health` para ver salas y jugadores conec
 ## Deploy en Render (actual)
 
 `render.yaml` y `Dockerfile` viven en la **raíz del repo** (no acá), porque el servidor necesita
-`stickman.js`, `fx.js`, `world.js` y `desktop/sim.js`, que están un nivel más arriba. Render lee
+`stickman.js`, `fx.js` y `world.js`, que están un nivel más arriba. Render lee
 el mismo `Dockerfile` que se usaba para Fly sin cambios: el server ya escucha en
 `process.env.PORT` sobre `0.0.0.0`, que es lo único que Render exige.
 
@@ -182,7 +184,7 @@ como un resumen de solo lectura en el lobby.
   todavía. Todo el tipeo es real (un `setTimeout` por caracter, no una animación CSS), así que
   `hideScoreReveal()` puede cortarlo en cualquier punto sin dejar timers sueltos.
 
-  Los contadores (`matchStats`) viven en `desktop/sim.js`, mismo patrón aditivo que `ATTACKS`:
+  Los contadores (`matchStats`) viven en `online/sim.js`, mismo patrón aditivo que `ATTACKS`:
   se incrementan en los mismos puntos donde ya pasan las cosas que cuentan (tirar un ataque,
   conectarlo, `eliminate()`), sin rama especial, así que escritorio y Steam los llevan también
   aunque no los usen para nada. Viajan en el broadcast `"round"` (una vez por ronda, no en cada
@@ -198,7 +200,7 @@ como un resumen de solo lectura en el lobby.
 - **Historia** — modo contra IA. Todavía no existe; el botón está en la UI pero deshabilitado
   ("Próximamente"). Se construye al final, como su propio bloque de trabajo.
 
-Implementación: `desktop/sim.js` gana un tercer parámetro opcional en `startMatch(rounds, snail,
+Implementación: `online/sim.js` gana un tercer parámetro opcional en `startMatch(rounds, snail,
 opts)` — `opts.mode: "infinite"` activa el modo sin límite. Sin ese parámetro (como llaman
 `desktop/game.html` y `steam/game.html`, con solo 2 argumentos) el comportamiento es
 **exactamente** el de siempre; los builds de escritorio y Steam no tienen ni pueden tener modo
@@ -344,7 +346,7 @@ pasa con el fix (llega al tope de 6 fantasmas tras 15 frames a 50fps).
 ## Balance de combate (solo web)
 
 `balance.js` ajusta el combate **únicamente de este build**. Se aplica con
-`Sim.init({ attacks })` sobre los valores por defecto de `../desktop/sim.js`, que quedan
+`Sim.init({ attacks })` sobre los valores por defecto de `online/sim.js`, que quedan
 intactos: escritorio y Steam siguen jugando igual que siempre.
 
 | | piña | patada |

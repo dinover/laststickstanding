@@ -1,8 +1,8 @@
 /* Carga la simulación EXISTENTE del navegador (../stickman.js, ../fx.js, ../world.js,
-   ../desktop/sim.js) en un contexto headless de Node, uno aislado por sala.
+   online/sim.js) en un contexto headless de Node, uno aislado por sala.
 
    Deliberadamente NO es una cuarta copia de sim.js. Los archivos se leen del disco y se
-   evalúan tal cual, así que un cambio de gameplay en desktop/sim.js lo toma este servidor
+   evalúan tal cual, así que un cambio de gameplay en online/sim.js lo toma este servidor
    sin ningún paso de porteo. Ya hay dos copias (desktop/ y steam/) que el README de desktop
    afirma idénticas y que en la práctica ya divergieron; una tercera copia manual sería el
    punto en que la divergencia deja de ser un comentario y pasa a ser un bug.
@@ -20,14 +20,14 @@ const BALANCE = require("./balance");
 
 const ROOT = path.join(__dirname, "..");
 
-/* Mismo orden que los <script> de desktop/game.html: stickman.js define POWER_COLORS (que
+/* Mismo orden que los <script> del cliente: stickman.js define POWER_COLORS (que
    sim.js lee para los orbes), fx.js define Camera/HitStop/Particles/Trails/ScreenFX, y
    world.js define World (generateMap + checkHazards, ambos autoritativos). */
 const SOURCE_FILES = [
   path.join(ROOT, "stickman.js"),
   path.join(ROOT, "fx.js"),
   path.join(ROOT, "world.js"),
-  path.join(ROOT, "desktop", "sim.js"),
+  path.join(__dirname, "sim.js"),
 ];
 
 const SCRIPTS = SOURCE_FILES.map(

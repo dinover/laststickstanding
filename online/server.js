@@ -99,7 +99,7 @@ const STATIC = {
   "/fx.js": ["../fx.js", "text/javascript; charset=utf-8"],
   "/world.js": ["../world.js", "text/javascript; charset=utf-8"],
   "/audio.js": ["../audio.js", "text/javascript; charset=utf-8"],
-  "/sim.js": ["../desktop/sim.js", "text/javascript; charset=utf-8"],
+  "/sim.js": ["sim.js", "text/javascript; charset=utf-8"],
   "/balance.js": ["balance.js", "text/javascript; charset=utf-8"],
   // Favicon + imagen de preview al compartir el link (WhatsApp/Twitter/Discord leen esto vía
   // las meta og:image de public/index.html, no adivinan una captura sola).
@@ -163,12 +163,12 @@ function freeCode() {
 
 /* "rounds" reproduce el único modo que existía: el anfitrión elige cuántas rondas. "infinite"
    se juega ronda a ronda sin límite, con el puntaje acumulando desde la ronda 1; cada 5 rondas
-   vuelve al mapa inicial (ver nextRound() en desktop/sim.js). "wins" también se juega sin tope
+   vuelve al mapa inicial (ver nextRound() en online/sim.js). "wins" también se juega sin tope
    de rondas, pero corta sola apenas alguien GANA la cantidad de rondas que el anfitrión eligió
    (reusa el mismo campo room.rounds que "rounds", solo que ahí es un objetivo de victorias, no
-   una cantidad fija — ver el comentario de startMatch() en desktop/sim.js). "koth" es Rey de la
+   una cantidad fija — ver el comentario de startMatch() en online/sim.js). "koth" es Rey de la
    Colina: una sola ronda sin eliminación, la gana quien llegue primero a 100 puntos de círculo
-   (ver updateHill() en desktop/sim.js). "orbking" es Rey del Orbe: partida a reloj de 2 minutos,
+   (ver updateHill() en online/sim.js). "orbking" es Rey del Orbe: partida a reloj de 2 minutos,
    también sin eliminación, gana quien más tiempo sostuvo un power activo (ver updateOrbHold()).
    "Historia" (modo contra IA) todavía no existe — el cliente ni lo ofrece — así que cualquier
    valor que no sea "infinite"/"wins"/"koth"/"orbking" cae en "rounds" por default, no solo por
@@ -250,7 +250,7 @@ function onPhaseChange(room, evt) {
        convierte solo a null (Infinity no es representable en JSON), pero eso queda implícito
        y frágil si algún día cambia el serializador — se hace explícito acá. */
     /* stats: patadas/piñas tiradas, caídas, golpes dados/recibidos — acumulado desde el
-       inicio de la partida (ver matchStats en desktop/sim.js). Va acá y no en cada snapshot
+       inicio de la partida (ver matchStats en online/sim.js). Va acá y no en cada snapshot
        (que sale ~30 veces por segundo) porque solo se usa una vez por ronda, en el reveal del
        modo infinito; mandarlo a cada tick sería puro desperdicio de ancho de banda. Se manda
        igual en modo "rounds" — es chico y así no hace falta una rama especial — pero el
@@ -359,7 +359,7 @@ function compressSnapshot(snap, room) {
     if (p.attack) p.attack = { type: p.attack.type, t: Math.round(p.attack.t), dur: p.attack.dur };
     // power ahora es flags por tipo (fuego/hielo/tierra/aire) + t compartido, no un `type` único
     // — hace falta para la sala secreta de Modo Historia, que activa los 4 a la vez (ver
-    // desktop/sim.js: grantAllPowers). Se copian los booleans tal cual, sean los que sean.
+    // online/sim.js: grantAllPowers). Se copian los booleans tal cual, sean los que sean.
     if (p.power) p.power = Object.assign({}, p.power, { t: Math.round(p.power.t) });
   }
 
@@ -964,7 +964,7 @@ function handleMessage(ws, raw) {
     if (room.host.sim.getPhase() !== "lobby") return;
     room.lastMapKey = null; // fuerza que el primer snapshot lleve el mapa entero
     // room.mode/room.rounds ya están fijados (room.rounds puede haber cambiado via setRounds).
-    /* El segundo parámetro es el "modo caracol" de desktop/sim.js (menos partículas y sombras
+    /* El segundo parámetro es el "modo caracol" de online/sim.js (menos partículas y sombras
        para máquinas lentas). El cliente web ya no lo ofrece: la simulación corre acá, no en la
        PC del jugador, así que apagar efectos del lado del servidor no le ahorraba nada a nadie.
        El parámetro sigue en sim.js porque el build de escritorio sí lo usa. */

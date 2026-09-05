@@ -1,7 +1,8 @@
 # Imagen del servidor online (ver online/README-online.md).
 # El contexto de build es la raíz del repo porque el servidor necesita los archivos
-# compartidos del juego (stickman.js, fx.js, world.js) y desktop/sim.js, que viven acá
-# arriba — se cargan tal cual, sin copiarlos ni portearlos.
+# compartidos del juego (stickman.js, fx.js, world.js), que viven acá arriba — se cargan
+# tal cual, sin copiarlos ni portearlos. La simulación (online/sim.js) ya viaja adentro
+# de online/.
 FROM node:20-alpine
 
 WORKDIR /app
@@ -14,7 +15,6 @@ RUN cd online && npm install --omit=dev
 # Módulos compartidos que el servidor evalúa en su contexto headless (stickman/fx/world)
 # y que además sirve al navegador. audio.js es solo para el cliente.
 COPY stickman.js fx.js world.js audio.js ./
-COPY desktop/sim.js ./desktop/
 # Favicon + imagen de preview al compartir el link (server.js las sirve en /favicon.png y
 # /og-image.png — ver la excepción correspondiente en .dockerignore, que si no se las come).
 # Forma JSON (no shell-form): el parser de Dockerfile no banca comillas shell-style para

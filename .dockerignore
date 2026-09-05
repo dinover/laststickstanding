@@ -6,12 +6,9 @@ node_modules
 # El instalador pesa 111 MB y no tiene nada que hacer en la imagen del servidor.
 *.exe
 
-# Builds de escritorio / Steam: no los usa el servidor.
-steam/
-desktop/main.js
-desktop/preload.js
-desktop/package.json
-desktop/_two-tab-test.html
+# Build de escritorio: hoy es solo una ventana de Electron apuntada a este mismo servidor,
+# así que la imagen no necesita nada de ahí adentro (la simulación vive en online/sim.js).
+desktop/
 
 # Assets y herramientas que solo se usan en el navegador o en dev.
 # Rutas con / adelante = solo la raíz del contexto, para que no se lleven puesto

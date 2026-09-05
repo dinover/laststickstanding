@@ -1,5 +1,5 @@
 /* Ajuste de combate EXCLUSIVO del build web (online + Práctica Libre).
-   Se aplica via Sim.init({ attacks }) sobre los valores por defecto de ../desktop/sim.js, que
+   Se aplica via Sim.init({ attacks }) sobre los valores por defecto de ./sim.js, que
    quedan intactos: los builds de escritorio y Steam siguen jugando como siempre.
 
    Cargado en DOS contextos con el mismo archivo, sin bundler:

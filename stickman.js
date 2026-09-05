@@ -268,9 +268,9 @@ function drawOrbitAura(ctx, cx, midY, halfW, halfH, t, color) {
 // pose bone-by-bone instead of a generic blob around the whole body: every segment the rig
 // already draws (thigh, shin, upper arm, forearm, spine, neck) gets its own little overlay.
 var CURRENT_AURA = null;
-// En desktop/sim.js (build web/online), p.power pasó a ser flags por tipo (fuego/hielo/tierra/
+// En online/sim.js (build web/online), p.power pasó a ser flags por tipo (fuego/hielo/tierra/
 // aire) + t compartido, no un `type` único — hace falta para la sala secreta de Modo Historia,
-// que activa los 4 a la vez (ver desktop/sim.js: grantAllPowers). stickman.js es COMPARTIDO
+// que activa los 4 a la vez (ver online/sim.js: grantAllPowers). stickman.js es COMPARTIDO
 // también por steam/sim.js, que a propósito no se tocó (build independiente) y sigue mandando
 // la forma vieja {type, t} — de ahí el chequeo de `power.type` primero, así ninguno de los dos
 // se rompe. Mostrar un solo aura alcanza: no hay forma linda de superponer las 4 a la vez.
@@ -453,7 +453,7 @@ var HEAD_RX = 7.6, HEAD_RY = 8.8; // mismo elipse que dibuja la cabeza al final 
 
 /* Cuánto sobresale cada accesorio por encima del CENTRO de la cabeza, glow incluido. No es un
    dato decorativo: el nombre y la barra de vida se dibujan a una altura fija sobre la cabeza
-   (drawPlayer en desktop/sim.js) y sin corrimiento una galera o una hélice se los tapan. Los
+   (drawPlayer en online/sim.js) y sin corrimiento una galera o una hélice se los tapan. Los
    números salieron de medir la tinta real de cada uno, no a ojo — al cambiarle la forma a un
    accesorio hay que volver a medirlo, o su cartel le queda encima. Referencia: "none" da 15,
    que es lo que ocupa la cabeza pelada con su halo de glow. */
