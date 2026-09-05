@@ -317,6 +317,15 @@
   .rankRow .nm { flex: 1; }
   .rankRow .sc { color: #35f0e0; }
   .rankRow.win { border-color: #ffc247; box-shadow: 0 0 18px rgba(255,194,71,.25); }
+  /* El ganador festeja arriba del cartel. width/height van en el atributo del <canvas> (el
+     muñeco se dibuja a escala real, en píxeles); acá solo se lo achica proporcionalmente en
+     pantallas angostas — height:auto para que nunca se deforme. */
+  /* background/box-shadow explícitos: la regla global de arriba le pinta a TODO <canvas> el
+     fondo del juego, y acá eso dibujaba un recuadro negro flotando sobre la pantalla final. */
+  #winnerDance {
+    width: min(300px, 78vw); height: auto; margin-bottom: -8px; flex: 0 0 auto;
+    background: transparent; box-shadow: none;
+  }
   #playAgainBtn { margin-top: 6px; }
   #againWait { color: #6b7394; font-size: 12px; margin-top: 6px; display: none; }
 
@@ -745,7 +754,7 @@
       </div>
       <button id="localStartBtn" style="width:100%; margin-top: 10px;" disabled data-i18n="common.startMatch">&iexcl;A pelear!</button>
       <div class="err" id="localErr"></div>
-      <div class="hint" data-i18n-html="local.hint">Teclado 1: A/D mover &middot; ESPACIO/W saltar &middot; J pi&ntilde;a &middot; K patada<br>Teclado 2: &larr;/&rarr; mover &middot; &uarr;/CTRL saltar &middot; . pi&ntilde;a &middot; / patada</div>
+      <div class="hint" data-i18n-html="local.hint">Teclado 1: A/D mover &middot; ESPACIO/W saltar &middot; J pi&ntilde;a &middot; K patada<br>Teclado 2: &larr;/&rarr; mover &middot; &uarr;/CTRL saltar &middot; . pi&ntilde;a &middot; / patada<br>Mando: stick o cruceta mover &middot; X saltar &middot; L2 pi&ntilde;a &middot; R2 patada</div>
     </div>
 
     <!-- Celulares como control del modo Local. Se llega desde el setup local (padOpenBtn) y se
@@ -782,7 +791,7 @@
       </div>
       <p class="sub" id="waitOwner" style="display:none; margin:0" data-i18n="room.waitOwner">El anfitri&oacute;n est&aacute; decidiendo. Hac&eacute; unos estiramientos.</p>
 
-      <div class="hint" data-i18n="room.hint">A/D mover &middot; ESPACIO/W saltar &middot; J/clic izq. pi&ntilde;a &middot; K/clic der. patada</div>
+      <div class="hint" data-i18n="room.hint">A/D mover &middot; ESPACIO/W saltar &middot; J/clic izq. pi&ntilde;a &middot; K/clic der. patada &middot; con mando: stick o cruceta, X salta, L2 pi&ntilde;a, R2 patada</div>
       <div class="err" id="roomErr"></div>
     </div>
 
@@ -808,9 +817,14 @@
   </div>
 
   <div id="finalScreen">
+    <canvas id="winnerDance" width="300" height="176"></canvas>
     <h1 id="winnerTitle" data-i18n="final.winner">GANADOR</h1>
     <div id="ranking"></div>
     <button id="playAgainBtn" data-i18n="final.playAgain">Revancha</button>
+    <!-- Solo en Local: la revancha de ahí repite modo y rondas tal cual, así que hace falta una
+         puerta de vuelta al armado para cambiarlos. En Online no aparece porque la revancha YA
+         devuelve a todos al lobby de la sala, que es donde se elige el modo. -->
+    <button id="backToSetupBtn" class="ghost" style="display:none" data-i18n="final.changeMode">Cambiar el modo</button>
     <div id="againWait" data-i18n="final.waitHost">A ver si el anfitri&oacute;n se anima a la revancha&hellip;</div>
   </div>
 
@@ -853,7 +867,7 @@
       "hud.scores": "PUNTAJES",
       "hud.endMatch": "Cortarla acá",
       "hud.leavePractice": "Listo, ya practiqué",
-      "hud.leaveLocal": "Cortar la local",
+      "hud.leaveLocal": "Volver al sillón",
       "hud.leaveStory": "Dejarlo acá",
       "hud.practiceTitle": "ENTRENAMIENTO",
       "hud.storyTitle": "MODO HISTORIA",
@@ -1004,7 +1018,7 @@
       "common.startMatch": "¡A pelear!",
 
       "local.addPlayers": "Sumá hasta 8 al sillón: teclado, mando o celular.",
-      "local.hint": "Teclado 1: A/D mover · ESPACIO/W saltar · J piña · K patada<br>Teclado 2: ←/→ mover · ↑/CTRL saltar · . piña · / patada",
+      "local.hint": "Teclado 1: A/D mover · ESPACIO/W saltar · J piña · K patada<br>Teclado 2: ←/→ mover · ↑/CTRL saltar · . piña · / patada<br>Mando: stick o cruceta mover · X saltar · L2 piña · R2 patada",
       "local.full": "Sillón lleno (8/8), no entra nadie más.",
       "local.needTwo": "Solo no se puede pelear: sumá a alguien más.",
       "local.keyboard": "Teclado {n}",
@@ -1033,7 +1047,7 @@
       "room.share": "Pasá este código y que se sumen:",
       "room.modeLabel": "MODO DE JUEGO",
       "room.waitOwner": "El anfitrión está decidiendo. Hacé unos estiramientos.",
-      "room.hint": "A/D mover · ESPACIO/W saltar · J/clic izq. piña · K/clic der. patada",
+      "room.hint": "A/D mover · ESPACIO/W saltar · J/clic izq. piña · K/clic der. patada · con mando: stick o cruceta, X salta, L2 piña, R2 patada",
       "room.hostTag": "(anfitrión)",
       "room.goneTag": "(reconectando…)",
       "room.defaultHost": "Anfitrión",
@@ -1053,6 +1067,7 @@
       "final.wins": "{name} GANA",
       "final.noWinner": "NADIE QUEDÓ PARADO",
       "final.playAgain": "Revancha",
+      "final.changeMode": "Cambiar el modo",
       "final.waitHost": "A ver si el anfitrión se anima a la revancha…",
       "final.pts": "pts",
 
@@ -1084,7 +1099,7 @@
       "hud.scores": "SCORES",
       "hud.endMatch": "Call it here",
       "hud.leavePractice": "Done practicing",
-      "hud.leaveLocal": "End local match",
+      "hud.leaveLocal": "Back to the couch",
       "hud.leaveStory": "Call it here",
       "hud.practiceTitle": "TRAINING",
       "hud.storyTitle": "STORY MODE",
@@ -1235,7 +1250,7 @@
       "common.startMatch": "Let's brawl!",
 
       "local.addPlayers": "Fill the couch, up to 8: keyboard, controller or phone.",
-      "local.hint": "Keyboard 1: A/D move · SPACE/W jump · J punch · K kick<br>Keyboard 2: ←/→ move · ↑/CTRL jump · . punch · / kick",
+      "local.hint": "Keyboard 1: A/D move · SPACE/W jump · J punch · K kick<br>Keyboard 2: ←/→ move · ↑/CTRL jump · . punch · / kick<br>Gamepad: stick or d-pad to move · X jump · L2 punch · R2 kick",
       "local.full": "Couch is full (8/8), nobody else fits.",
       "local.needTwo": "You can't brawl alone: add someone else.",
       "local.keyboard": "Keyboard {n}",
@@ -1263,7 +1278,7 @@
       "room.share": "Pass this code around:",
       "room.modeLabel": "GAME MODE",
       "room.waitOwner": "The host is still deciding. Stretch a little.",
-      "room.hint": "A/D move · SPACE/W jump · J/left click punch · K/right click kick",
+      "room.hint": "A/D move · SPACE/W jump · J/left click punch · K/right click kick · on a gamepad: stick or d-pad, X jumps, L2 punches, R2 kicks",
       "room.hostTag": "(host)",
       "room.goneTag": "(reconnecting…)",
       "room.defaultHost": "Host",
@@ -1283,6 +1298,7 @@
       "final.wins": "{name} WINS",
       "final.noWinner": "NOBODY LEFT STANDING",
       "final.playAgain": "Rematch",
+      "final.changeMode": "Change the mode",
       "final.waitHost": "Seeing if the host is up for a rematch…",
       "final.pts": "pts",
 
@@ -1398,7 +1414,7 @@
   /* ---------------------------------------------------------------- sombreado del stick (solo acá) */
   /* stickman.js es un <script> clásico compartido con desktop/ y steam/ (no un módulo): una
      function-declaration de top-level ahí se vuelve una propiedad de window, y tanto acá como
-     dentro de sim.js (/sim.js == ../desktop/sim.js) se llama a drawStickman como identificador
+     dentro de sim.js (/sim.js == online/sim.js) se llama a drawStickman como identificador
      libre, resuelto en cada invocación contra ESE mismo global. Reasignar window.drawStickman
      ACÁ intercepta también lo que dibuja Sim.draw() — sin tocar un solo byte de stickman.js ni
      de sim.js, que desktop/steam siguen cargando tal cual, sin este archivo encima. */
@@ -1418,14 +1434,20 @@
 
   window.drawStickman = function (ctx, p, color, dbg, hat) {
     // Fantasmas de estela y fade de la muerte llegan con ctx.globalAlpha ya bajado por el
-    // llamador (Trails.draw / drawPlayer en desktop/sim.js), y a esa opacidad el matiz del
+    // llamador (Trails.draw / drawPlayer en online/sim.js), y a esa opacidad el matiz del
     // sombreado no se nota — no vale la pena otro canvas y una composición extra por cuadro.
     if (ctx.globalAlpha < 1) return baseDrawStickman(ctx, p, color, dbg, hat);
 
     var info = dbg || shineDbg;
     var w = ctx.canvas.width, h = ctx.canvas.height;
-    if (shineCanvas.width !== w || shineCanvas.height !== h) {
-      shineCanvas.width = w; shineCanvas.height = h;
+    /* Solo CRECE, nunca se achica. En la pantalla de victoria conviven dos canvas de tamaños muy
+       distintos (el del juego, 960x540, y el del ganador que baila, mucho más chico) y ajustarlo
+       al de cada llamada lo reasignaba —o sea, lo reasignaba y lo limpiaba entero— dos veces por
+       cuadro. Que sobre lienzo no molesta: se limpia y se pega solo el rectángulo del destino,
+       y lo que quede afuera lo recorta el propio canvas al hacer drawImage. */
+    if (shineCanvas.width < w || shineCanvas.height < h) {
+      shineCanvas.width = Math.max(shineCanvas.width, w);
+      shineCanvas.height = Math.max(shineCanvas.height, h);
     }
     shineCtx.setTransform(1, 0, 0, 1, 0, 0);
     shineCtx.clearRect(0, 0, w, h);
@@ -1605,7 +1627,7 @@
     // Sin efecto en modo online real (el servidor tiene su propia copia de este mismo
     // balance.js — ver online/sim-host.js). Acá importa solo para Práctica Libre y modo Local,
     // que sí hacen correr este Sim de verdad en el navegador: antes usaba los valores por
-    // defecto de desktop/sim.js sin querer, así que el combate no se sentía igual que en una
+    // defecto de online/sim.js sin querer, así que el combate no se sentía igual que en una
     // sala real.
     attacks: BALANCE.attacks,
     onPortalEnter: function () { storyOnPortalEnter(); },
@@ -1929,6 +1951,111 @@
     }
   }
 
+  /* ---------------------------------------------------------------- baile del ganador */
+  /* Arriba del cartel festeja el que ganó, con SU color y SU accesorio. No es una animación
+     aparte: es la MISMA drawStickman del juego movida por un mini-motor de tres líneas, así que
+     el ganador se ve exactamente igual que peleando, accesorio incluido. Se pasa el rato
+     rebotando y tirando patadas a un lado y al otro sin parar, con la ESTELA de velocidad
+     pegada atrás (el mismo Trails del orbe de aire, con la misma tuning que usa drawPlayer en
+     online/sim.js). Ojo: la estela va sola, sin p.power — poner el orbe le sumaba además las
+     chispas girando alrededor y los soplidos por hueso, que acá tapan al muñeco en vez de
+     acompañarlo. La estela sale del propio baile, no de un poder que el ganador no tiene. */
+  var DANCE_SCALE = 1.2;
+  var DANCE_FEET_Y = 148;   // el piso, en píxeles dentro del canvas
+  var DANCE_JUMP_V = -7.2;  // mismas unidades que online/sim.js: píxeles por frame de 60 Hz
+  var DANCE_GRAVITY = 0.94; // v0²/2g ≈ 28 px de salto, que es lo que entra sin cortar la hélice
+  var DANCE_CROUCH_MS = 90; // el respiro agachado entre rebote y rebote
+  var DANCE_KICK_MS = 150;  // lo que dura cada patada
+  var DANCE_KICK_GAP = 170; // cada cuánto sale la próxima, alternando de lado
+  /* Cuánto se corre para el lado al que patea. Sin esto los fantasmas de la estela caían todos
+     en el mismo x y en vez de un rastro quedaba un borrón encima del muñeco: la estela necesita
+     que haya desplazamiento para leerse como estela. 26 px de amplitud + los ~55 del alcance de
+     la patada entran holgados en la mitad del canvas. */
+  var DANCE_SWAY = 26;
+  var dancer = null, danceRaf = null, danceLastT = null;
+  var danceId = null, danceColor = "#35f0e0", danceHat = "none";
+  var danceKickT = 0, danceCrouchT = 0;
+
+  function startWinnerDance(id) {
+    var canvas = $("winnerDance");
+    // "NADIE QUEDÓ PARADO": no hay ganador que muestre nada, así que el canvas ni aparece.
+    if (id === undefined || id === null) { canvas.style.display = "none"; danceId = null; return; }
+    canvas.style.display = "";
+    danceColor = colorFor(id);
+    danceHat = hatFor(id);
+    // setLang() vuelve a llamar showFinal() para retraducirlo: si es el mismo ganador, el baile
+    // sigue donde estaba en vez de arrancar de cero a mitad de una patada.
+    if (danceId === id && danceRaf) return;
+    danceId = id;
+    danceKickT = 0;
+    danceCrouchT = 0;
+    danceLastT = null;
+    dancer = {
+      x: 0, y: 0, vx: 0, vy: DANCE_JUMP_V, grounded: false, facing: 1, hp: 100, alive: true,
+      attack: null, attackCooldown: 0, walkCycle: 0, idleT: 0, squash: 0,
+      hitStunT: 0, hitDir: 1, jumpAnticT: 0, deathFadeT: 0,
+      power: null, burnT: 0, burnTickT: 0, burnFlashT: 0, slowT: 0,
+    };
+    if (!danceRaf) danceRaf = requestAnimationFrame(danceFrame);
+  }
+
+  function danceFrame(now) {
+    /* Se corta solo cuando la pantalla de victoria deja de estar a la vista. Mirar la clase
+       (y no enganchar un stop en cada lugar que la esconde, que son siete) es lo que hace que
+       no quede un requestAnimationFrame corriendo para siempre si mañana aparece un octavo. */
+    if (!$("finalScreen").classList.contains("show") || !dancer) { danceRaf = null; danceId = null; return; }
+
+    var dt = danceLastT == null ? 16.6667 : Math.min(40, now - danceLastT);
+    danceLastT = now;
+    var f = dt / 16.6667; // el sim piensa en frames de 60 Hz, no en milisegundos
+
+    var d = dancer;
+    d.idleT += dt * 0.001;
+    d.squash = Math.max(0, d.squash - dt / 180);
+    d.jumpAnticT = Math.max(0, d.jumpAnticT - dt);
+
+    if (d.grounded) {
+      danceCrouchT -= dt;
+      if (danceCrouchT <= 0) { d.grounded = false; d.vy = DANCE_JUMP_V; d.jumpAnticT = 90; }
+    } else {
+      d.vy += DANCE_GRAVITY * f;
+      d.y += d.vy * f;
+      if (d.y >= 0) { // tocó el piso (y=0 es el suelo; para arriba es negativo, como en el sim)
+        d.y = 0; d.vy = 0; d.grounded = true; d.squash = 1; danceCrouchT = DANCE_CROUCH_MS;
+      }
+    }
+
+    // Patadas: una atrás de la otra, cambiando de lado cada vez. Que caigan en el aire o en el
+    // rebote es a propósito — no están sincronizadas con el salto, y así el baile no se vuelve
+    // un bucle de cuatro tiempos que se ve repetido a los dos segundos.
+    if (d.attack) { d.attack.t -= dt; if (d.attack.t <= 0) d.attack = null; }
+    danceKickT += dt;
+    if (danceKickT >= DANCE_KICK_GAP) {
+      danceKickT = 0;
+      d.facing = -d.facing;
+      d.attack = { type: "kick", t: DANCE_KICK_MS, dur: DANCE_KICK_MS };
+    }
+    /* Se tira para el lado al que patea y vuelve: medio seno por patada, así arranca y termina
+       en el centro y el cambio de facing no le produce ningún salto. Se mueve p.x a mano y NO
+       p.vx: vx distinto de cero con los pies en el piso le prendería el ciclo de correr
+       (running, en stickman.js) en pleno rebote, que acá no viene al caso. */
+    d.x = d.facing * Math.sin((danceKickT / DANCE_KICK_GAP) * Math.PI) * DANCE_SWAY;
+
+    var canvas = $("winnerDance");
+    var dctx = canvas.getContext("2d");
+    dctx.clearRect(0, 0, canvas.width, canvas.height);
+    dctx.save();
+    dctx.translate(canvas.width / 2, DANCE_FEET_Y);
+    dctx.scale(DANCE_SCALE, DANCE_SCALE);
+    Trails.push(d, now, { key: "_airTrail", maxGhosts: 6, minIntervalMs: 18 });
+    Trails.draw(dctx, d, function (gctx, ghost) { drawStickman(gctx, ghost, danceColor, null, danceHat); },
+      { key: "_airTrail", baseAlpha: 0.05, alphaSpread: 0.34 });
+    drawStickman(dctx, d, danceColor, null, danceHat);
+    dctx.restore();
+
+    danceRaf = requestAnimationFrame(danceFrame);
+  }
+
   function showFinal(ranked, scores) {
     lastFinal = { ranked: ranked, scores: scores }; // para que setLang() pueda rearmarlo traducido
     var winner = ranked[0];
@@ -1951,7 +2078,9 @@
     var owner = localActive || Net.isOwner();
     $("playAgainBtn").style.display = owner ? "" : "none";
     $("againWait").style.display = owner ? "none" : "block";
+    $("backToSetupBtn").style.display = localActive ? "" : "none";
     $("finalScreen").classList.add("show");
+    startWinnerDance(winner); // después del .show: danceFrame se corta si la pantalla no está
   }
 
   /* ---------------------------------------------------------------- práctica libre (sin red) */
@@ -1988,7 +2117,7 @@
 
   var PATHFIND_FALL_MARGIN = 40; // solape horizontal tolerado para "se puede caer de una a otra"
   var PATHFIND_JUMP_RISE = 230;  // altura máx. aprox. de un solo salto (JUMP_V=-20.5, GRAVITY_UP=0.95)
-  /* El segundo salto (JUMP_V2 en desktop/sim.js) llega, por diseño, a la MITAD de la altura del
+  /* El segundo salto (JUMP_V2 en online/sim.js) llega, por diseño, a la MITAD de la altura del
      primero — mismo criterio acá: sumarle esa mitad da el alcance total de un salto doble. Antes
      el grafo no lo contemplaba en absoluto, así que la IA trataba cualquier plataforma más alta
      que un salto simple como "inalcanzable" y se quedaba quieta debajo — aunque tuviera el doble
@@ -2129,7 +2258,7 @@
 
     var attacks = Sim.getAttacks();
     // Mismo margen vertical que usa Sim para decidir si un golpe conecta (ver stepPlayer:
-    // "dy < 60" en desktop/sim.js) — sin este chequeo la IA atacaba aunque el rival estuviera en
+    // "dy < 60" en online/sim.js) — sin este chequeo la IA atacaba aunque el rival estuviera en
     // otra plataforma, fuera de alcance vertical, y quedaba tirando golpes al aire sin parar.
     var verticalOk = Math.abs(dy) < 60;
     if (verticalOk && ai.attackCooldown <= 0 && absDx < attacks.kick.reach && Math.random() < cfg.attackChance) {
@@ -2250,7 +2379,7 @@
 
   /* ---------------------------------------------------------------- modo historia (solitario) */
   /* Un jugador humano (PRACTICE_ME) contra N NPCs que son equipo entre sí (isBot, ver
-     desktop/sim.js) atravesando 4 biomas en orden fijo. Corre 100% en el navegador, igual que
+     online/sim.js) atravesando 4 biomas en orden fijo. Corre 100% en el navegador, igual que
      Práctica Libre — cada "nivel" es su propio Sim.startMatch() de una ronda; ganar o perder se
      detecta acá (storyCheckOutcome), no con el sistema de rondas/eliminación de Sim, porque ese
      está pensado para "todos contra todos" y acá son N-contra-1 en equipo. */
@@ -2372,7 +2501,7 @@
   }
 
   // Sin esto, cada nivel (al ser su propio startMatch de una sola ronda) caería siempre en
-  // MAP0 — la "ronda 1" fija que usa cualquier match nuevo (ver nextRound() en desktop/sim.js).
+  // MAP0 — la "ronda 1" fija que usa cualquier match nuevo (ver nextRound() en online/sim.js).
   // Forzar un archetype de verdad es lo que hace que cada nivel sea una variación distinta del
   // bioma y no siempre la misma plataforma inicial. "colina" queda afuera: es el archetype sin
   // hazards pensado para Rey de la Colina, no para pelear.
@@ -2765,7 +2894,7 @@
     Sim.resetToLobby();
     localMatchIds = {};
     localPlayers.forEach(function (p) { Sim.addPlayer(p.id); localMatchIds[p.id] = true; });
-    // El segundo parámetro es el modo caracol de desktop/sim.js: acá ya no se ofrece, pero la
+    // El segundo parámetro es el modo caracol de online/sim.js: acá ya no se ofrece, pero la
     // firma es compartida con el build de escritorio, así que va false y listo.
     Sim.startMatch(totalRoundsPick, false, { mode: selectedMode });
     padSent = {}; padHp = {}; // que el próximo syncPads() les mande el cartel nuevo a todos
@@ -2805,10 +2934,13 @@
     padSent = {}; padHp = {};
   }
 
+  /* Cortar la local no es irse del sillón: se vuelve al ARMADO (modo, rondas, roster) con todo
+     en su lugar, así el grupo sube las rondas o se cambia de modo sin rehacer nada. La sala de
+     mandos queda abierta a propósito — cerrarla acá era justo lo que mandaba a todos los
+     celulares de vuelta a la pantalla de entrar, y obligaba a escanear el QR otra vez para
+     jugar un modo distinto. Para irse de verdad está el "‹ volver" del armado, que sí la cierra. */
   function exitLocal() {
     localActive = false;
-    closePadRoom();
-    $("padCard").style.display = "none";
     localMatchIds = {};
     Sim.resetToLobby();
     myId = null;
@@ -2819,7 +2951,18 @@
     $("endMatchBtn").classList.remove("show");
     updateSessionLabels();
     $("finalScreen").classList.remove("show");
-    $("choiceCard").style.display = "block";
+    /* Los teléfonos se enteran solos: padStateFor() pasa a devolver "lobby" apenas localActive
+       es false, y el syncPads() de frameLoop les manda el cartel nuevo — el que manda vuelve a
+       tener los chips de modo en la mano, igual que antes de empezar. */
+    $("padCard").style.display = "none";
+    $("localSetupCard").style.display = "block";
+    $("backLink").style.display = "inline";
+    $("localErr").textContent = "";
+    renderLocalModeSummary();
+    renderLocalRoster();
+    renderLocalAddRow();
+    renderPadHint();
+    startLocalSetupPoll();
     startLobbyBackground();
   }
 
@@ -2832,23 +2975,32 @@
     ".": "punch", "/": "kick",
   };
 
-  /* Deadzone del stick y mapeo de botones "estándar" (Standard Gamepad, W3C): 0=abajo(A/Cruz)
-     salta, 2=izquierda(X/Cuadrado) pi&ntilde;a, 1=derecha(B/C&iacute;rculo) patada — mismo criterio
-     que un beat-em-up clásico: salto en el botón inferior, ataque liviano en el de al lado. */
+  /* Deadzone del stick y mapeo de botones "estándar" (Standard Gamepad, W3C): mover con el
+     stick izquierdo O la cruceta (las dos a la vez, no hay que elegir), 0=abajo (X de PlayStation,
+     A de Xbox) salta, y los golpes van a los GATILLOS: 6=L2 piña, 7=R2 patada. Los gatillos y no
+     los botones de la derecha porque el pulgar derecho no tiene que soltar nunca el salto para
+     pegar — se puede saltar y tirar una piña en el aire con las dos manos quietas. */
   var GP_DEADZONE = 0.35;
-  var GP_BTN_JUMP = 0, GP_BTN_PUNCH = 2, GP_BTN_KICK = 1;
+  var GP_BTN_JUMP = 0, GP_BTN_PUNCH = 6, GP_BTN_KICK = 7;
   var GP_BTN_DPAD_LEFT = 14, GP_BTN_DPAD_RIGHT = 15;
+  /* L2/R2 son analógicos: según el mando y el driver, `pressed` puede tardar hasta el fondo del
+     recorrido (o no llegar nunca). Miramos también `value` y damos el golpe apenas se hunde un
+     poco, que es lo que espera cualquiera que apretó un gatillo. */
+  var GP_TRIGGER_MIN = 0.3;
+
+  function btnDown(gp, i) {
+    var b = gp.buttons[i];
+    return !!b && (b.pressed || (typeof b.value === "number" && b.value > GP_TRIGGER_MIN));
+  }
 
   function readGamepadState(gp) {
     var axis = gp.axes[0] || 0;
-    var dpadL = gp.buttons[GP_BTN_DPAD_LEFT] && gp.buttons[GP_BTN_DPAD_LEFT].pressed;
-    var dpadR = gp.buttons[GP_BTN_DPAD_RIGHT] && gp.buttons[GP_BTN_DPAD_RIGHT].pressed;
     return {
-      left: axis < -GP_DEADZONE || !!dpadL,
-      right: axis > GP_DEADZONE || !!dpadR,
-      jump: !!(gp.buttons[GP_BTN_JUMP] && gp.buttons[GP_BTN_JUMP].pressed),
-      punch: !!(gp.buttons[GP_BTN_PUNCH] && gp.buttons[GP_BTN_PUNCH].pressed),
-      kick: !!(gp.buttons[GP_BTN_KICK] && gp.buttons[GP_BTN_KICK].pressed),
+      left: axis < -GP_DEADZONE || btnDown(gp, GP_BTN_DPAD_LEFT),
+      right: axis > GP_DEADZONE || btnDown(gp, GP_BTN_DPAD_RIGHT),
+      jump: btnDown(gp, GP_BTN_JUMP),
+      punch: btnDown(gp, GP_BTN_PUNCH),
+      kick: btnDown(gp, GP_BTN_KICK),
     };
   }
 
@@ -2869,6 +3021,40 @@
       });
       localGamepadPrev[p.id] = cur;
     });
+  }
+
+  var GP_ACTIONS = ["left", "right", "jump", "punch", "kick"];
+  var GP_NEUTRAL = { left: false, right: false, jump: false, punch: false, kick: false };
+
+  /* Mando en las modalidades donde hay UN solo jugador en esta máquina (online, práctica,
+     historia). No hay que elegir entre teclado y mando: los dos quedan activos a la vez, mismo
+     criterio que el esquema de teclas y el de mouse, que ya conviven sin configurar nada.
+
+     Y como acá el jugador es uno solo, tampoco hay que atar un mando a un slot (eso es cosa del
+     modo Local, ver pollLocalGamepads): se fusionan TODOS los conectados con un OR, así el que
+     esté enchufado mueve al muñeco sin que nadie lo declare. Igual que keydown/keyup, solo se
+     manda el flanco — el estado neutro de arriba tampoco es solo un default: si la partida
+     termina, se sale al lobby o el mando se desenchufa con algo apretado, este mismo diff manda
+     los "false" que hacen falta para que el muñeco no quede caminando solo. */
+  var soloGamepadPrev = GP_NEUTRAL;
+
+  function pollSoloGamepad() {
+    var cur = { left: false, right: false, jump: false, punch: false, kick: false };
+    if (isPlayingNow() && !isTyping()) {
+      var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (var i = 0; i < pads.length; i++) {
+        if (!pads[i]) continue;
+        var st = readGamepadState(pads[i]);
+        for (var a = 0; a < GP_ACTIONS.length; a++) {
+          if (st[GP_ACTIONS[a]]) cur[GP_ACTIONS[a]] = true;
+        }
+      }
+    }
+    for (var k = 0; k < GP_ACTIONS.length; k++) {
+      var action = GP_ACTIONS[k];
+      if (cur[action] !== soloGamepadPrev[action]) sendAction(action, cur[action]);
+    }
+    soloGamepadPrev = cur;
   }
 
   /* ---------------------------------------------------------------- celulares como control */
@@ -3395,6 +3581,10 @@
     // Celulares-control: se hace la boba si no hay sala de mandos abierta (o sea, siempre que
     // no se esté jugando en modo Local con teléfonos).
     syncPads();
+
+    /* Mandos. El modo Local no pasa por acá: allá cada mando pertenece a un jugador distinto y
+       lo lee su propia rama, dentro de la del modo (pollLocalGamepads). */
+    if (!localActive) pollSoloGamepad();
 
     if (practiceActive) {
       practiceAiTick(frameDt);
@@ -3995,6 +4185,9 @@
     if (localActive) restartLocalMatch();
     else Net.again();
   });
+  // Mismo destino que "volver al sillón" del HUD: los dos terminan en el armado, con la sala de
+  // mandos y el roster intactos.
+  $("backToSetupBtn").addEventListener("click", exitLocal);
 
   selectPracticeDifficulty("medium"); // sincroniza practiceDifficulty con el botón ya marcado "selected" en el HTML
 

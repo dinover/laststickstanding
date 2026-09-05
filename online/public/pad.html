@@ -78,9 +78,36 @@
   #kickBtn { background: linear-gradient(155deg, #0f2a30, #0a1818); }
   #kickBtn.down { border-color: #35f0e0; color: #35f0e0; box-shadow: inset 0 0 40px rgba(53,240,224,.2); }
   #jumpBtn.down { border-color: #ffc247; color: #ffc247; box-shadow: inset 0 0 40px rgba(255,194,71,.18); }
-  /* Piña y patada van una al lado de la otra debajo del salto: tres botones apilados a lo
-     ancho dejarían a cada uno demasiado bajo para pegarle sin mirar. */
+  /* Piña y patada van una al lado de la otra ARRIBA, y saltar ocupa el ancho completo abajo:
+     el pulgar derecho descansa sobre el salto, que es lo que más se toca, y sube a los golpes.
+     Tres botones apilados a lo ancho dejarían a cada uno demasiado bajo para pegarle sin mirar. */
   .strikeRow { flex: 1 1 0; display: flex; gap: 10px; min-height: 0; }
+
+  /* Mitad izquierda: no hay botones, es UN analógico que se arma donde apoyás el pulgar. Las dos
+     flechas fijas de antes se comían media pantalla y obligaban a mirar el teléfono para
+     encontrarlas; así el dedo cae donde quiera y el círculo aparece ahí abajo. */
+  .zone.stick {
+    position: relative; touch-action: none; border-radius: 20px; border: 2px dashed #1c2238;
+    align-items: center; justify-content: center; overflow: hidden;
+  }
+  #stickHint {
+    font-size: clamp(10px, 2.4vw, 12px); letter-spacing: .1em; color: #39415e;
+    pointer-events: none; text-align: center; padding: 0 12px; transition: opacity .12s;
+  }
+  .zone.stick.active { border-color: transparent; }
+  .zone.stick.active #stickHint { opacity: 0; }
+  #stickBase {
+    position: absolute; display: none; pointer-events: none;
+    width: 138px; height: 138px; margin: -69px 0 0 -69px; border-radius: 50%;
+    border: 2px solid #2a3050; background: rgba(18,22,42,.5);
+  }
+  #stickBase.show { display: block; }
+  #stickKnob {
+    position: absolute; top: 50%; left: 50%; width: 66px; height: 66px; margin: -33px 0 0 -33px;
+    border-radius: 50%; border: 2px solid #2a3050;
+    background: linear-gradient(155deg, #1a2038, #0a0c18);
+  }
+  #stickKnob.on { border-color: var(--me); box-shadow: 0 0 22px rgba(53,240,224,.25); }
 
   /* ---------------------------------------------------------------- carteles encima del control */
   #overlay {
@@ -148,16 +175,16 @@
   </div>
 
   <div id="controls">
-    <div class="zone">
-      <button class="btn" id="leftBtn"><span class="glyph">&#9664;</span></button>
-      <button class="btn" id="rightBtn"><span class="glyph">&#9654;</span></button>
+    <div class="zone stick" id="stickZone">
+      <div id="stickHint">DESLIZ&Aacute; PARA MOVERTE</div>
+      <div id="stickBase"><div id="stickKnob"></div></div>
     </div>
     <div class="zone action">
-      <button class="btn" id="jumpBtn">SALTAR</button>
       <div class="strikeRow">
         <button class="btn" id="punchBtn">PI&Ntilde;A</button>
         <button class="btn" id="kickBtn">PATADA</button>
       </div>
+      <button class="btn" id="jumpBtn">SALTAR</button>
     </div>
   </div>
 
@@ -207,7 +234,7 @@
       full: "El sillón está lleno: ocho y no entra uno más.",
       offline: "Se cortó. Volviendo a entrar…",
       dead: "No hay señal. Revisá el wifi o los datos.",
-      jump: "SALTAR", punch: "PIÑA", kick: "PATADA",
+      jump: "SALTAR", punch: "PIÑA", kick: "PATADA", stick: "DESLIZÁ PARA MOVERTE",
       rotate: "Girá el teléfono de costado para jugar.",
       stConnected: "Listo", stWaiting: "Esperando", stFight: "Peleando", stOut: "Afuera", stLost: "Sin conexión",
       waitTitle: "YA VA A EMPEZAR",
@@ -246,7 +273,7 @@
       full: "Couch is full: eight and not one more.",
       offline: "Dropped. Getting back in…",
       dead: "No signal. Check your wifi or data.",
-      jump: "JUMP", punch: "PUNCH", kick: "KICK",
+      jump: "JUMP", punch: "PUNCH", kick: "KICK", stick: "SLIDE TO MOVE",
       rotate: "Turn your phone sideways to play.",
       stConnected: "Ready", stWaiting: "Waiting", stFight: "Fighting", stOut: "Out", stLost: "Offline",
       waitTitle: "STARTING SOON",
@@ -293,6 +320,7 @@
   $("jumpBtn").textContent = t("jump");
   $("punchBtn").textContent = t("punch");
   $("kickBtn").textContent = t("kick");
+  $("stickHint").textContent = t("stick");
   $("flashText").textContent = t("fight");
   $("startBtn").textContent = t("start");
   $("againBtn").textContent = t("again");
@@ -627,7 +655,72 @@
       var el = document.querySelector("[data-key='" + k + "']");
       if (el) el.classList.remove("down");
     });
+    stickRelease(); // el analógico no tiene data-key: hay que devolverlo al centro a mano
   }
+
+  /* ---------------------------------------------------------------- analógico */
+  /* Toda la mitad izquierda es el stick: no hay que apuntarle a nada, el pulgar cae donde quiera
+     y el círculo se arma justo ahí. Solo cuenta el eje X (saltar es un botón), y lo que sale
+     siguen siendo los mismos "left"/"right" que mandaban las dos flechas — ni la pantalla ni la
+     simulación se enteran de que del lado del teléfono cambió el control. */
+  var STICK_DEADZONE = 14; // px de arrastre antes de empezar a caminar: apoyar el dedo no mueve
+  var STICK_RANGE = 52;    // recorrido máximo del pomo; es feedback visual, no cambia la acción
+  var stickPointer = null;
+  var stickOriginX = 0;
+
+  function stickSet(dx) {
+    var knob = $("stickKnob");
+    knob.style.transform = "translateX(" + Math.max(-STICK_RANGE, Math.min(STICK_RANGE, dx)) + "px)";
+    var left = dx < -STICK_DEADZONE, right = dx > STICK_DEADZONE;
+    knob.classList.toggle("on", left || right);
+    sendInput("left", left);
+    sendInput("right", right);
+  }
+
+  function stickRelease() {
+    stickPointer = null;
+    $("stickZone").classList.remove("active");
+    $("stickBase").classList.remove("show");
+    $("stickKnob").classList.remove("on");
+    $("stickKnob").style.transform = "";
+    sendInput("left", false);
+    sendInput("right", false);
+  }
+
+  (function wireStick() {
+    var zone = $("stickZone");
+    zone.addEventListener("pointerdown", function (e) {
+      if (stickPointer !== null) return; // un solo pulgar manda acá; el otro está en los golpes
+      e.preventDefault();
+      stickPointer = e.pointerId;
+      stickOriginX = e.clientX;
+      var r = zone.getBoundingClientRect();
+      var base = $("stickBase");
+      base.style.left = (e.clientX - r.left) + "px";
+      base.style.top = (e.clientY - r.top) + "px";
+      base.classList.add("show");
+      zone.classList.add("active");
+      /* Capturar el puntero es lo que hace que el stick siga funcionando aunque el pulgar se
+         vaya de la mitad izquierda a mitad de un arrastre — sin esto el pointermove deja de
+         llegar y el muñeco se queda caminando hacia donde iba. */
+      try { zone.setPointerCapture(e.pointerId); } catch (err) {} // algún navegador tira si el puntero ya no está activo
+      if (navigator.vibrate) navigator.vibrate(6);
+      stickSet(0);
+    });
+    zone.addEventListener("pointermove", function (e) {
+      if (e.pointerId !== stickPointer) return;
+      e.preventDefault();
+      stickSet(e.clientX - stickOriginX);
+    });
+    function end(e) {
+      if (e.pointerId !== stickPointer) return;
+      if (e.cancelable) e.preventDefault();
+      stickRelease();
+    }
+    zone.addEventListener("pointerup", end);
+    zone.addEventListener("pointercancel", end);
+    zone.addEventListener("lostpointercapture", end);
+  })();
 
   function bindHold(el, key) {
     el.setAttribute("data-key", key);
@@ -652,8 +745,6 @@
        este botón se quedaría trabado en "apretado" para siempre. */
     el.addEventListener("lostpointercapture", up);
   }
-  bindHold($("leftBtn"), "left");
-  bindHold($("rightBtn"), "right");
   bindHold($("jumpBtn"), "jump");
   bindHold($("punchBtn"), "punch");
   bindHold($("kickBtn"), "kick");
