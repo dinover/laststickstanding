@@ -3,7 +3,7 @@
 Versión instalable de Windows: una ventana que se conecta directo al server online
 (`../online`, corriendo en la VM de Oracle Cloud — ver
 [`../oracle/README-oracle.md`](../oracle/README-oracle.md)). No es P2P ni Steam: es el mismo
-juego que corre en `https://147-15-101-103.nip.io`, mostrado en una ventana propia en vez de un
+juego que corre en `https://lss.leinonair.com`, mostrado en una ventana propia en vez de un
 navegador. No hay ninguna copia local de `sim.js`, `game.html` ni lógica de red — `main.js` solo
 apunta la ventana a esa URL.
 
@@ -49,8 +49,8 @@ un ícono, un idioma, una página), es ese archivo.
 - Necesita internet (se conecta al mismo server que usa la versión web). Si falla la conexión al
   arrancar, muestra `offline.html` con un botón de reintentar en vez de la pantalla de error de
   Chromium.
-- Si la IP de la VM cambia alguna vez, hay que actualizar `SERVER_URL` en `main.js` (mismo caso
-  que el resto de los lugares que referencian `147-15-101-103.nip.io` — ver
+- Si el dominio o la IP de la VM cambian alguna vez, hay que actualizar `SERVER_URL` en `main.js`
+  (mismo caso que el resto de los lugares que referencian `lss.leinonair.com` — ver
   [`../oracle/README-oracle.md`](../oracle/README-oracle.md)).
 - Reemplaza los builds viejos `desktop/` (PeerJS) y `steam/` (Steamworks) — ninguno de los dos
   sigue en el repo.

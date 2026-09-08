@@ -5,7 +5,7 @@
 const { app, BrowserWindow } = require("electron");
 const path = require("path");
 
-const SERVER_URL = process.env.LSS_SERVER_URL || "https://147-15-101-103.nip.io";
+const SERVER_URL = process.env.LSS_SERVER_URL || "https://lss.leinonair.com";
 
 function createWindow() {
   var win = new BrowserWindow({

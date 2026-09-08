@@ -270,6 +270,23 @@ var MapArchetypes = (function () {
       }
       return { platforms: plats, hazardCandidates: [] };
     },
+
+    /* Arena de jefe de Modo Historia (build web): piso de punta a punta (x:0, w:W), a
+       diferencia de todos los demás archetypes, que siempre dejan un borde sin plataforma —
+       acá no hay forma de caer al vacío (ver el chequeo p.y > H+60 en online/sim.js), la pelea
+       contra el jefe se resuelve por HP. Un par de repisas arriba dan verticalidad sin abrir
+       ningún hueco. Excluido del sorteo random (ver pickStoryArchetype en index.html): solo se
+       llega acá con mapArchetype:"santuario" forzado. */
+    santuario: function (rng, W, H) {
+      var plats = [{ x: 0, y: 490 + (rng() - 0.5) * 10, w: W, h: 30 }];
+      var sideW = 160 + rng() * 30;
+      var sideY = 330 + (rng() - 0.5) * 20;
+      plats.push({ x: 60 + rng() * 20, y: sideY, w: sideW, h: 18 });
+      plats.push({ x: W - 60 - sideW - rng() * 20, y: sideY, w: sideW, h: 18 });
+      var midW = 170 + rng() * 40;
+      plats.push({ x: (W - midW) / 2, y: 190 + (rng() - 0.5) * 20, w: midW, h: 18 });
+      return { platforms: plats, hazardCandidates: [] };
+    },
   };
 
   var ids = Object.keys(archetypes);
@@ -1063,6 +1080,7 @@ var World = (function () {
     crater: ["El Cráter", "La Fosa", "Filo del Vacío"],
     piramide: ["La Pirámide", "Templo Escalonado", "Zigurat"],
     colina: ["La Colina", "Cumbre Disputada", "El Trono"],
+    santuario: ["El Santuario", "Cámara del Guardián", "Sala del Juicio"],
   };
 
   var backgroundCache = null; // { key, bg }

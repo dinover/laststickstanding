@@ -15,12 +15,12 @@
 <meta property="og:type" content="website" />
 <meta property="og:title" content="Last Stick Standing" />
 <meta property="og:description" content="Peleá contra tus amigos en tiempo real, todos con la misma latencia. Sin instalar nada." />
-<meta property="og:image" content="https://147-15-101-103.nip.io/og-image.png" />
-<meta property="og:url" content="https://147-15-101-103.nip.io/" />
+<meta property="og:image" content="https://lss.leinonair.com/og-image.png" />
+<meta property="og:url" content="https://lss.leinonair.com/" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Last Stick Standing" />
 <meta name="twitter:description" content="Peleá contra tus amigos en tiempo real, todos con la misma latencia. Sin instalar nada." />
-<meta name="twitter:image" content="https://147-15-101-103.nip.io/og-image.png" />
+<meta name="twitter:image" content="https://lss.leinonair.com/og-image.png" />
 <style>
   html, body { height: 100%; margin: 0; overflow: hidden; background: #05060d; font-family: 'Chakra Petch', sans-serif; }
   body { display: flex; align-items: center; justify-content: center; }
@@ -341,6 +341,34 @@
   #storyMsgScreen h1 { font-size: 30px; color: #35f0e0; text-shadow: 0 0 16px rgba(53,240,224,.5); margin: 0; }
   #storyMsgScreen p { max-width: 480px; color: #eaf0ff; font-size: 15px; line-height: 1.6; margin: 0; }
 
+  /* Cartel final del nuevo Modo Historia (saga de 5 zonas): crawl al estilo Star Wars — texto
+     que sube desde abajo con perspectiva, hasta desvanecerse arriba. perspective vive en el
+     viewport (ancestro), rotateX + transform-origin abajo en el texto: es la técnica clásica
+     para el efecto de "se aleja hacia el fondo" sin animar el perspective en sí. */
+  #sagaCrawlScreen {
+    position: absolute; inset: 0; z-index: 25; display: none;
+    background: #05060d; overflow: hidden; cursor: pointer;
+  }
+  #sagaCrawlScreen.show { display: block; }
+  #sagaCrawlViewport { position: absolute; inset: 0; perspective: 700px; perspective-origin: 50% 100%; overflow: hidden; }
+  #sagaCrawlText {
+    position: absolute; left: 50%; bottom: -20%; width: 620px; max-width: 84vw;
+    transform: translateX(-50%) rotateX(30deg); transform-origin: 50% 100%;
+    text-align: center; color: #ffc247; text-shadow: 0 0 12px rgba(255,194,71,.35);
+  }
+  #sagaCrawlText.play { animation: sagaCrawl 42s linear forwards; }
+  #sagaCrawlText h1 { font-size: 32px; letter-spacing: .05em; margin: 0 0 26px; }
+  #sagaCrawlText p { font-size: 19px; line-height: 1.85; margin: 0; }
+  #sagaCrawlHint {
+    position: absolute; left: 0; right: 0; bottom: 18px; text-align: center;
+    color: #6b7394; font-size: 11px; letter-spacing: .06em;
+  }
+  @keyframes sagaCrawl {
+    from { bottom: -20%; opacity: 1; }
+    65%  { opacity: 1; }
+    to   { bottom: 68%; opacity: 0; }
+  }
+
   #lobbyBg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; object-fit: cover; }
   #lobbyVignette { position: absolute; inset: 0; z-index: 2; background: radial-gradient(circle at 50% 45%, rgba(5,6,13,.32), rgba(5,6,13,.88) 78%); }
   #wrap.playing #lobbyBg, #wrap.playing #lobbyVignette, #wrap.playing .atmosphere { display: none; }
@@ -392,6 +420,25 @@
   .modeChips.readonly { pointer-events: none; }
   .modeChips.readonly button:not(.selected) { opacity: .4; }
   .modeLabel { color: #6b7394; font-size: 11px; letter-spacing: .04em; margin: 0 0 8px; }
+
+  /* Tableros de mejores tiempos, en la tarjeta principal — anidados adentro de #choiceCard a
+     propósito: así se muestran/ocultan solos con la tarjeta, sin tocar ninguno de los tantos
+     lugares que hacen choiceCard.style.display = "block"/"none". */
+  #leaderboardsPanel { margin-top: 18px; padding-top: 16px; border-top: 1px solid #2a3050; }
+  #leaderboardsPanel .modeLabel:not(:first-child) { margin-top: 14px; }
+  .lbGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .lbBoard {
+    background: #12162a; border: 1px solid #2a3050; border-radius: 8px; padding: 8px 10px;
+    text-align: left;
+  }
+  .lbBoard h4 { margin: 0 0 4px; font-size: 11px; color: #9aa3bd; font-weight: 600; letter-spacing: .04em; }
+  .lbBoard ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+  .lbBoard li { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #eaf0ff; }
+  .lbBoard li.lbEmpty { color: #6b7394; font-style: italic; }
+  .lbPos { color: #6b7394; flex: none; width: 14px; }
+  .lbName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .lbTime { color: #35f0e0; font-variant-numeric: tabular-nums; flex: none; }
+  .lbBoardWide { margin-top: 2px; }
   button, input, select {
     font-family: inherit; font-size: 14px; border-radius: 8px; border: 1px solid #2a3050;
     background: #12162a; color: #eaf0ff; padding: 13px 16px;
@@ -636,6 +683,32 @@
       </div>
       <button class="ghost" id="practiceBtn" style="width:100%; margin-top:10px;" data-i18n="lobby.practice">Juego en solitario</button>
       <div class="err" id="mainErr"></div>
+
+      <div id="leaderboardsPanel">
+        <p class="modeLabel" data-i18n="lb.lssTitle">Mejores tiempos — Last Stick Standing</p>
+        <div class="lbGrid">
+          <div class="lbBoard">
+            <h4 data-i18n="practice.easy">Fácil</h4>
+            <ol data-board="lss_easy"></ol>
+          </div>
+          <div class="lbBoard">
+            <h4 data-i18n="practice.medium">Media</h4>
+            <ol data-board="lss_medium"></ol>
+          </div>
+          <div class="lbBoard">
+            <h4 data-i18n="practice.hard">Difícil</h4>
+            <ol data-board="lss_hard"></ol>
+          </div>
+          <div class="lbBoard">
+            <h4 data-i18n="story.hardcore">HARDCORE</h4>
+            <ol data-board="lss_hardcore"></ol>
+          </div>
+        </div>
+        <p class="modeLabel" data-i18n="lb.sagaTitle">Mejores tiempos — Modo Historia</p>
+        <div class="lbBoard lbBoardWide">
+          <ol data-board="saga"></ol>
+        </div>
+      </div>
     </div>
 
     <div class="card" id="soloCard" style="display:none">
@@ -647,6 +720,10 @@
       <button type="button" class="modeOption" id="soloStoryBtn">
         <strong data-i18n="solo.story">Modo Historia</strong>
         <span class="desc" data-i18n="solo.storyDesc">Atravesá los biomas y convertite en el Last Stick Standing.</span>
+      </button>
+      <button type="button" class="modeOption" id="soloSagaBtn">
+        <strong data-i18n="solo.saga">Modo Historia</strong>
+        <span class="desc" data-i18n="solo.sagaDesc">5 zonas, un jefe al final de cada una, y un poder nuevo que se te pega encima en cada una que cruzás.</span>
       </button>
     </div>
 
@@ -833,6 +910,16 @@
     <p id="storyMsgBody"></p>
     <button id="storyMsgContinueBtn"></button>
   </div>
+
+  <div id="sagaCrawlScreen">
+    <div id="sagaCrawlViewport">
+      <div id="sagaCrawlText">
+        <h1 data-i18n="saga.crawlTitle">SOS EL LAST STICK STANDING</h1>
+        <p data-i18n="saga.crawlBody"></p>
+      </div>
+    </div>
+    <div id="sagaCrawlHint" data-i18n="saga.crawlHint">(click para saltear)</div>
+  </div>
 </div>
 
 <script src="/stickman.js"></script>
@@ -870,7 +957,8 @@
       "hud.leaveLocal": "Volver al sillón",
       "hud.leaveStory": "Dejarlo acá",
       "hud.practiceTitle": "ENTRENAMIENTO",
-      "hud.storyTitle": "MODO HISTORIA",
+      "hud.storyTitle": "LAST STICK STANDING",
+      "hud.sagaTitle": "MODO HISTORIA",
       "hud.localTitle": "LOCAL",
       "hud.round": "RONDA {n}",
       "hud.roundOf": "RONDA {n} / {total} — {map}",
@@ -925,9 +1013,9 @@
       "hat.flame": "Prendido fuego",
       "hat.propeller": "Gorro con hélice",
       "hat.orbit": "Corona Orbital",
-      "hat.lockedEasy": "Completá Modo Historia en Fácil para desbloquearlo",
-      "hat.lockedMedium": "Completá Modo Historia en Media para desbloquearlo",
-      "hat.lockedHard": "Completá Modo Historia en Difícil para desbloquearlo",
+      "hat.lockedEasy": "Completá Last Stick Standing en Fácil para desbloquearlo",
+      "hat.lockedMedium": "Completá Last Stick Standing en Media para desbloquearlo",
+      "hat.lockedHard": "Completá Last Stick Standing en Difícil para desbloquearlo",
       "hat.lockedMystery": "??? — hay algo más para el que llegue hasta el final de HARDCORE",
       "lobby.create": "Crear sala",
       "lobby.join": "Unirme a una sala",
@@ -946,11 +1034,13 @@
       "practice.pickMap": "¿Dónde entrenamos? El mismo mapa todas las rondas.",
       "practice.start": "Empezar práctica",
 
-      "solo.pick": "¿Entrenamiento sin fin, o vas por la Historia?",
+      "solo.pick": "¿Cómo querés jugar hoy?",
       "solo.training": "Entrenamiento infinito",
       "solo.trainingDesc": "Elegís rival y mapa, jugás las rondas que quieras.",
-      "solo.story": "Modo Historia",
-      "solo.storyDesc": "Atravesá los biomas y convertite en el Last Stick Standing.",
+      "solo.story": "Last Stick Standing",
+      "solo.storyDesc": "El desafío clásico: 4 biomas, checkpoints, y alguna sala secreta escondida.",
+      "solo.saga": "Modo Historia",
+      "solo.sagaDesc": "5 zonas, un jefe al final de cada una, y un poder nuevo que se te pega encima en cada una que cruzás.",
 
       "story.pickDiff": "¿Con qué dificultad arrancamos?",
       "story.easyDesc": "2 niveles por bioma.",
@@ -981,6 +1071,27 @@
       "story.finalContinue": "Volver",
       "story.tauntTitle": "¿Te gusta lo fácil, eh?",
       "story.tauntBody": "Van varias salas secretas que esquivaste seguidas. Nadie te va a juzgar… bueno, un poco sí.",
+
+      "lb.lssTitle": "Mejores tiempos — Last Stick Standing",
+      "lb.sagaTitle": "Mejores tiempos — Modo Historia",
+      "lb.empty": "No se pudo cargar",
+      "lb.none": "Todavía nadie",
+      "lb.yourTime": "Tu tiempo: {time}.",
+      "lb.bestTime": "Mejor tiempo: {time} ({name}).",
+
+      "player.boss": "Jefe",
+      "saga.levelBanner": "{biome} — NIVEL {n} / 3",
+      "saga.bossBanner": "{biome} — JEFE",
+      "saga.narrative.ruinas": "Estás explorando ruinas antiguas, sin saber qué te espera. Sé el más rápido.",
+      "saga.narrative.volcan": "Saliste al borde del volcán. Cuidado — acá todo se pone ardiente.",
+      "saga.narrative.bosque": "Encontraste la salida al bosque. Se ve verde, pero los que viven ahí son formidables.",
+      "saga.narrative.nieve": "Al subir sentís el frío. La nieve y el hielo te complican cada paso.",
+      "saga.narrative.neon": "Ahora nada es lo que parece. Puede pasar cualquier cosa.",
+      "saga.crawlTitle": "SOS EL LAST STICK STANDING",
+      "saga.crawlBody": "Ruinas, volcán, bosque, nieve, y el neón que ya no distingue qué es real. Cada zona te dejó algo, y en la última cayó hasta el que juntaba todo lo demás. «Cae siete veces, levantate ocho.» — proverbio zen",
+      "saga.crawlHint": "(click para saltear)",
+      "saga.finishTitle": "LO LOGRASTE",
+      "saga.finishBody": "Cruzaste las 5 zonas. No quedó nadie más parado que vos.",
 
       "join.codePlaceholder": "CÓDIGO DE SALA",
       "join.connect": "Entrar",
@@ -1102,7 +1213,8 @@
       "hud.leaveLocal": "Back to the couch",
       "hud.leaveStory": "Call it here",
       "hud.practiceTitle": "TRAINING",
-      "hud.storyTitle": "STORY MODE",
+      "hud.storyTitle": "LAST STICK STANDING",
+      "hud.sagaTitle": "STORY MODE",
       "hud.localTitle": "LOCAL",
       "hud.round": "ROUND {n}",
       "hud.roundOf": "ROUND {n} / {total} — {map}",
@@ -1157,9 +1269,9 @@
       "hat.flame": "On fire",
       "hat.propeller": "Propeller beanie",
       "hat.orbit": "Orbital Crown",
-      "hat.lockedEasy": "Clear Story Mode on Easy to unlock it",
-      "hat.lockedMedium": "Clear Story Mode on Medium to unlock it",
-      "hat.lockedHard": "Clear Story Mode on Hard to unlock it",
+      "hat.lockedEasy": "Clear Last Stick Standing on Easy to unlock it",
+      "hat.lockedMedium": "Clear Last Stick Standing on Medium to unlock it",
+      "hat.lockedHard": "Clear Last Stick Standing on Hard to unlock it",
       "hat.lockedMystery": "??? — there's something extra for whoever makes it through HARDCORE",
       "lobby.create": "Create room",
       "lobby.join": "Join a room",
@@ -1178,11 +1290,13 @@
       "practice.pickMap": "Where are we training? Same map every round.",
       "practice.start": "Start practice",
 
-      "solo.pick": "Endless training, or going for the Story?",
+      "solo.pick": "How do you want to play today?",
       "solo.training": "Infinite training",
       "solo.trainingDesc": "Pick your rival and map, play as many rounds as you want.",
-      "solo.story": "Story Mode",
-      "solo.storyDesc": "Cross every biome and become the Last Stick Standing.",
+      "solo.story": "Last Stick Standing",
+      "solo.storyDesc": "The classic run: 4 biomes, checkpoints, and the odd secret room.",
+      "solo.saga": "Story Mode",
+      "solo.sagaDesc": "5 zones, a boss at the end of each one, and a new power that sticks with you through every zone you clear.",
 
       "story.pickDiff": "What difficulty do we start with?",
       "story.easyDesc": "2 levels per biome.",
@@ -1213,6 +1327,27 @@
       "story.finalContinue": "Back",
       "story.tauntTitle": "You like it easy, huh?",
       "story.tauntBody": "That's several secret rooms in a row you skipped. Nobody's judging… okay, maybe a little.",
+
+      "lb.lssTitle": "Best times — Last Stick Standing",
+      "lb.sagaTitle": "Best times — Story Mode",
+      "lb.empty": "Couldn't load",
+      "lb.none": "Nobody yet",
+      "lb.yourTime": "Your time: {time}.",
+      "lb.bestTime": "Best time: {time} ({name}).",
+
+      "player.boss": "Boss",
+      "saga.levelBanner": "{biome} — LEVEL {n} / 3",
+      "saga.bossBanner": "{biome} — BOSS",
+      "saga.narrative.ruinas": "You're exploring ancient ruins with no idea what's waiting. Be the fastest.",
+      "saga.narrative.volcan": "You come out at the edge of the volcano. Careful — everything gets scorching here.",
+      "saga.narrative.bosque": "You found your way out to the forest. It looks green, but what lives here is formidable.",
+      "saga.narrative.nieve": "Climbing higher, you feel the cold. Snow and ice fight you every step.",
+      "saga.narrative.neon": "Nothing is what it seems anymore. Anything can happen.",
+      "saga.crawlTitle": "YOU ARE THE LAST STICK STANDING",
+      "saga.crawlBody": "Ruins, volcano, forest, snow, and the neon that stopped telling real from unreal. Every zone left something behind, and in the last one even the one holding it all together went down. \"Fall seven times, stand up eight.\" — Zen proverb",
+      "saga.crawlHint": "(click to skip)",
+      "saga.finishTitle": "YOU MADE IT",
+      "saga.finishBody": "You crossed all 5 zones. Nobody else is left standing but you.",
 
       "join.codePlaceholder": "ROOM CODE",
       "join.connect": "Go in",
@@ -1630,10 +1765,10 @@
     // defecto de online/sim.js sin querer, así que el combate no se sentía igual que en una
     // sala real.
     attacks: BALANCE.attacks,
-    onPortalEnter: function () { storyOnPortalEnter(); },
+    onPortalEnter: function () { storyOnPortalEnter(); sagaOnPortalEnter(); },
     onVoidEnter: function () { storyOnVoidEnter(); },
     onPhaseChange: function (info) {
-      if (!(practiceActive || localActive || storyActive)) return;
+      if (!(practiceActive || localActive || storyActive || sagaActive)) return;
 
       if (storyActive && info.t === "roundStart") {
         hideScoreReveal();
@@ -1644,6 +1779,19 @@
         rbs.classList.add("show");
         var fts = $("fightText");
         fts.classList.remove("show"); void fts.offsetWidth; fts.classList.add("show");
+        return;
+      }
+
+      if (sagaActive && info.t === "roundStart") {
+        hideScoreReveal();
+        var rbSaga = $("roundBanner");
+        var sagaZoneName = t("biome." + SAGA_ZONES[sagaZoneIdx]);
+        rbSaga.textContent = sagaLevel === 4
+          ? t("saga.bossBanner", { biome: sagaZoneName })
+          : t("saga.levelBanner", { biome: sagaZoneName, n: sagaLevel });
+        rbSaga.classList.add("show");
+        var ftSaga = $("fightText");
+        ftSaga.classList.remove("show"); void ftSaga.offsetWidth; ftSaga.classList.add("show");
         return;
       }
 
@@ -1703,6 +1851,10 @@
     } else if (storyActive) {
       $("room").innerHTML = "<b></b>";
       $("room").firstChild.textContent = t("hud.storyTitle");
+      $("endMatchBtn").textContent = t("hud.leaveStory");
+    } else if (sagaActive) {
+      $("room").innerHTML = "<b></b>";
+      $("room").firstChild.textContent = t("hud.sagaTitle");
       $("endMatchBtn").textContent = t("hud.leaveStory");
     } else if (localActive) {
       $("room").innerHTML = "<b></b>";
@@ -1771,7 +1923,7 @@
      Net.on("round") / onPhaseChange) porque este scoreboard pasó a ser la única fuente. */
   function renderWinsScoreboard() {
     var el = $("winsScoreboard");
-    var mode = (practiceActive || storyActive) ? "infinite" : localActive ? selectedMode : Net.getMode();
+    var mode = (practiceActive || storyActive || sagaActive) ? "infinite" : localActive ? selectedMode : Net.getMode();
     if (mode !== "wins") { el.classList.remove("show"); return; }
     el.classList.add("show");
     var scores = Sim.getScores();
@@ -2428,6 +2580,10 @@
   var storySkipStreak = 0;
   var storySkippedSecretBiomes = []; // biomas donde había secreto y se lo salteó, en esta corrida
   var storySecretTakenBiomes = [];   // biomas donde se ganó la sala secreta, en esta corrida
+  // Cronómetro del run: suma frameDt mientras storyActive (ver frameLoop), NO reloj de pared —
+  // así un run resumido después de cerrar la pestaña no arrastra el tiempo offline. Se guarda en
+  // storyState.run para que resumeStory() siga sumando en vez de arrancar de 0.
+  var storyRunMs = 0;
 
   function storyNpcCountFor(biomeIdx, level) {
     var base = biomeIdx + 1;
@@ -2444,6 +2600,7 @@
       difficulty: storyDifficulty, biomeIdx: storyBiomeIdx, level: storyLevel,
       skipStreak: storySkipStreak,
       skippedSecretBiomes: storySkippedSecretBiomes, secretTakenBiomes: storySecretTakenBiomes,
+      elapsedMs: storyRunMs,
     };
     saveStoryState();
   }
@@ -2487,6 +2644,8 @@
     else if (storyDifficulty === "medium") storyState.unlocks.clearedMedium = true;
     else if (storyDifficulty === "hard") storyState.unlocks.clearedHard = true;
     else if (storyDifficulty === "hardcore") storyState.unlocks.clearedHardcore = true;
+    var finalMs = storyRunMs;
+    var lbBoard = "lss_" + storyDifficulty;
     storyState.run = null;
     saveStoryState();
 
@@ -2497,17 +2656,27 @@
       var nextDiff = storyDifficulty === "easy" ? "medium" : storyDifficulty === "medium" ? "hard" : "hardcore";
       parts.push(t("story.finalRecommend." + nextDiff));
     }
+    parts.push(t("lb.yourTime", { time: formatRunTime(finalMs) }));
     showStoryMessage(t(wasHardcore ? "story.finalTitleHardcore" : "story.finalTitle"), parts.join(" "), t("story.finalContinue"), exitStory);
+
+    // Async a propósito: la pantalla de fin ya se ve con "tu tiempo" sin esperar la red; el
+    // "mejor tiempo" se agrega solo cuando (si) llega, y si la pantalla ya no está (el jugador
+    // le dio a Continuar antes de que responda Supabase) no tocamos nada.
+    lbSubmitAndRefresh(lbBoard, names[PRACTICE_ME], finalMs, function (best) {
+      if (!best || !$("storyMsgScreen").classList.contains("show")) return;
+      $("storyMsgBody").textContent += " " + t("lb.bestTime", { time: formatRunTime(best.time_ms), name: best.name });
+    });
   }
 
   // Sin esto, cada nivel (al ser su propio startMatch de una sola ronda) caería siempre en
   // MAP0 — la "ronda 1" fija que usa cualquier match nuevo (ver nextRound() en online/sim.js).
   // Forzar un archetype de verdad es lo que hace que cada nivel sea una variación distinta del
-  // bioma y no siempre la misma plataforma inicial. "colina" queda afuera: es el archetype sin
-  // hazards pensado para Rey de la Colina, no para pelear.
+  // bioma y no siempre la misma plataforma inicial. "colina" y "santuario" quedan afuera: son
+  // archetypes de propósito específico (Rey de la Colina / jefes de Modo Historia), no para
+  // pelear como pantalla normal.
+  var STORY_RANDOM_ARCHETYPES = MapArchetypes.ids.filter(function (id) { return id !== "colina" && id !== "santuario"; });
   function pickStoryArchetype() {
-    var ids = MapArchetypes.ids.filter(function (id) { return id !== "colina"; });
-    return ids[Math.floor(Math.random() * ids.length)];
+    return STORY_RANDOM_ARCHETYPES[Math.floor(Math.random() * STORY_RANDOM_ARCHETYPES.length)];
   }
 
   function storySpawnLevel(biomeId, npcCount) {
@@ -2645,6 +2814,7 @@
     storyDifficulty = difficulty;
     storyBiomeIdx = 0; storyLevel = 1;
     storySkipStreak = 0; storySkippedSecretBiomes = []; storySecretTakenBiomes = [];
+    storyRunMs = 0;
     storyActive = true;
     storySetupSession();
     storySaveRun();
@@ -2658,6 +2828,7 @@
     storySkipStreak = run.skipStreak || 0;
     storySkippedSecretBiomes = run.skippedSecretBiomes || [];
     storySecretTakenBiomes = run.secretTakenBiomes || [];
+    storyRunMs = run.elapsedMs || 0;
     storyActive = true;
     storySetupSession();
     storyStartLevel();
@@ -2689,6 +2860,265 @@
     storyBotIds.forEach(function (id) { runBotAi(id, dt, cfg); });
   }
 
+  /* ---------------------------------------------------------------- modo historia nuevo (saga) */
+  /* El bloque de arriba (storyXxx) es ahora el modo "Last Stick Standing" — se deja intacto a
+     propósito (mismo storage, mismos unlocks) y solo cambió su copy de cara al jugador. Este es
+     el modo "Modo Historia" nuevo: 5 zonas fijas, cada una con 3 pantallas normales (1/2/3 NPCs)
+     y una de jefe, sin dificultad a elegir y sin orbes (ver noOrbs en Sim.startMatch — acá los
+     poderes se reparten a mano, no por pickup). Mismo patrón de "cada nivel es su propio
+     Sim.startMatch() de una ronda, ganar/perder se detecta por polling propio" que storyXxx — ver
+     el comentario de ese bloque para el porqué.
+
+     Poderes: el jugador no tiene ninguno en la zona 1; al cruzar el jefe de una zona, se queda
+     con SU poder para siempre — desde la zona siguiente le pulsa solo (prendido al empezar la
+     pantalla y de nuevo cada SAGA_PULSE_MS, activo SAGA_PULSE_DUR_MS cada vez). Los enemigos de
+     una zona reciben el poder de ESA zona con el mismo pulso (Neón: dos al azar, distintos por
+     enemigo). El jefe no pulsa nada: se le da su combo de poderes de una sola vez al aparecer,
+     con un `t` gigante para que nunca se apague en la sesión (ver grantAllPowers en sim.js, que
+     usa el mismo truco). */
+  var SAGA_ZONES = ["ruinas", "volcan", "bosque", "nieve", "neon"];
+  var SAGA_ZONE_POWER = { ruinas: "aire", volcan: "fuego", bosque: "tierra", nieve: "hielo", neon: null };
+  var SAGA_POWER_KEYS = ["aire", "fuego", "tierra", "hielo"];
+  // Colores forzados de enemigo por zona (gris/rojo/verde/blanco); Neón no tiene uno fijo — cada
+  // enemigo se pinta al azar con uno de los cuatro, a tono con "nada es lo que parece".
+  var SAGA_ENEMY_COLOR = { ruinas: "#9aa3bd", volcan: "#ff4d4d", bosque: "#4dff88", nieve: "#f5f5f5" };
+  var SAGA_NEON_COLORS = ["#9aa3bd", "#ff4d4d", "#4dff88", "#f5f5f5"];
+  var SAGA_PULSE_MS = 10000, SAGA_PULSE_DUR_MS = 5000;
+  var SAGA_KEY = "lss-saga";
+
+  function loadSagaState() {
+    var out = { run: null };
+    try {
+      var raw = localStorage.getItem(SAGA_KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") out.run = parsed.run || null;
+      }
+    } catch (e) { /* incógnito o storage bloqueado */ }
+    return out;
+  }
+  // Solo local a propósito, a diferencia de storyState: sincronizar esto a Supabase pediría una
+  // columna nueva en la tabla profiles (migración que este repo no versiona), así que el
+  // progreso de esta campaña vive nomás en este navegador — mismo trato que tenía Práctica Libre
+  // antes de que existiera ninguna cuenta.
+  function saveSagaState() {
+    try { localStorage.setItem(SAGA_KEY, JSON.stringify(sagaState)); } catch (e) { /* incógnito */ }
+  }
+  var sagaState = loadSagaState();
+
+  var sagaActive = false;
+  var sagaZoneIdx = 0, sagaLevel = 1; // level: 1-3 pantalla normal, 4 = jefe
+  var sagaBotIds = [];
+  var sagaResolved = false;
+  var sagaEarnedPowers = []; // poderes de zonas ya cruzadas, en orden
+  var sagaPulseT = 0;
+  var sagaPendingPortalAction = null;
+  var sagaRunMs = 0; // mismo cronómetro por-frame que storyRunMs, ver ese comentario
+
+  function sagaEnemyCountFor(level) { return level < 4 ? level : 1; }
+
+  function sagaBossPowersFor(zoneIdx) {
+    var powers = {};
+    var count = Math.min(zoneIdx + 1, 4); // Neón (idx 4) también topea en las 4 de Nieve
+    for (var i = 0; i < count; i++) {
+      var k = SAGA_ZONE_POWER[SAGA_ZONES[i]];
+      if (k) powers[k] = true;
+    }
+    return powers;
+  }
+
+  function sagaSaveRun() {
+    sagaState.run = { zoneIdx: sagaZoneIdx, level: sagaLevel, earnedPowers: sagaEarnedPowers, elapsedMs: sagaRunMs };
+    saveSagaState();
+  }
+
+  function sagaApplyEnemyPulsePower() {
+    var zoneId = SAGA_ZONES[sagaZoneIdx];
+    var zonePower = SAGA_ZONE_POWER[zoneId];
+    sagaBotIds.forEach(function (id) {
+      var p = Sim.getPlayers()[id];
+      if (!p || !p.alive) return;
+      var power = { t: SAGA_PULSE_DUR_MS };
+      if (zonePower) {
+        power[zonePower] = true;
+      } else {
+        // Neón: dos poderes al azar, sorteados por enemigo (no el mismo combo para todos).
+        var pool = SAGA_POWER_KEYS.slice();
+        for (var k = 0; k < 2; k++) power[pool.splice(Math.floor(Math.random() * pool.length), 1)[0]] = true;
+      }
+      p.power = power;
+    });
+  }
+
+  function sagaApplyPlayerPulsePower() {
+    if (!sagaEarnedPowers.length) return; // zona 1: todavía no ganó ningún poder
+    var power = { t: SAGA_PULSE_DUR_MS };
+    sagaEarnedPowers.forEach(function (k) { power[k] = true; });
+    var p = Sim.getPlayers()[PRACTICE_ME];
+    if (p) p.power = power;
+  }
+
+  // Se llama una vez por frame; sagaPulseT arranca en 0 en cada pantalla nueva así el primer
+  // pulso es inmediato (ver sagaStartLevel), no hay que esperar los primeros 10s a ciegas.
+  function sagaPulseTick(dt) {
+    sagaPulseT -= dt;
+    if (sagaPulseT > 0) return;
+    sagaPulseT += SAGA_PULSE_MS;
+    if (sagaLevel < 4) sagaApplyEnemyPulsePower(); // el jefe no pulsa, ver sagaStartLevel
+    sagaApplyPlayerPulsePower();
+  }
+
+  function sagaStartLevel() {
+    sagaResolved = false;
+    botAiState = {};
+    Sim.resetToLobby();
+    Sim.addPlayer(PRACTICE_ME);
+    Sim.getPlayers()[PRACTICE_ME].isHero = true;
+    sagaBotIds = [];
+    var zoneId = SAGA_ZONES[sagaZoneIdx];
+    var isBoss = sagaLevel === 4;
+    var npcCount = sagaEnemyCountFor(sagaLevel);
+    for (var i = 0; i < npcCount; i++) {
+      var id = 2 + i;
+      colors[id] = zoneId === "neon" ? SAGA_NEON_COLORS[Math.floor(Math.random() * SAGA_NEON_COLORS.length)] : SAGA_ENEMY_COLOR[zoneId];
+      Sim.addPlayer(id);
+      Sim.getPlayers()[id].isBot = true;
+      names[id] = isBoss ? t("player.boss") : t("player.npc") + " " + (i + 1);
+      sagaBotIds.push(id);
+    }
+    sagaPulseT = 0;
+    Sim.startMatch(1, false, { mode: "infinite", biome: zoneId, mapArchetype: isBoss ? "santuario" : pickStoryArchetype(), noOrbs: true });
+    if (isBoss) {
+      var boss = Sim.getPlayers()[sagaBotIds[0]];
+      boss.power = Object.assign({ t: 1e9 }, sagaBossPowersFor(sagaZoneIdx));
+    }
+    sagaSaveRun();
+  }
+
+  function sagaFinishGame() {
+    var finalMs = sagaRunMs;
+    sagaState.run = null;
+    saveSagaState();
+
+    // Pantalla propia de estadísticas ANTES del crawl — el crawl es puro lore/cinemática, no
+    // queremos que compita con texto que hay que poder leer con calma.
+    showStoryMessage(t("saga.finishTitle"), t("saga.finishBody") + " " + t("lb.yourTime", { time: formatRunTime(finalMs) }), t("story.continue"), showSagaCrawl);
+
+    lbSubmitAndRefresh("saga", names[PRACTICE_ME], finalMs, function (best) {
+      if (!best || !$("storyMsgScreen").classList.contains("show")) return;
+      $("storyMsgBody").textContent += " " + t("lb.bestTime", { time: formatRunTime(best.time_ms), name: best.name });
+    });
+  }
+
+  function sagaOnWin() {
+    if (sagaLevel === 4) {
+      var isLastZone = sagaZoneIdx >= SAGA_ZONES.length - 1;
+      if (isLastZone) { sagaFinishGame(); return; }
+      var clearedZone = SAGA_ZONES[sagaZoneIdx];
+      if (SAGA_ZONE_POWER[clearedZone]) sagaEarnedPowers = sagaEarnedPowers.concat(SAGA_ZONE_POWER[clearedZone]);
+      sagaZoneIdx++; sagaLevel = 1;
+      sagaSaveRun();
+      showStoryMessage(t("biome." + SAGA_ZONES[sagaZoneIdx]), t("saga.narrative." + SAGA_ZONES[sagaZoneIdx]), t("story.continue"), sagaStartLevel);
+      return;
+    }
+    var aboutToFaceBoss = sagaLevel >= 3;
+    Sim.spawnPortal(Biomes.get(SAGA_ZONES[sagaZoneIdx]).accentText, { boss: aboutToFaceBoss });
+    sagaPendingPortalAction = function () { sagaLevel++; sagaStartLevel(); };
+  }
+
+  function sagaOnLoss() {
+    sagaLevel = 1; // checkpoint: vuelve al primer nivel de la zona, jefe incluido
+    sagaSaveRun();
+    setTimeout(function () { if (sagaActive) sagaStartLevel(); }, 1400);
+  }
+
+  function sagaCheckOutcome() {
+    if (sagaResolved) return;
+    var human = Sim.getPlayers()[PRACTICE_ME];
+    if (!human) return;
+    if (!human.alive) { sagaResolved = true; Sim.forceEndMatch(); sagaOnLoss(); return; }
+    var botsAlive = sagaBotIds.some(function (id) { var b = Sim.getPlayers()[id]; return b && b.alive; });
+    if (!botsAlive) { sagaResolved = true; Sim.forceEndMatch(); sagaOnWin(); }
+  }
+
+  function sagaOnPortalEnter() {
+    if (!sagaActive) return;
+    var action = sagaPendingPortalAction; sagaPendingPortalAction = null;
+    if (action) action();
+  }
+
+  function sagaSetupSession() {
+    myId = PRACTICE_ME;
+    names = {}; names[PRACTICE_ME] = $("nickInputMain").value.trim() || t("player.default");
+    colors = {}; hats = {}; if (myColor) colors[PRACTICE_ME] = myColor;
+    hats[PRACTICE_ME] = myHat;
+    finalShown = false;
+    hideScoreReveal();
+    Sim.resetToLobby();
+    updateSessionLabels();
+    $("endMatchBtn").classList.add("show");
+    $("wrap").classList.add("playing");
+    $("pingIndicator").classList.remove("show");
+    stopLobbyBackground();
+  }
+
+  function enterSaga() {
+    sagaZoneIdx = 0; sagaLevel = 1; sagaEarnedPowers = [];
+    sagaRunMs = 0;
+    sagaActive = true;
+    sagaSetupSession();
+    sagaSaveRun();
+    showStoryMessage(t("biome." + SAGA_ZONES[0]), t("saga.narrative." + SAGA_ZONES[0]), t("story.continue"), sagaStartLevel);
+  }
+
+  function resumeSaga() {
+    var run = sagaState.run;
+    sagaZoneIdx = run.zoneIdx; sagaLevel = run.level; sagaEarnedPowers = run.earnedPowers || [];
+    sagaRunMs = run.elapsedMs || 0;
+    sagaActive = true;
+    sagaSetupSession();
+    sagaStartLevel();
+  }
+
+  function exitSaga() {
+    sagaActive = false;
+    Sim.resetToLobby();
+    myId = null;
+    names = {}; colors = {}; hats = {};
+    hideScoreReveal();
+
+    $("wrap").classList.remove("playing");
+    $("roundBanner").classList.remove("show");
+    $("endMatchBtn").classList.remove("show");
+    $("storyMsgScreen").classList.remove("show");
+    storyMessageShowing = false;
+    updateSessionLabels();
+    sagaState.run = null;
+    saveSagaState();
+    $("soloCard").style.display = "none";
+    $("choiceCard").style.display = "block";
+    startLobbyBackground();
+  }
+
+  function sagaAiTick(dt) {
+    var cfg = PRACTICE_DIFFS[sagaZoneIdx >= 2 ? "hard" : "medium"];
+    sagaBotIds.forEach(function (id) { runBotAi(id, dt, cfg); });
+  }
+
+  var SAGA_CRAWL_MS = 42000; // tiene que coincidir con la duración del keyframe CSS (sagaCrawl)
+  var sagaCrawlTimer = null;
+  function showSagaCrawl() {
+    var el = $("sagaCrawlText");
+    el.classList.remove("play"); void el.offsetWidth; el.classList.add("play"); // reinicia el keyframe si se repite en la misma sesión
+    $("sagaCrawlScreen").classList.add("show");
+    sagaCrawlTimer = setTimeout(sagaEndCrawl, SAGA_CRAWL_MS);
+  }
+  function sagaEndCrawl() {
+    if (sagaCrawlTimer) { clearTimeout(sagaCrawlTimer); sagaCrawlTimer = null; }
+    $("sagaCrawlScreen").classList.remove("show");
+    exitSaga();
+  }
+  $("sagaCrawlScreen").addEventListener("click", sagaEndCrawl);
 
   /* ---------------------------------------------------------------- modo local (sin red) */
   /* Mismo espíritu que Práctica Libre (Sim corre de verdad acá, no en un servidor) pero con
@@ -3597,10 +4027,25 @@
     }
 
     if (storyActive) {
+      storyRunMs += frameDt;
       if (!storyMessageShowing) {
         storyAiTick(frameDt);
         Sim.step(frameDt);
         storyCheckOutcome();
+      }
+      renderTopbar();
+      Sim.draw(ctx, now, frameDt);
+      requestAnimationFrame(frameLoop);
+      return;
+    }
+
+    if (sagaActive) {
+      sagaRunMs += frameDt;
+      if (!storyMessageShowing) {
+        sagaAiTick(frameDt);
+        sagaPulseTick(frameDt);
+        Sim.step(frameDt);
+        sagaCheckOutcome();
       }
       renderTopbar();
       Sim.draw(ctx, now, frameDt);
@@ -3836,7 +4281,7 @@
   function refreshPingUI() {
     var el = $("pingIndicator");
     var ms = Net.getPing();
-    if (practiceActive || localActive || storyActive || ms === null) {
+    if (practiceActive || localActive || storyActive || sagaActive || ms === null) {
       el.classList.remove("show");
       return;
     }
@@ -3892,7 +4337,7 @@
     // Modo Local se resuelve ANTES de llegar acá (ver los handlers de abajo): ahí una sola tecla
     // puede pertenecer a un jugador distinto según qué esquema de teclado tenga asignado, así
     // que hace falta saber el id antes de llamar a Sim.handleInput.
-    if (practiceActive || storyActive) Sim.handleInput(PRACTICE_ME, action, down);
+    if (practiceActive || storyActive || sagaActive) Sim.handleInput(PRACTICE_ME, action, down);
     else Net.sendInput(action, down);
   }
   function localPlayerForKbSlot(slot) {
@@ -4026,6 +4471,13 @@
       storySelectedDifficulty = "easy";
       $("storyDiffCard").style.display = "block";
     }
+  });
+
+  $("soloSagaBtn").addEventListener("click", function () {
+    $("soloCard").style.display = "none";
+    $("backLink").style.display = "none";
+    if (sagaState.run) resumeSaga();
+    else enterSaga();
   });
 
   var storySelectedDifficulty = "easy";
@@ -4178,6 +4630,7 @@
   $("endMatchBtn").addEventListener("click", function () {
     if (practiceActive) exitPractice();
     else if (storyActive) exitStory();
+    else if (sagaActive) exitSaga();
     else if (localActive) exitLocal();
     else Net.endMatch();
   });
@@ -4259,6 +4712,81 @@
   );
   var authUser = null; // { id, username } una vez logueado
   var authMode = "login"; // "login" | "signup"
+
+  /* ---------------------------------------------------------------- mejores tiempos (global) */
+  /* Tabla pública `run_times` (id, board, name, time_ms, created_at) — sin login, igual que jugar
+     solo hoy: cualquiera manda su nombre tipeado + el tiempo de su corrida. `board` es uno de
+     LB_BOARDS de abajo en vez de columnas separadas mode/difficulty, para que insertar/consultar
+     sea un solo string. Sin verificación server-side más allá de los checks de la tabla (tiempo
+     positivo y acotado) — un cliente podría mandar un tiempo falso, aceptado a propósito: el
+     resto de Solitario ya confía 100% en el cliente. */
+  var LB_BOARDS = ["lss_easy", "lss_medium", "lss_hard", "lss_hardcore", "saga"];
+  var lbCache = {}; // board -> [{name,time_ms}, ...] (hasta 3), para no re-pedir todo tras un submit
+
+  function formatRunTime(ms) {
+    var totalSec = Math.max(0, Math.round(ms / 1000));
+    var mm = Math.floor(totalSec / 60), ss = totalSec % 60;
+    return mm + ":" + (ss < 10 ? "0" : "") + ss;
+  }
+
+  function lbSubmit(board, name, timeMs) {
+    return sb.from("run_times").insert({ board: board, name: name, time_ms: Math.round(timeMs) });
+  }
+
+  function lbTop(board, limit) {
+    return sb.from("run_times").select("name,time_ms").eq("board", board)
+      .order("time_ms", { ascending: true }).limit(limit || 3)
+      .then(function (res) { if (res.error) throw res.error; return res.data || []; });
+  }
+
+  function renderLbBoard(board) {
+    var el = document.querySelector('[data-board="' + board + '"]');
+    if (!el) return;
+    var rows = lbCache[board];
+    el.innerHTML = "";
+    if (!rows) { // todavía no llegó o falló — no dejamos la lista vacía y muda
+      var li = document.createElement("li"); li.className = "lbEmpty"; li.textContent = t("lb.empty");
+      el.appendChild(li);
+      return;
+    }
+    if (!rows.length) {
+      var liE = document.createElement("li"); liE.className = "lbEmpty"; liE.textContent = t("lb.none");
+      el.appendChild(liE);
+      return;
+    }
+    rows.forEach(function (row, i) {
+      var li = document.createElement("li");
+      var pos = document.createElement("span"); pos.className = "lbPos"; pos.textContent = (i + 1) + ".";
+      var nm = document.createElement("span"); nm.className = "lbName"; nm.textContent = row.name;
+      var tm = document.createElement("span"); tm.className = "lbTime"; tm.textContent = formatRunTime(row.time_ms);
+      li.appendChild(pos); li.appendChild(nm); li.appendChild(tm);
+      el.appendChild(li);
+    });
+  }
+
+  function refreshLbBoard(board) {
+    lbTop(board, 3).then(function (rows) { lbCache[board] = rows; renderLbBoard(board); })
+      .catch(function () { renderLbBoard(board); }); // lbCache[board] queda undefined -> "no se pudo cargar"
+  }
+
+  function initLeaderboards() {
+    LB_BOARDS.forEach(refreshLbBoard);
+  }
+
+  // Manda el tiempo, y cuando confirma vuelve a pedir el top-3 de ESE tablero nomás (no los 5) —
+  // así el tablero del menú principal ya sale actualizado la próxima vez que se vea, incluida la
+  // propia corrida que se acaba de mandar. onBest recibe el mejor tiempo actual (o null si falló
+  // la consulta) para que la pantalla de fin de partida lo muestre sin bloquear el "tu tiempo".
+  function lbSubmitAndRefresh(board, name, timeMs, onBest) {
+    lbSubmit(board, name, timeMs).then(function () {
+      refreshLbBoard(board);
+      return lbTop(board, 1);
+    }).then(function (rows) {
+      onBest(rows && rows[0] ? rows[0] : null);
+    }).catch(function () {
+      onBest(null);
+    });
+  }
 
   function authUsernameValid(u) { return /^[a-z0-9_]{3,20}$/.test(u); }
   function authEmailFor(u) { return u.toLowerCase() + AUTH_EMAIL_DOMAIN; }
@@ -4449,6 +4977,7 @@
   Net.connect();
   startLobbyBackground();
   buildThemeGrid();
+  initLeaderboards();
   requestAnimationFrame(frameLoop);
 })();
 </script>

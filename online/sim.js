@@ -156,6 +156,10 @@ var Sim = (function () {
   var orb = null, orbTimer = ORB_SPAWN_MS;
   var hill = null, hillTimer = 0, hillLastPlatformIdx = -1;
   var orbkingTimer = 0;
+  // Exclusivo de Modo Historia (build web): esa campaña reparte poderes por su cuenta y no
+  // quiere que un orbe normal aparezca encima. Inerte en cualquier otro modo/build, que nunca
+  // pasa opts.noOrbs.
+  var noOrbsFlag = false;
 
   function newPlayer(id) {
     return {
@@ -429,7 +433,7 @@ var Sim = (function () {
   }
 
   function updateOrbs(dt) {
-    if (phase !== "fight") return;
+    if (phase !== "fight" || noOrbsFlag) return;
     orbTimer -= dt;
     if (orbTimer <= 0) { spawnOrb(); orbTimer = ORB_SPAWN_MS; }
     if (!orb) return;
@@ -494,9 +498,12 @@ var Sim = (function () {
     return { x: x, y: pl.y - 36 };
   }
 
-  function spawnPortal(color) {
+  function spawnPortal(color, opts) {
     var spot = pickWorldObjectSpot();
-    portal = { x: spot.x, y: spot.y, color: color || "#35f0e0", bornT: 0 };
+    // boss: true lo usa Modo Historia para el portal que lleva al jefe de zona — sin la
+    // flecha flotante de arriba (ver drawWorldObjects), así se distingue de un salto de nivel
+    // normal con solo mirarlo, sin depender del color (que puede coincidir con el del bioma).
+    portal = { x: spot.x, y: spot.y, color: color || "#35f0e0", bornT: 0, boss: !!(opts && opts.boss) };
   }
 
   function spawnVoidHole() {
@@ -550,8 +557,25 @@ var Sim = (function () {
     ctx.restore();
   }
 
+  // Flecha que flota arriba-abajo sobre un portal de nivel normal (no de jefe) — mismo idioma
+  // que el bob del orbe (drawOrb): un seno sobre bornT, apagado en modo caracol.
+  function drawPortalArrow(ctx) {
+    if (!portal || portal.boss) return;
+    var bob = snailMode ? 0 : Math.sin(portal.bornT * 0.0035) * 6;
+    var y = portal.y - WORLD_OBJECT_R - 22 + bob;
+    ctx.save();
+    ctx.translate(portal.x, y);
+    if (!snailMode) { ctx.shadowColor = portal.color; ctx.shadowBlur = 12; }
+    ctx.fillStyle = portal.color;
+    ctx.beginPath();
+    ctx.moveTo(0, 10); ctx.lineTo(-9, -8); ctx.lineTo(9, -8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
   function drawWorldObjects(ctx) {
-    if (portal) drawWorldObject(ctx, portal, portal.color, portal.color);
+    if (portal) { drawWorldObject(ctx, portal, portal.color, portal.color); drawPortalArrow(ctx); }
     if (voidHole) drawWorldObject(ctx, voidHole, "#05030a", "#a054ff");
   }
 
@@ -934,6 +958,7 @@ var Sim = (function () {
     totalRounds = noElimination() ? 1 : (roundsMode === "fixed" ? Math.max(1, Math.min(20, rounds || 3)) : Infinity);
     winTarget = Math.max(1, Math.min(20, rounds || 3));
     winnerOnlyScoring = opts.mode !== undefined;
+    noOrbsFlag = !!opts.noOrbs;
     snailMode = !!snail;
     forcedArchetype = opts.mapArchetype || (gameMode === "koth" ? "colina" : null);
     forcedBiome = opts.biome || null;
@@ -968,6 +993,7 @@ var Sim = (function () {
     currentMap = MAP0;
     orb = null;
     orbTimer = ORB_SPAWN_MS;
+    noOrbsFlag = false;
     hill = null;
     hillTimer = 0;
     hillLastPlatformIdx = -1;
