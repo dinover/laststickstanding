@@ -2247,10 +2247,10 @@
   /* Estado de decisión de IA, uno por bot activo — antes era un único juego de variables
      globales porque Práctica Libre solo tenía un bot fijo (PRACTICE_AI). Modo Historia reusa la
      misma lógica de pathfinding con N ids en simultáneo, cada uno con su propio reloj de
-     decisión y sus propias banderas de pathCommitted/needsDoubleJump (ver runBotAi). */
+     decisión y su propio pathCommitted/targetY (ver runBotAi). */
   var botAiState = {};
   function getBotAiState(id) {
-    return botAiState[id] || (botAiState[id] = { accum: 0, pathCommitted: false, needsDoubleJump: false });
+    return botAiState[id] || (botAiState[id] = { accum: 0, pathCommitted: false, targetY: null });
   }
 
   var PRACTICE_DIFFS = {
@@ -2258,6 +2258,22 @@
     medium: { decisionMs: 150, attackChance: 0.80, chaseSlack: 30, edgeMargin: 22, jumpChance: 0.03  },
     hard:   { decisionMs: 80,  attackChance: 0.97, chaseSlack: 16, edgeMargin: 14, jumpChance: 0.05  },
   };
+
+  /* edgeMargin de arriba no alcanza solo: runBotAi decide la dirección UNA VEZ cada
+     cfg.decisionMs (80-260ms) y no vuelve a mirar hasta la próxima — así que si la última vez
+     que miró todavía estaba a salvo, camina lo que falta de esa ventana entera antes de que
+     alguien vuelva a frenarlo. Con SPEED=4.3 y decisionMs=150 (medio) eso son ~39px de margen
+     real necesario, bastante más que los 22 fijos que había — la consecuencia era exactamente el
+     "bot camina de largo y se cae de una plataforma angosta" reportado. Se calcula con la MISMA
+     física real (Sim.getPhysicsConsts) en vez de otro número inventado por dificultad, mismo
+     criterio que el grafo de pathfinding de más abajo. */
+  var EDGE_MARGIN_SAFETY = 1.25; // colchón extra sobre el peor caso, por si algún frame real dura más que 16.6ms
+  function safeEdgeMargin(cfg) {
+    var consts = Sim.getPhysicsConsts();
+    var framesPerDecision = cfg.decisionMs / 16.6667;
+    var worstCaseTravel = consts.SPEED * framesPerDecision * EDGE_MARGIN_SAFETY;
+    return Math.max(cfg.edgeMargin, worstCaseTravel);
+  }
 
   function platformIndexAt(plats, p) {
     for (var i = 0; i < plats.length; i++) {
@@ -2267,62 +2283,88 @@
     return -1;
   }
 
-  var PATHFIND_FALL_MARGIN = 40; // solape horizontal tolerado para "se puede caer de una a otra"
-  var PATHFIND_JUMP_RISE = 230;  // altura máx. aprox. de un solo salto (JUMP_V=-20.5, GRAVITY_UP=0.95)
-  /* El segundo salto (JUMP_V2 en online/sim.js) llega, por diseño, a la MITAD de la altura del
-     primero — mismo criterio acá: sumarle esa mitad da el alcance total de un salto doble. Antes
-     el grafo no lo contemplaba en absoluto, así que la IA trataba cualquier plataforma más alta
-     que un salto simple como "inalcanzable" y se quedaba quieta debajo — aunque tuviera el doble
-     salto disponible como cualquier jugador. */
-  var PATHFIND_DOUBLE_JUMP_RISE = PATHFIND_JUMP_RISE * 1.5; // 345
+  // ¿Hay una púa en el tramo que el bot está por caminar? La IA de acá abajo solo razona en
+  // términos de plataformas (dónde puede pararse, a dónde puede saltar) — nunca supo de
+  // hazards, así que caminaba derecho sobre una púa como si no estuviera. El lookahead usa la
+  // MISMA distancia de "peor caso hasta la próxima decisión" que safeEdgeMargin: con un
+  // lookahead fijo más corto que eso, el bot podía terminar de cruzar el hueco justo en la
+  // ventana ciega entre una decisión y la siguiente, sin llegar a pedir el salto a tiempo.
+  function hazardAheadOf(ai, map, goingRight, cfg) {
+    if (!map.hazards || !map.hazards.length) return false;
+    var lookahead = safeEdgeMargin(cfg);
+    var aheadX = ai.x + (goingRight ? lookahead : -lookahead);
+    var lo = Math.min(ai.x, aheadX), hi = Math.max(ai.x, aheadX);
+    for (var i = 0; i < map.hazards.length; i++) {
+      var hz = map.hazards[i];
+      if (Math.abs(hz.y - ai.y) > 10) continue; // no es la plataforma donde está parado
+      if (hi > hz.x && lo < hz.x + hz.w) return true;
+    }
+    return false;
+  }
 
-  /* Grafo de "a qué otra plataforma se puede llegar desde acá": cayendo (si hay solape
-     horizontal razonable y la otra está más abajo) o saltando (si está más arriba, con un salto
-     simple o, si hace falta, con el doble). Cada arista lleva un flag `dbl` que dice si ese hop
-     necesita el segundo salto — bfsNextHop lo propaga para que practiceAiTick sepa si tiene que
-     pedirlo. No modela el arco exacto del salto ni el drift al caer, pero alcanza para que la IA
-     elija un camino real en vez de tirarse a un borde cualquiera sin saber qué hay del otro lado
-     — que es justo lo que la dejaba cayendo al vacío en mapas generados con huecos de verdad. */
+  /* Grafo de "a qué otra plataforma se puede llegar desde acá", construido con el MISMO modelo
+     físico que world.js ya usa para garantizar que todo mapa generado es atravesable
+     (World.makeReachability — ver ese archivo): tiempo de vuelo real según JUMP_V/gravedad y el
+     alcance horizontal que da SPEED en ese tiempo, con el mismo margen de seguridad (0.86) que
+     usa el generador. Antes esto era una reimplementación a mano con márgenes inventados
+     (40px de solape para CUALQUIER arista, salto simple = 230px de altura fijo) que no
+     coincidían con la física real: unas veces creía reachable un hueco que no lo era (los bots
+     se tiraban al vacío en archetypes como "puente", donde las islas quedan más separadas que
+     ese margen) y otras veces descartaba un salto perfectamente válido (se quedaban esperando
+     sin cruzar). Como el generador YA garantiza que cualquier mapa que llega a jugarse está
+     completamente conectado con saltos simples (ver connectAllPlatforms/reach.allConnected en
+     world.js), reusar el mismo chequeo acá significa que si existe una forma de cruzar, la IA
+     la va a encontrar — y si no existe, no se va a tirar a probar suerte. */
+  var botReachModel = null;
+  function getBotReach() {
+    return botReachModel || (botReachModel = World.makeReachability(Sim.getPhysicsConsts()));
+  }
+
   function buildPlatformGraph(plats) {
+    var reach = getBotReach();
     var adj = [];
     for (var i = 0; i < plats.length; i++) {
       adj.push([]);
       for (var j = 0; j < plats.length; j++) {
-        if (i === j) continue;
-        var a = plats[i], b = plats[j];
-        var overlap = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
-        if (overlap < -PATHFIND_FALL_MARGIN) continue; // ni cerca en X, no hay forma de llegar
-        if (b.y > a.y) { adj[i].push({ to: j, dbl: false }); continue; } // b está más abajo: se llega cayendo
-        var rise = a.y - b.y;
-        if (rise <= PATHFIND_JUMP_RISE) adj[i].push({ to: j, dbl: false });
-        else if (rise <= PATHFIND_DOUBLE_JUMP_RISE) adj[i].push({ to: j, dbl: true });
+        if (i !== j && reach.reachable(plats[i], plats[j])) adj[i].push(j);
       }
     }
     return adj;
   }
 
-  /* BFS de `from` a `to`: devuelve el PRIMER salto del camino más corto ({hop, dbl}), o
-     hop === -1 si no hay ninguno — en ese caso la IA no se tira a lo loco, se queda quieta antes
-     que arriesgarse a un hueco sin fondo. `dbl` viaja pegado al PRIMER hop del camino (no al
-     último): es el único que practiceAiTick va a ejecutar antes de recalcular. */
+  // El grafo no cambia mientras dure el nivel (mismo array de plataformas) — cachearlo evita
+  // reconstruirlo desde cero en cada decisión de CADA bot (Modo Historia puede tener varios a
+  // la vez, todos re-evaluando contra el mismo mapa).
+  var botGraphCache = { plats: null, adj: null };
+  function getPlatformGraph(plats) {
+    if (botGraphCache.plats !== plats) {
+      botGraphCache.plats = plats;
+      botGraphCache.adj = buildPlatformGraph(plats);
+    }
+    return botGraphCache.adj;
+  }
+
+  /* BFS de `from` a `to`: devuelve el índice de la plataforma del PRIMER salto del camino más
+     corto, o -1 si no hay ninguno — en ese caso la IA no se tira a lo loco, se queda quieta antes
+     que arriesgarse a un hueco sin fondo (con el grafo de arriba, esto ya casi no debería pasar
+     dentro de un mapa jugable de verdad). */
   function bfsNextHop(adj, from, to) {
-    if (from < 0 || to < 0 || from === to) return { hop: -1, dbl: false };
+    if (from < 0 || to < 0 || from === to) return -1;
     var visited = {}; visited[from] = true;
-    var queue = [{ node: from, hop: -1, dbl: false }];
+    var queue = [{ node: from, hop: -1 }];
     for (var qi = 0; qi < queue.length; qi++) {
       var cur = queue[qi];
       var neighbors = adj[cur.node];
       for (var k = 0; k < neighbors.length; k++) {
-        var edge = neighbors[k], nb = edge.to;
+        var nb = neighbors[k];
         if (visited[nb]) continue;
         visited[nb] = true;
         var hop = cur.hop === -1 ? nb : cur.hop;
-        var dbl = cur.hop === -1 ? edge.dbl : cur.dbl;
-        if (nb === to) return { hop: hop, dbl: dbl };
-        queue.push({ node: nb, hop: hop, dbl: dbl });
+        if (nb === to) return hop;
+        queue.push({ node: nb, hop: hop });
       }
     }
-    return { hop: -1, dbl: false };
+    return -1;
   }
 
   /* Re-evaluada cada `decisionMs` según la dificultad (no cada frame, así la IA "piensa" a
@@ -2349,7 +2391,7 @@
       Sim.handleInput(id, "left", false);
       Sim.handleInput(id, "right", false);
       st.pathCommitted = false;
-      st.needsDoubleJump = false;
+      st.targetY = null;
       return;
     }
 
@@ -2364,18 +2406,19 @@
     var meIdx = platformIndexAt(plats, me);
 
     if (aiIdx >= 0 && meIdx >= 0 && aiIdx !== meIdx) {
-      var path = bfsNextHop(buildPlatformGraph(plats), aiIdx, meIdx);
-      if (path.hop >= 0) {
-        var cur = plats[aiIdx], target = plats[path.hop];
+      var hop = bfsNextHop(getPlatformGraph(plats), aiIdx, meIdx);
+      if (hop >= 0) {
+        var cur = plats[aiIdx], target = plats[hop];
         var goRight = (target.x + target.w / 2) > (cur.x + cur.w / 2);
         wantRight = goRight; wantLeft = !goRight;
         wantJump = target.y < cur.y; // el próximo salto del camino está más arriba
         st.pathCommitted = true;
-        st.needsDoubleJump = path.dbl;
+        st.targetY = target.y;
       } else {
-        // Sin camino conocido: mejor quedarse quieta que arriesgarse a un hueco sin fondo.
+        // Sin camino conocido: mejor quedarse quieta que arriesgarse a un hueco sin fondo. Con
+        // el grafo físico de arriba esto casi no debería pasar dentro de un mapa jugable real.
         st.pathCommitted = false;
-        st.needsDoubleJump = false;
+        st.targetY = null;
       }
     } else if (aiIdx < 0) {
       /* En el aire. Solo se ajusta hacia el rival si venimos de un salto/caída REALMENTE
@@ -2386,26 +2429,39 @@
     } else {
       // Misma plataforma (o el rival también está en el aire): combate normal, terreno conocido.
       st.pathCommitted = false;
-      st.needsDoubleJump = false;
+      st.targetY = null;
       ambientJumpOk = true;
       if (absDx > cfg.chaseSlack) {
         wantRight = dx > 0; wantLeft = dx < 0;
         var plat = plats[aiIdx];
-        if (wantLeft && ai.x - plat.x < cfg.edgeMargin) wantLeft = false;
-        if (wantRight && (plat.x + plat.w) - ai.x < cfg.edgeMargin) wantRight = false;
+        var margin = safeEdgeMargin(cfg);
+        if (wantLeft && ai.x - plat.x < margin) wantLeft = false;
+        if (wantRight && (plat.x + plat.w) - ai.x < margin) wantRight = false;
       }
     }
+
+    // Si camina hacia una púa que tiene pisada delante, saltarla en vez de metérsele de frente
+    // (antes esto no se chequeaba nunca: la IA solo pensaba en plataformas, ni se enteraba de
+    // que hubiera un hazard en el medio del camino — moría gratis contra una púa a plena vida).
+    if (ai.grounded && (wantLeft || wantRight) && hazardAheadOf(ai, map, wantRight, cfg)) wantJump = true;
 
     Sim.handleInput(id, "left", wantLeft);
     Sim.handleInput(id, "right", wantRight);
 
     if (ai.grounded && (wantJump || (ambientJumpOk && Math.random() < cfg.jumpChance))) {
       Sim.handleInput(id, "jump", true);
-    } else if (!ai.grounded && st.needsDoubleJump && ai.jumpsLeft > 0) {
-      // El hop elegido por el pathfinding necesita el segundo salto (ver buildPlatformGraph):
-      // ya despegó del suelo, ahora hay que pedirlo mientras sigue en el aire.
+    } else if (!ai.grounded && st.pathCommitted && st.targetY != null && ai.y > st.targetY && ai.vy >= 0 && ai.jumpsLeft > 0) {
+      // Red de seguridad genérica, no un flag "esta arista necesita doble salto" precalculado
+      // (esa cuenta nunca coincidía del todo con la física real): si sigue en el aire, comprometida
+      // con un salto hacia una plataforma más alta, y todavía no llegó a esa altura, usa el
+      // segundo salto que tiene disponible como cualquier jugador. `vy >= 0` es a propósito: sin
+      // eso disparaba en el mismo frame que el PRIMER salto (que recién está subiendo, todavía
+      // por debajo de la altura del destino como cualquier salto normal en su primera mitad),
+      // convirtiendo cada hop de un salto simple en un doble salto automático que se pasaba de
+      // largo del destino real — los bots quedaban rebotando entre plataformas sin aterrizar
+      // nunca donde el pathfinding había decidido. Con `vy >= 0` (ya pasó el punto más alto,
+      // está cayendo) solo se gasta el segundo salto cuando el primero de verdad se quedó corto.
       Sim.handleInput(id, "jump", true);
-      st.needsDoubleJump = false; // gastado — no insistir cada tick de ahí al aterrizaje
     }
 
     var attacks = Sim.getAttacks();
@@ -3012,13 +3068,27 @@
 
   function sagaOnWin() {
     if (sagaLevel === 4) {
+      // Jefe derretido: portal como cualquier otro nivel, no un salto directo a la pantalla
+      // siguiente — antes esto no aparecía nunca, así que ganarle al jefe se sentía como que el
+      // juego se colgaba un instante en vez de festejarlo. Sin boss:true (a diferencia del
+      // portal que lleva AL jefe): este lleva a una pantalla normal o al final, así que sí
+      // corresponde la flecha flotante. Dorado para el último jefe (mismo color que el portal
+      // final de Last Stick Standing), del color de la ZONA SIGUIENTE para los demás — mismo
+      // criterio que storyOnWin en el modo viejo.
       var isLastZone = sagaZoneIdx >= SAGA_ZONES.length - 1;
-      if (isLastZone) { sagaFinishGame(); return; }
-      var clearedZone = SAGA_ZONES[sagaZoneIdx];
-      if (SAGA_ZONE_POWER[clearedZone]) sagaEarnedPowers = sagaEarnedPowers.concat(SAGA_ZONE_POWER[clearedZone]);
-      sagaZoneIdx++; sagaLevel = 1;
-      sagaSaveRun();
-      showStoryMessage(t("biome." + SAGA_ZONES[sagaZoneIdx]), t("saga.narrative." + SAGA_ZONES[sagaZoneIdx]), t("story.continue"), sagaStartLevel);
+      if (isLastZone) {
+        Sim.spawnPortal("#ffc247");
+        sagaPendingPortalAction = sagaFinishGame;
+      } else {
+        Sim.spawnPortal(Biomes.get(SAGA_ZONES[sagaZoneIdx + 1]).accentText);
+        sagaPendingPortalAction = function () {
+          var clearedZone = SAGA_ZONES[sagaZoneIdx];
+          if (SAGA_ZONE_POWER[clearedZone]) sagaEarnedPowers = sagaEarnedPowers.concat(SAGA_ZONE_POWER[clearedZone]);
+          sagaZoneIdx++; sagaLevel = 1;
+          sagaSaveRun();
+          showStoryMessage(t("biome." + SAGA_ZONES[sagaZoneIdx]), t("saga.narrative." + SAGA_ZONES[sagaZoneIdx]), t("story.continue"), sagaStartLevel);
+        };
+      }
       return;
     }
     var aboutToFaceBoss = sagaLevel >= 3;

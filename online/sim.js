@@ -1193,6 +1193,11 @@ var Sim = (function () {
     getCurrentMap: function () { return currentMap; },
     getCurrentRound: function () { return currentRound; },
     getTotalRounds: function () { return totalRounds; },
+    // Para World.makeReachability(...) — la IA de bots (online/public/index.html) construye su
+    // grafo de plataformas con el MISMO modelo físico que ya usa world.js para garantizar que
+    // todo mapa generado es atravesable de un salto simple, en vez de reimplementar constantes
+    // propias que podían desincronizarse (ver el historial de bugs de bots tirándose al vacío).
+    getPhysicsConsts: function () { return { SPEED: SPEED, JUMP_V: JUMP_V, GRAVITY_UP: GRAVITY_UP, GRAVITY_DOWN: GRAVITY_DOWN }; },
     // guest
     guestApplySnapshot: guestApplySnapshot,
     guestFrame: guestFrame,
