@@ -100,6 +100,7 @@ const STATIC = {
   "/world.js": ["../world.js", "text/javascript; charset=utf-8"],
   "/audio.js": ["../audio.js", "text/javascript; charset=utf-8"],
   "/sim.js": ["sim.js", "text/javascript; charset=utf-8"],
+  "/bot-ai.js": ["public/bot-ai.js", "text/javascript; charset=utf-8"],
   "/balance.js": ["balance.js", "text/javascript; charset=utf-8"],
   // Favicon + imagen de preview al compartir el link (WhatsApp/Twitter/Discord leen esto vía
   // las meta og:image de public/index.html, no adivinan una captura sola).

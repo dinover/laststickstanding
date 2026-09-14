@@ -76,6 +76,10 @@ var Sim = (function () {
   var SLOW_MS = 2500, SLOW_MULT = 0.5;
   var ARMOR_MULT = 0.5;
   var AIR_SPEED_MULT = 1.35, AIR_COOLDOWN_MULT = 0.55;
+  // Cuánto conserva el empuje de un golpe (p.kbx) por frame de 60 fps. Constante con nombre (y
+  // no el literal suelto en stepPlayer) porque la IA de bots simula la misma física — ver
+  // getPhysicsConsts().
+  var KB_DECAY = 0.88;
 
   var MAP0 = {
     name: "Plataforma Inicial",
@@ -702,7 +706,7 @@ var Sim = (function () {
     var prevFeet = p.y;
     var wasGrounded = p.grounded;
     p.y += p.vy * dtScale;
-    p.kbx = (p.kbx || 0) * Math.pow(0.88, dtScale);
+    p.kbx = (p.kbx || 0) * Math.pow(KB_DECAY, dtScale);
     if (Math.abs(p.kbx) < 0.05) p.kbx = 0;
     p.x += (p.vx + p.kbx) * dtScale;
     p.x = Math.max(14, Math.min(W - 14, p.x));
@@ -1193,11 +1197,17 @@ var Sim = (function () {
     getCurrentMap: function () { return currentMap; },
     getCurrentRound: function () { return currentRound; },
     getTotalRounds: function () { return totalRounds; },
-    // Para World.makeReachability(...) — la IA de bots (online/public/index.html) construye su
-    // grafo de plataformas con el MISMO modelo físico que ya usa world.js para garantizar que
-    // todo mapa generado es atravesable de un salto simple, en vez de reimplementar constantes
-    // propias que podían desincronizarse (ver el historial de bugs de bots tirándose al vacío).
-    getPhysicsConsts: function () { return { SPEED: SPEED, JUMP_V: JUMP_V, GRAVITY_UP: GRAVITY_UP, GRAVITY_DOWN: GRAVITY_DOWN }; },
+    // La IA de bots (online/public/bot-ai.js) simula trayectorias con EXACTAMENTE esta física
+    // en vez de reimplementar constantes propias que podían desincronizarse (ver el historial de
+    // bugs de bots tirándose al vacío). Los 4 primeros campos son además lo que espera
+    // World.makeReachability(...).
+    getPhysicsConsts: function () {
+      return {
+        SPEED: SPEED, JUMP_V: JUMP_V, GRAVITY_UP: GRAVITY_UP, GRAVITY_DOWN: GRAVITY_DOWN,
+        JUMP_V2: JUMP_V2, MAX_JUMPS: MAX_JUMPS, PW: PW, W: W, H: H,
+        AIR_SPEED_MULT: AIR_SPEED_MULT, SLOW_MULT: SLOW_MULT, KB_DECAY: KB_DECAY,
+      };
+    },
     // guest
     guestApplySnapshot: guestApplySnapshot,
     guestFrame: guestFrame,
