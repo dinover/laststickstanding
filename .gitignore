@@ -7,3 +7,6 @@ dist/
 
 # Fly guarda acá el estado de la última app desplegada.
 .fly/
+packages/*/dist/
+.vite/
+coverage/

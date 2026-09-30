@@ -1,0 +1,27 @@
+{
+  "name": "last-stick-standing",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Last Stick Standing V2 — monorepo (shared sim, Pixi/Svelte client, authoritative ws server)",
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/client"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @lss/server",
+    "dev:client": "npm run dev --workspace @lss/client",
+    "build": "npm run build --workspace @lss/client && npm run build --workspace @lss/server",
+    "start": "node packages/server/dist/server.mjs",
+    "test": "vitest run",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "check": "npm run typecheck && npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  }
+}

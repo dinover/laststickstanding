@@ -1,0 +1,25 @@
+{
+  "name": "@lss/server",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Authoritative game server: rooms, fixed-tick simulation, binary snapshots, phone-pad relay, static hosting.",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/server.ts",
+    "build": "esbuild src/server.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/server.mjs --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
+    "start": "node dist/server.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@lss/shared": "*",
+    "msgpackr": "^1.11.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "@types/ws": "^8.5.12",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.1"
+  }
+}
