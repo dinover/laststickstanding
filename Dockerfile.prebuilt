@@ -1,0 +1,12 @@
+# Imagen de runtime a partir de artefactos ya compilados (scripts/deploy-vm.sh los sube a
+# prebuilt/). Es la que conviene en la VM de Oracle: ~500 MB de RAM real no alcanzan para
+# compilar el cliente con Vite adentro de Docker, y así el deploy tarda segundos.
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=8080
+COPY prebuilt/packages/server/dist/server.mjs ./packages/server/dist/server.mjs
+COPY prebuilt/packages/client/dist ./packages/client/dist
+EXPOSE 8080
+USER node
+CMD ["node", "packages/server/dist/server.mjs"]

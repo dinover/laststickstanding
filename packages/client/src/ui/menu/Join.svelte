@@ -5,9 +5,9 @@
   import { joinOnlineRoom } from "../../app/actions";
 
   let { initial = "" }: { initial?: string } = $props();
-  let code = $state(initial);
+  let code = $state("");
   let el: HTMLInputElement;
-  onMount(() => el?.focus());
+  onMount(() => { code = initial; el?.focus(); });
 
   function submit(e: Event) {
     e.preventDefault();

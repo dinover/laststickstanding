@@ -1,6 +1,9 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      # en la VM (poca RAM) se usa Dockerfile.prebuilt vía LSS_DOCKERFILE en .env; ver scripts/deploy-vm.sh
+      dockerfile: ${LSS_DOCKERFILE:-Dockerfile}
     restart: unless-stopped
     environment:
       - NODE_ENV=production

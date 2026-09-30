@@ -186,14 +186,14 @@
   const DEAD = 14, RANGE = 52;
   let stickPid: number | null = null, stickOx = 0;
   let stick = $state<{ x: number; y: number; dx: number } | null>(null);
-  let zone: HTMLDivElement;
+  let zone = $state<HTMLDivElement>();
   function stickDown(e: PointerEvent) {
     if (stickPid !== null) return;
     e.preventDefault();
     stickPid = e.pointerId; stickOx = e.clientX;
-    const r = zone.getBoundingClientRect();
+    const r = zone!.getBoundingClientRect();
     stick = { x: e.clientX - r.left, y: e.clientY - r.top, dx: 0 };
-    try { zone.setPointerCapture(e.pointerId); } catch { /* */ }
+    try { zone!.setPointerCapture(e.pointerId); } catch { /* */ }
     if (navigator.vibrate) navigator.vibrate(6);
   }
   function stickMove(e: PointerEvent) {
@@ -241,7 +241,7 @@
   {:else}
     <div class="badge"><span class="bdot"></span><div><div class="nm">{myName}</div><div class="st">{status ? t(status) : ""}</div></div></div>
     <div class="controls">
-      <div class="zone stick" bind:this={zone} class:active={!!stick} onpointerdown={stickDown} onpointermove={stickMove} onpointerup={stickUp} onpointercancel={stickUp} onlostpointercapture={stickUp}>
+      <div class="zone stick" role="application" aria-label="stick" bind:this={zone} class:active={!!stick} onpointerdown={stickDown} onpointermove={stickMove} onpointerup={stickUp} onpointercancel={stickUp} onlostpointercapture={stickUp}>
         {#if !stick}<div class="hint">{t("stick")}</div>{/if}
         {#if stick}
           <div class="base" style="left:{stick.x}px;top:{stick.y}px">

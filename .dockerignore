@@ -10,3 +10,6 @@ oracle/
 .env.*
 coverage/
 .vite/
+# los artefactos precompilados sí entran (Dockerfile.prebuilt)
+!prebuilt/packages/server/dist
+!prebuilt/packages/client/dist

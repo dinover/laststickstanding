@@ -46,7 +46,7 @@
 </script>
 
 <div class="touch ui-block">
-  <div class="stick" bind:this={zone} onpointerdown={sDown} onpointermove={sMove} onpointerup={sUp} onpointercancel={sUp} onlostpointercapture={sUp}>
+  <div class="stick" role="application" aria-label="stick" bind:this={zone} onpointerdown={sDown} onpointermove={sMove} onpointerup={sUp} onpointercancel={sUp} onlostpointercapture={sUp}>
     {#if stick}
       <div class="base" style="left:{stick.x}px;top:{stick.y}px"><div class="knob" style="transform:translateX({Math.max(-RANGE, Math.min(RANGE, stick.dx))}px)"></div></div>
     {:else}

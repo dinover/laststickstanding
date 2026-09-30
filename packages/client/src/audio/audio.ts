@@ -307,8 +307,6 @@ class AudioEngine {
   }
 
   private buildThemes(): Record<BiomeId, Theme> {
-    const amb = this.layerGains; // resuelto en tiempo de llamada (las capas se crean después)
-    void amb;
     return {
       ruinas: {
         root: 96, scale: "phrygian", bright: 1.8, bassWave: "sawtooth", leadWave: "sawtooth", detune: 4, kickDiv: 4,

@@ -10,3 +10,6 @@ dist/
 packages/*/dist/
 .vite/
 coverage/
+
+# artefactos que sube scripts/deploy-vm.sh (solo existen en la VM)
+prebuilt/
