@@ -18,6 +18,7 @@ import { accessoryLift, drawStickman, drawStickShine, type RenderPlayer, type Ri
 import { buildBackground, buildPlatformLayer, drawDecorations, makeCanvas } from "./art/world";
 import { drawNameTag, HILL_TARGET } from "./art/objects";
 import { HillView, OrbView, PortalView, VoidView } from "./objectsPixi";
+import { PowerFx } from "./powerFx";
 import { Camera } from "./camera";
 import { StickView, type HeadStyle } from "./stickPixi";
 import { clamp01, ease } from "./ease";
@@ -163,6 +164,8 @@ export class Renderer {
   private flash = new Graphics();
 
   fx!: ParticleSystem;
+  /** Poderes y estados (emisores de @spd789562/particle-emitter). */
+  readonly powerFx = new PowerFx();
   ambient!: ParticleSystem;
   private bloom!: AdvancedBloomFilter;
   private rgb!: RGBSplitFilter;
@@ -203,7 +206,7 @@ export class Renderer {
 
     this.bg.addChild(this.skySprite, this.farSprite, this.nearSprite);
     this.objectLayer.addChild(this.hillView.root, this.portalView.root, this.voidView.root, this.orbView.root);
-    this.glowGroup.addChild(this.platformSprite, this.decoLayer, this.ambient.container, this.objectLayer, this.shadows, this.debrisLayer, this.playerLayer, this.fx.container, this.streaks);
+    this.glowGroup.addChild(this.platformSprite, this.decoLayer, this.ambient.container, this.objectLayer, this.shadows, this.debrisLayer, this.powerFx.norm, this.playerLayer, this.powerFx.add, this.fx.container, this.streaks);
     this.world.addChild(this.glowGroup, this.tagLayer, this.textLayer);
     this.overlay.addChild(this.vignette, this.flash);
     this.root.addChild(this.bg, this.world, this.overlay);
@@ -427,6 +430,7 @@ export class Renderer {
   clearTransient() {
     if (!this.ready) return;
     this.fx.clear();
+    this.powerFx.clear();
     for (const d of this.debris) d.g.destroy();
     this.debris = [];
     for (const f of this.floats) f.t.destroy();
@@ -446,6 +450,7 @@ export class Renderer {
   /* ================================================================ cuadro */
   private updateFx(dt: number) {
     this.fx.update(dt);
+    this.powerFx.step(dt);
     this.flashA = Math.max(0, this.flashA - dt * 0.006);
     this.flash.alpha = this.flashA * 0.55;
     for (let i = this.streakList.length - 1; i >= 0; i--) {
@@ -591,6 +596,7 @@ export class Renderer {
       alpha: fading ? Math.max(0, Math.min(1, p.deathFadeT / 420)) : 1,
     });
     if (rig.footstep && !artCfg.low) this.stepDust(rig.footstep.x, rig.footstep.y, p.facing);
+    this.powerFx.update(p, rig, artCfg.low || fading);
     this.drawTag(view, p, g, rig.tagY - accessoryLift(hat), scale);
   }
 

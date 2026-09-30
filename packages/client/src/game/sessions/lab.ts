@@ -121,14 +121,21 @@ export class LabSession implements Session {
     const launched = base(9, col(1), r1); const lp = (t % 1400) / 1400;
     if (lp < 0.7) { launched.grounded = false; launched.hitStunT = 220 * (1 - lp / 0.7); launched.vy = -8 + lp * 20; launched.vx = 0; launched.y = r1 - Math.sin((lp / 0.7) * Math.PI) * 70; launched.hitDir = 1; (launched as RenderPlayer & { kbx?: number }).kbx = 12 * (1 - lp / 0.7); }
     players.push(launched); L.push({ x: col(1), y: r1, text: "lanzado" });
+    // con el poder (mejora): el de fuego pega, el de hielo patea, al de tierra le pegan, el de aire corre;
+    // el tiempo del poder se consume y cada 8 s lo vuelve a agarrar (destello)
     POWER_TYPES.forEach((pw, i) => {
       const p = base(10 + i, col(2 + i), r1);
-      p.power = { t: 5000, [pw]: true };
-      if (i % 2) { p.vx = 4.3; p.walkCycle = this.cycle(294, i * 70); }
+      const left = 8000 - ((t + i * 1300) % 8000);
+      p.power = left > 7600 ? null : { t: left, [pw]: true };
+      if (pw === "fuego") { const q = t % 700; p.attack = q < 140 ? { type: "punch", t: 140 - q, dur: 140 } : null; }
+      if (pw === "hielo") { const q = t % 900; p.attack = q < 280 ? { type: "kick", t: 280 - q, dur: 280 } : null; }
+      if (pw === "tierra") { const q = t % 1500; p.hitStunT = q < 110 ? 110 - q : 0; p.hitDir = -1; }
+      if (pw === "aire") { p.vx = 4.3; p.walkCycle = this.cycle(220, i * 70); }
       players.push(p); L.push({ x: col(2 + i), y: r1, text: pw });
     });
-    const burn = base(14, col(6), r1); burn.burnT = 2000; burn.burnFlashT = (t % 500) < 220 ? 220 - (t % 500) : 0; players.push(burn); L.push({ x: col(6), y: r1, text: "quemado" });
-    const slow = base(15, col(7), r1); slow.slowT = 2000; players.push(slow); L.push({ x: col(7), y: r1, text: "congelado" });
+    // sufriendo el estado: se reaplica cada 3 s (explosión de fuego / estallido de hielo)
+    const burn = base(14, col(6), r1); const bq = t % 3000; burn.burnT = 3000 - bq; burn.burnFlashT = (bq % 500) < 220 ? 220 - (bq % 500) : 0; players.push(burn); L.push({ x: col(6), y: r1, text: "quemado" });
+    const slow = base(15, col(7), r1); slow.slowT = Math.max(0, 2500 - ((t + 900) % 3000)); players.push(slow); L.push({ x: col(7), y: r1, text: "congelado" });
 
     // fila 3: accesorios (todos quietos) + muerte
     for (let i = 0; i < 7; i++) {

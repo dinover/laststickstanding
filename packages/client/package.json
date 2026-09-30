@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@lss/shared": "*",
+    "@spd789562/particle-emitter": "^1.0.2",
     "@supabase/supabase-js": "^2.45.4",
     "gsap": "^3.15.0",
     "msgpackr": "^1.11.0",

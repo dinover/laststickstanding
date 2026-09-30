@@ -12,8 +12,9 @@
      el pie (muestreado de la curva de animación), en vez de repetir el muñeco entero como fantasma. */
 
 import { AlphaFilter, CanvasSource, Container, Graphics, MeshSimple, Sprite, Texture } from "pixi.js";
-import { POWER_COLORS } from "@lss/shared";
+import { POWER_COLORS, POWER_TYPES, POWERS, type PowerType } from "@lss/shared";
 import { drawAccessory, firstActivePower, type RenderPlayer } from "./art/stickman";
+import { ease } from "./ease";
 import { makeCanvas } from "./art/world";
 import { solveRig, type Expr, type Pt, type Rig, type RigState } from "./rig";
 
@@ -110,9 +111,11 @@ function drawEyes(g: Graphics, hx: number, hy: number, f: number, rot: number, e
       const a = P(ex - 1.3 * s, ey + 0.4), b = P(ex + 1.3 * s, ey + 0.4);
       g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 1.1, color: INK, cap: "round" });
     } else if (expr === "focus") {
-      // mirada entornada: el párpado de arriba baja hacia el centro de la cara
-      const inner = i === 0 ? 1 : -1;
-      const q = [P(ex - 1.35 * s, ey - 1.1 + inner * f * 0.7), P(ex + 1.35 * s, ey - 1.1 - inner * f * 0.7), P(ex + 1.2 * s, ey + 1.5), P(ex - 1.2 * s, ey + 1.5)];
+      // cara de pelea: el párpado de arriba baja hacia el entrecejo (si baja hacia afuera, la cara
+      // queda triste — Dan: "parecen sufrir cuando pegan")
+      const innerDir = i === 0 ? f : -f;
+      const lid = (dx: number) => ey - 1.4 + (Math.sign(dx) === innerDir ? 1.1 : -0.5);
+      const q = [P(ex - 1.35 * s, lid(-1)), P(ex + 1.35 * s, lid(1)), P(ex + 1.15 * s, ey + 1.6), P(ex - 1.15 * s, ey + 1.6)];
       g.poly(q.flatMap((p) => [p.x, p.y])).fill(ink);
     } else if (expr === "hurt") {
       const d = i === 0 ? f : -f;
@@ -128,57 +131,85 @@ function drawEyes(g: Graphics, hx: number, hy: number, f: number, rot: number, e
   }
 }
 
-/* ---------------------------------------------------------------- auras (port de V1 a Graphics) */
-type AuraKind = "fuego" | "hielo" | "tierra" | "aire";
+/* ---------------------------------------------------------------- poderes pegados al cuerpo */
+/* Lo que se mueve con el esqueleto; las partículas (llamas, escarcha, viento, piedritas) están en
+   powerFx.ts. Regla: el que TIENE el poder lo lleva en las armas y en la armadura; el que lo SUFRE
+   cambia de color entero (quemado/congelado). */
 
-function auraSegment(g: Graphics, a: Pt, b: Pt, kind: AuraKind, t: number) {
-  const dx = b.x - a.x, dy = b.y - a.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = -dy / len, ny = dx / len;
-  if (kind === "fuego") {
-    for (let i = 0; i < 3; i++) {
-      const u = (i + 0.5) / 3;
-      const px = a.x + dx * u, py = a.y + dy * u;
-      const flick = 0.5 + 0.5 * Math.sin(t * 10 + i * 2.3 + u * 7);
-      const reach = 4 + flick * 6, sway = Math.sin(t * 15 + i * 4.1) * 2.5;
-      g.poly([px - 2.2, py, px + sway, py - reach, px + 2.2, py]).fill({ color: mixNum(0xff6e23, 0xffd046, flick), alpha: 0.3 + flick * 0.45 });
+/** Puño o pie al rojo vivo (fuego): brilla con luz propia, no se sombrea. */
+function hotSpot(g: Graphics, c: Pt, r: number) {
+  g.circle(c.x, c.y, r + 1.6).fill({ color: 0xff4a1a, alpha: 0.45 });
+  g.circle(c.x, c.y, r + 0.3).fill({ color: 0xff8a2a });
+  g.circle(c.x - 0.4, c.y - 0.4, r * 0.55).fill({ color: 0xffd27a });
+}
+
+/** Guantelete de hielo: tres cristales que salen del puño en la dirección del antebrazo. */
+function iceFist(g: Graphics, elbow: Pt, hand: Pt, t: number) {
+  const base = Math.atan2(hand.y - elbow.y, hand.x - elbow.x);
+  const shards: [number, number][] = [[0, 6.2], [0.8, 4.4], [-0.8, 4.4], [2.4, 3.2], [-2.4, 3.2]];
+  for (const [da, len] of shards) {
+    const a = base + da + Math.sin(t * 2 + da) * 0.04;
+    const tip = { x: hand.x + Math.cos(a) * len, y: hand.y + Math.sin(a) * len };
+    const nx = -Math.sin(a) * 1.5, ny = Math.cos(a) * 1.5;
+    const mid = { x: hand.x + Math.cos(a) * len * 0.35, y: hand.y + Math.sin(a) * len * 0.35 };
+    g.poly([hand.x, hand.y, mid.x + nx, mid.y + ny, tip.x, tip.y, mid.x - nx, mid.y - ny]).fill({ color: 0xcff6ff, alpha: 0.85 });
+    g.moveTo(hand.x, hand.y).lineTo(tip.x, tip.y).stroke({ width: 0.6, color: 0xffffff, alpha: 0.9 });
+  }
+  g.circle(hand.x, hand.y, 3.3).fill({ color: 0xe6fbff, alpha: 0.55 });
+}
+
+/** Armadura de piedra (tierra): peto, hombrera, canillera y guantelete. */
+const STONE = 0x8a6a3a, STONE_HI = 0xc9a46a, STONE_LO = 0x5a4424;
+function stoneArmor(g: Graphics, r: Rig) {
+  const ax = r.shoulder.x - r.hip.x, ay = r.shoulder.y - r.hip.y;
+  const L = Math.hypot(ax, ay) || 1;
+  const ux = ax / L, uy = ay / L, nx = -uy, ny = ux;
+  const at = (t: number, w: number) => [r.hip.x + ax * t + nx * w, r.hip.y + ay * t + ny * w];
+  const plate = [...at(0.18, 3.9), ...at(0.55, 5.6), ...at(0.92, 4.8), ...at(0.92, -4.8), ...at(0.55, -5.6), ...at(0.18, -3.9)];
+  g.poly(plate).fill({ color: STONE });
+  g.poly([...at(0.55, 5.6), ...at(0.92, 4.8), ...at(0.92, -4.8), ...at(0.6, -1)]).fill({ color: STONE_HI, alpha: 0.55 });
+  const [c1x, c1y] = at(0.38, 1.5), [c2x, c2y] = at(0.62, -1.8), [c3x, c3y] = at(0.8, -0.6);
+  g.moveTo(c1x, c1y).lineTo(c2x, c2y).lineTo(c3x, c3y).stroke({ width: 0.7, color: STONE_LO, alpha: 0.9 });
+  // hombrera sobre el brazo de adelante
+  const sx = r.shoulder.x + (r.elbowB.x - r.shoulder.x) * 0.25, sy = r.shoulder.y + (r.elbowB.y - r.shoulder.y) * 0.25;
+  g.ellipse(sx, sy - 0.8, 4.4, 3.2).fill({ color: STONE });
+  g.ellipse(sx - 0.8, sy - 1.8, 2.8, 1.3).fill({ color: STONE_HI, alpha: 0.6 });
+  // canillera y guantelete
+  const lerpP = (p: Pt, q: Pt, k: number): Pt => ({ x: p.x + (q.x - p.x) * k, y: p.y + (q.y - p.y) * k });
+  capsule(g, lerpP(r.kneeB, r.footB, 0.1), 3.0, lerpP(r.kneeB, r.footB, 0.78), 2.5);
+  capsule(g, lerpP(r.elbowB, r.handB, 0.35), 2.7, lerpP(r.elbowB, r.handB, 0.9), 2.5);
+  g.fill({ color: STONE });
+  rim(g, lerpP(r.kneeB, r.footB, 0.1), 3.0, lerpP(r.kneeB, r.footB, 0.78), 2.5, STONE_HI, 0.8);
+  rim(g, lerpP(r.elbowB, r.handB, 0.35), 2.7, lerpP(r.elbowB, r.handB, 0.9), 2.5, STONE_HI, 0.8);
+}
+
+/** Viento (aire): dos medialunas que giran alrededor del cuerpo. */
+function windCrescents(g: Graphics, cx: number, cy: number, t: number, front: boolean) {
+  const rx = 19, ry = 31;
+  for (let i = 0; i < 2; i++) {
+    const a0 = t * 5.2 + i * Math.PI;
+    const inFront = Math.sin(a0 + 0.7) > 0;
+    if (inFront !== front) continue;
+    const pts: number[] = [];
+    const span = 1.5, N = 10;
+    for (let k = 0; k <= N; k++) { const a = a0 + (span * k) / N; pts.push(cx + Math.cos(a) * rx, cy + Math.sin(a) * ry * 0.42 - Math.sin(a * 0.5) * 6 + (i ? 10 : -8)); }
+    for (let k = N; k >= 0; k--) {
+      const a = a0 + (span * k) / N, th = Math.sin((k / N) * Math.PI) * 2.2;
+      pts.push(cx + Math.cos(a) * (rx - th), cy + Math.sin(a) * (ry * 0.42 - th * 0.5) - Math.sin(a * 0.5) * 6 + (i ? 10 : -8));
     }
-  } else if (kind === "hielo") {
-    for (let j = 0; j < 4; j++) {
-      const u = (j + 0.5) / 4;
-      const side = j % 2 === 0 ? 1 : -1;
-      const sx = a.x + dx * u + nx * 4.6 * side, sy = a.y + dy * u + ny * 4.6 * side;
-      const shimmer = 0.45 + 0.32 * Math.sin(t * 2.4 + j * 1.7 + u * 4);
-      g.poly([sx, sy - 3.8, sx + 2, sy, sx, sy + 3.8, sx - 2, sy]).fill({ color: 0xaae6ff, alpha: shimmer });
-    }
-  } else if (kind === "tierra") {
-    for (let k = 0; k < 5; k++) {
-      const u = ((k + 0.5) / 5) * 0.82 + 0.09;
-      const jitter = ((Math.round(a.x) * 7 + Math.round(a.y) * 13 + k * 31) % 5) - 2;
-      const ox = a.x + dx * u + nx * (5.4 + jitter), oy = a.y + dy * u + ny * (5.4 + jitter);
-      const sz = 2.6 + (k % 3) * 0.6;
-      g.poly([ox - sz, oy, ox, oy - sz, ox + sz, oy, ox, oy + sz * 0.9]).fill({ color: k % 2 === 0 ? 0xa07a44 : 0x7c5f35 });
-    }
-  } else {
-    for (let m = 0; m < 2; m++) {
-      const u = (t * (0.6 + m * 0.35) + m * 0.5) % 1;
-      const tu = Math.max(0, u - 0.16);
-      const off = Math.sin(t * 6 + m * 3) * 3.4;
-      g.moveTo(a.x + dx * tu + nx * off, a.y + dy * tu + ny * off).lineTo(a.x + dx * u + nx * off, a.y + dy * u + ny * off)
-        .stroke({ width: 1.6, color: 0xdcffe1, alpha: 0.55 - u * 0.25, cap: "round" });
-    }
+    g.poly(pts).fill({ color: 0xe6ffd8, alpha: front ? 0.7 : 0.35 });
   }
 }
 
-function orbitAura(g: Graphics, cx: number, midY: number, halfW: number, halfH: number, t: number, color: number) {
-  const rx = halfW + 6, ry = (halfH + 4) * 0.85;
-  for (let i = 0; i < 3; i++) {
-    const ang = t * (2.4 + i * 0.6) + i * ((Math.PI * 2) / 3);
-    g.moveTo(cx + Math.cos(ang - 0.45) * rx, midY + Math.sin(ang - 0.45) * ry);
-    for (let k = 1; k <= 4; k++) { const aa = ang - 0.45 + (0.45 * k) / 4; g.lineTo(cx + Math.cos(aa) * rx, midY + Math.sin(aa) * ry); }
-    g.stroke({ width: 2, color, alpha: 0.6, cap: "round" });
-    g.circle(cx + Math.cos(ang) * rx, midY + Math.sin(ang) * ry, 1.9).fill({ color, alpha: 0.95 });
+/** Costra de hielo en los pies del congelado. */
+function iceCrust(g: Graphics, x: number, y: number, t: number) {
+  const spikes: [number, number, number][] = [[-8, 5, -0.35], [-3.5, 8.5, -0.1], [1.5, 10, 0.08], [6, 6.5, 0.3], [9.5, 4, 0.5]];
+  for (const [dx, h, lean] of spikes) {
+    const bx = x + dx, tx = bx + lean * h, ty = y - h - Math.sin(t * 3 + dx) * 0.3;
+    g.poly([bx - 2.4, y + 1, tx, ty, bx + 2.4, y + 1]).fill({ color: 0xcff6ff, alpha: 0.75 });
+    g.moveTo(bx - 0.6, y).lineTo(tx, ty).stroke({ width: 0.6, color: 0xffffff, alpha: 0.9 });
   }
+  g.ellipse(x, y + 0.5, 12, 2.2).fill({ color: 0xbfefff, alpha: 0.5 });
 }
 
 /* ---------------------------------------------------------------- accesorio */
@@ -267,6 +298,28 @@ function swooshMesh(): MeshSimple {
   return m;
 }
 
+/** Haz de luz vertical al agarrar un poder: suave a los costados y que se desvanece hacia arriba. */
+let beamTex: Texture | null = null;
+function beamSprite(): Sprite {
+  if (!beamTex) {
+    const W = 64, H = 128, c = makeCanvas(W, H), ctx = c.getContext("2d")!;
+    const img = ctx.createImageData(W, H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const u = Math.abs(x / (W - 1) - 0.5) * 2, v = y / (H - 1);
+      const a = Math.pow(1 - u, 2.2) * Math.pow(v, 1.4);
+      const i = (y * W + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+      img.data[i + 3] = Math.round(a * 255);
+    }
+    ctx.putImageData(img, 0, 0);
+    beamTex = Texture.from(c);
+  }
+  const s = new Sprite(beamTex);
+  s.anchor.set(0.5, 1);
+  s.visible = false;
+  return s;
+}
+
 /* ---------------------------------------------------------------- vista del muñeco */
 export interface StickDrawOpts {
   low: boolean;
@@ -282,6 +335,8 @@ export class StickView {
   readonly root = new Container();
   readonly state: RigState = {};
   rig: Rig | null = null;
+  private ground = new Graphics();
+  private beam = beamSprite();
   private echo = new Graphics();
   private smear = swooshMesh();
   private body = new Graphics();
@@ -291,23 +346,60 @@ export class StickView {
   private echoes: Rig[] = [];
   private echoT = 0;
   private fading = false;
+  private powerKey = "";
+  private powerUpT = 0;
+  private lastIdle = -1;
 
   constructor() {
-    this.root.addChild(this.echo, this.smear, this.body, this.hat.sprite, this.fxg);
+    this.root.addChild(this.beam, this.ground, this.echo, this.smear, this.body, this.hat.sprite, this.fxg);
   }
 
   draw(p: RenderPlayer, colorHex: number, hat: string, o: StickDrawOpts): Rig {
     const r = solveRig(p, this.state, o.low);
     this.rig = r;
+    const t = p.idleT || 0;
+    const dt = this.lastIdle < 0 ? 16.7 : Math.max(0, Math.min(60, (t - this.lastIdle) * 1000));
+    this.lastIdle = t;
+    const pw = p.power;
+    const own = firstActivePower(pw);
+    const alive = p.alive;
+
+    // destello al agarrar un poder: el cuerpo se tiñe del color del poder y se apaga
+    const key = pw ? POWER_TYPES.filter((k) => pw[k]).join(",") : "";
+    if (key !== this.powerKey) { if (key) this.powerUpT = 450; this.powerKey = key; }
+    if (this.powerUpT > 0) this.powerUpT = Math.max(0, this.powerUpT - dt);
+    const upU = this.powerUpT / 450;
+
+    // color: los estados (quemado/congelado) tiñen el cuerpo entero sin borrar el color del jugador
     let base = colorHex;
-    if (p.burnT > 0) base = hexN(POWER_COLORS.fuego);
-    else if (p.slowT > 0) base = hexN(POWER_COLORS.hielo);
+    if (p.burnT > 0) {
+      base = mixNum(colorHex, 0xff5a1f, 0.5 + Math.sin(t * 19) * 0.12);
+      if (p.burnFlashT > 0) base = mixNum(base, 0xffe6a0, Math.min(1, p.burnFlashT / 220) * 0.6);
+    } else if (p.slowT > 0) base = mixNum(colorHex, 0xbfefff, 0.55);
+    if (upU > 0 && own) base = mixNum(base, mixNum(hexN(POWER_COLORS[own]), 0xffffff, 0.5), ease("power2.in")(upU) * 0.85);
     const main = o.whiten > 0 ? mixNum(base, 0xffffff, o.whiten * 0.75) : base;
     // profundidad sin contornos: atrás más oscuro, torso un punto abajo, lo de adelante a pleno
     const far = mixNum(main, 0x0b0e1a, 0.42);
     const mid = mixNum(main, 0x0b0e1a, 0.12);
-    const hi = mixNum(main, 0xffffff, 0.6);
+    const hi = p.slowT > 0 ? 0xffffff : mixNum(main, 0xffffff, 0.6);
     const f = r.facing;
+    const fx = !o.low && alive;
+    const fire = fx && !!pw?.fuego, ice = fx && !!pw?.hielo, stone = fx && !!pw?.tierra, wind = fx && !!pw?.aire;
+    const kicking = r.strike?.kind === "kick" || (!!p.attack && p.attack.type === "kick");
+
+    // piso: anillo con el tiempo que le queda al poder + columna de luz al agarrarlo
+    const gr = this.ground.clear();
+    if (alive && pw && key) this.drawTimer(gr, p, pw.t, key.split(",") as PowerType[]);
+    if (upU > 0 && own) {
+      const c = hexN(POWER_COLORS[own]), u = 1 - upU, e = ease("power2.out")(u);
+      gr.ellipse(p.x, p.y + 1, 10 + e * 34, 3 + e * 8).stroke({ width: 2.5 * upU + 0.5, color: c, alpha: upU });
+      this.beam.visible = true;
+      this.beam.tint = mixNum(c, 0xffffff, 0.35);
+      this.beam.alpha = upU * 0.8;
+      this.beam.position.set(p.x, p.y + 2);
+      this.beam.scale.set((28 * (0.4 + upU * 0.6)) / 64, (30 + 90 * e) / 128);
+    } else this.beam.visible = false;
+    if (wind) windCrescents(gr, r.hip.x, (r.head.y + p.y) / 2 - 4, t, false);
 
     // cuerpo, por capas de atrás hacia adelante
     const g = this.body.clear();
@@ -316,13 +408,17 @@ export class StickView {
     const legA: Part = { segs: [[r.hip, 2.8, r.kneeA, 2.3], [r.kneeA, 2.3, r.footA, 1.8], [r.footA, 1.8, footA, 1.5]] };
     const torso: Part = { segs: [[r.hip, 3.0, r.shoulder, 3.5], [r.shoulder, 2.2, r.neck, 1.9]] };
     const legB: Part = { segs: [[r.hip, 3.0, r.kneeB, 2.4], [r.kneeB, 2.4, r.footB, 1.9], [r.footB, 1.9, footB, 1.6]] };
-    const armB: Part = { segs: [[r.shoulder, 2.5, r.elbowB, 2.1], [r.elbowB, 2.1, r.handB, 1.8]], dots: [[r.handB, r.strike?.kind === "punch" ? 3.3 : 2.9]] };
+    const fistB = r.strike?.kind === "punch" ? 3.3 : 2.9;
+    const armB: Part = { segs: [[r.shoulder, 2.5, r.elbowB, 2.1], [r.elbowB, 2.1, r.handB, 1.8]], dots: [[r.handB, fistB]] };
     drawPart(g, armA, far);
+    if (fire) hotSpot(g, r.handA, 2.5);
+    if (ice) iceFist(g, r.elbowA, r.handA, t);
     drawPart(g, legA, far);
     drawPart(g, torso, mid);
     if (!o.low) rim(g, r.hip, 3.0, r.shoulder, 3.5, hi, 0.55);
     drawHead(g, r, o.head, main, hi, o.low);
     drawPart(g, legB, main);
+    if (fire && kicking) hotSpot(g, footB, 2.2);
     drawPart(g, armB, main);
     if (!o.low) {
       rim(g, r.hip, 3.0, r.kneeB, 2.4, hi, 0.5);
@@ -330,32 +426,14 @@ export class StickView {
       rim(g, r.shoulder, 2.5, r.elbowB, 2.1, hi, 0.5);
       rim(g, r.elbowB, 2.1, r.handB, 1.8, hi, 0.45);
     }
+    if (stone) stoneArmor(g, r);
+    if (fire) hotSpot(g, r.handB, fistB - 0.3);
+    if (ice) iceFist(g, r.elbowB, r.handB, t + 1);
 
-    // auras de poder / estados
-    const fx = this.fxg.clear();
-    if (!o.low && p.alive) {
-      const own = firstActivePower(p.power);
-      const kind: AuraKind | null = own || (p.burnT > 0 ? "fuego" : p.slowT > 0 ? "hielo" : null);
-      const t = p.idleT || 0;
-      if (kind) {
-        auraSegment(fx, r.hip, r.shoulder, kind, t);
-        auraSegment(fx, r.shoulder, { x: r.head.x, y: r.head.y + 8 }, kind, t + 0.4);
-        if (kind !== "aire") {
-          auraSegment(fx, r.kneeB, r.footB, kind, t + 0.9);
-          auraSegment(fx, r.elbowB, r.handB, kind, t + 1.3);
-        }
-      }
-      if (p.power?.aire) orbitAura(fx, r.hip.x, (r.head.y + p.y) / 2 - 4, 17, (p.y - r.head.y) / 2 + 6, t, hexN(POWER_COLORS.aire));
-      if (p.burnFlashT > 0) {
-        const a = Math.min(1, p.burnFlashT / 220);
-        for (let i = 0; i < 5; i++) {
-          const seed = (p.id || 0) * 13 + i * 7;
-          const ang = (((seed * 37) % 100) / 100) * Math.PI * 2, dist = 3 + (((seed * 53) % 100) / 100) * 12;
-          const sx = r.hip.x + Math.cos(ang) * dist * 0.6, sy = r.hip.y - 8 + Math.sin(ang) * dist * 0.4 - (1 - a) * 14;
-          fx.circle(sx, sy, 1.6 * a + 0.6).fill({ color: i % 2 === 0 ? 0xffb347 : hexN(POWER_COLORS.fuego), alpha: a * 0.9 });
-        }
-      }
-    }
+    // delante del cuerpo: viento que pasa por adelante, hielo en los pies del congelado
+    const fg = this.fxg.clear();
+    if (wind) windCrescents(fg, r.hip.x, (r.head.y + p.y) / 2 - 4, t, true);
+    if (fx && p.slowT > 0 && p.grounded) iceCrust(fg, p.x, p.y, t);
 
     // ecos del poder de aire: siluetas planas de los últimos cuadros
     const eg = this.echo.clear();
@@ -375,7 +453,7 @@ export class StickView {
     } else this.echoes.length = 0;
 
     // estela del golpe: el arco real que recorrió la punta en los últimos ~70 ms de animación
-    this.updateSmear(p, r, main, o.low);
+    this.updateSmear(p, r, own ? SWOOSH_TINT[own] : main, o.low);
 
     this.hat.update(hat, r.head, r.headLean * f, f, p.idleT || 0, o.scale);
 
@@ -384,6 +462,23 @@ export class StickView {
     if (fading) this.fade.alpha = o.alpha;
     if (fading !== this.fading) { this.fading = fading; this.root.filters = fading ? [this.fade] : []; }
     return r;
+  }
+
+  /** Anillo en el piso con el tiempo que le queda al poder (titila el último segundo y medio). */
+  private drawTimer(g: Graphics, p: RenderPlayer, left: number, kinds: PowerType[]) {
+    const frac = Math.max(0, Math.min(1, left / POWERS.ORB_POWER_MS));
+    const blink = left < 1500 ? (Math.sin(left * 0.03) > 0 ? 1 : 0.3) : 1;
+    const rx = 17, ry = 4.4, cx = p.x, cy = p.y + 1.5;
+    g.ellipse(cx, cy, rx, ry).stroke({ width: 1.2, color: 0xffffff, alpha: 0.14 * blink });
+    const start = -Math.PI / 2, span = Math.PI * 2 * frac;
+    const segs = kinds.length;
+    for (let i = 0; i < segs; i++) {
+      const a0 = start + (span * i) / segs, a1 = start + (span * (i + 1)) / segs;
+      const n = Math.max(2, Math.ceil(24 * (a1 - a0) / Math.PI));
+      g.moveTo(cx + Math.cos(a0) * rx, cy + Math.sin(a0) * ry);
+      for (let k = 1; k <= n; k++) { const a = a0 + ((a1 - a0) * k) / n; g.lineTo(cx + Math.cos(a) * rx, cy + Math.sin(a) * ry); }
+      g.stroke({ width: 2.4, color: hexN(POWER_COLORS[kinds[i]]), alpha: 0.95 * blink, cap: "round" });
+    }
   }
 
   private updateSmear(p: RenderPlayer, r: Rig, color: number, low: boolean) {
@@ -405,7 +500,7 @@ export class StickView {
       px = tip.x; py = tip.y;
     }
     this.smear.visible = len > 4;
-    this.smear.tint = mixNum(color, 0xffffff, 0.25);
+    this.smear.tint = mixNum(color, 0xffffff, 0.2);
     // aparece de golpe con el latigazo y se apaga mientras se sostiene el impacto
     this.smear.alpha = Math.max(0, Math.min(1, (0.7 - s.progress) * 3.5, (s.progress - 0.1) * 8)) * 0.85;
   }
@@ -415,6 +510,8 @@ export class StickView {
     this.root.destroy({ children: true });
   }
 }
+
+const SWOOSH_TINT: Record<PowerType, number> = { fuego: 0xffa040, hielo: 0xbff4ff, tierra: 0xd8b47a, aire: 0xe6ffd8 };
 
 const hexCache = new Map<string, number>();
 function hexN(h: string): number {
