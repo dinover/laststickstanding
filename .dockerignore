@@ -1,27 +1,12 @@
 .git
-node_modules
 **/node_modules
 **/dist
-
-# El instalador pesa 111 MB y no tiene nada que hacer en la imagen del servidor.
-*.exe
-
-# Build de escritorio: hoy es solo una ventana de Electron apuntada a este mismo servidor,
-# así que la imagen no necesita nada de ahí adentro (la simulación vive en online/sim.js).
+legacy/
 desktop/
-
-# Assets y herramientas que solo se usan en el navegador o en dev.
-# Rutas con / adelante = solo la raíz del contexto, para que no se lleven puesto
-# online/public/index.html.
-*.png
-# Excepción: favicon + imagen de preview al compartir el link (server.js las sirve en
-# /favicon.png y /og-image.png). Sin el "!" de más abajo, *.png de arriba se las come antes
-# de que lleguen siquiera al Dockerfile, aunque el Dockerfile las pida por nombre explícito.
-!/LSS icon.png
-!/Last Stick Standing.png
-/anim-editor.html
-/music-lab.html
-/controller.html
-/screen.html
-/index.html
-/net.js
+oracle/
+*.exe
+*.md
+.env
+.env.*
+coverage/
+.vite/

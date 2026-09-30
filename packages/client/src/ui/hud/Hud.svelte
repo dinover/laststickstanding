@@ -8,6 +8,7 @@
   import { hudEnd } from "../../app/actions";
   import { audio } from "../../audio/audio";
   import ScoreReveal from "./ScoreReveal.svelte";
+  import { engine } from "../../game/engine";
   import TouchControls from "./TouchControls.svelte";
 
   const touch = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
@@ -15,6 +16,16 @@
   let { onPause }: { onPause: () => void } = $props();
 
   let showFight = $state(false);
+  // métricas de red de la sesión online (solo con "Mostrar FPS")
+  let netLine = $state("");
+  onMount(() => {
+    const iv = setInterval(() => {
+      const s = engine.session as unknown as { netStats?: { predErr: number; predErrMax: number; snapsPerSec: number; bufferMs: number; pending: number } } | null;
+      const n = s && s.netStats;
+      netLine = n ? ` · ${n.snapsPerSec} snap/s · buffer ${n.bufferMs} ms · pred ±${n.predErr.toFixed(1)}px (máx ${n.predErrMax.toFixed(0)})` : "";
+    }, 250);
+    return () => clearInterval(iv);
+  });
   let fightKey = $state(0);
   let hintVisible = $state(true);
   // si el "¡A PELEAR!" se disparó un instante antes de montar el HUD, igual se muestra
@@ -40,7 +51,7 @@
       <span class="ping" class:good={$hud.ping < 60} class:ok={$hud.ping >= 60 && $hud.ping < 150} class:bad={$hud.ping >= 150}><i></i>{$hud.ping} ms</span>
     {/if}
     {#if $hud.timer}<span class="timer">⏱ {$hud.timer}</span>{/if}
-    {#if $settings.showFps}<span class="timer">{$fps} fps</span>{/if}
+    {#if $settings.showFps}<span class="timer">{$fps} fps{netLine}</span>{/if}
   </div>
 
   <div class="top">
@@ -113,6 +124,18 @@
     font-size: clamp(56px, 11vw, 120px); letter-spacing: .04em; color: #ff3d63; text-shadow: 0 0 28px rgba(255,61,99,.75), 0 6px 0 rgba(0,0,0,.35);
     white-space: nowrap; }
   .hint { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); font-size: 12px; color: var(--muted); padding: 8px 14px; border-radius: 999px; background: rgba(8,10,22,.55); border: 1px solid var(--line); display: flex; gap: 5px; align-items: center; white-space: nowrap; }
+  /* pantallas bajas (celular acostado): HUD compacto para no tapar el mapa */
+  @media (max-height: 480px) {
+    .av { width: 26px; height: 26px; font-size: 11px; border-width: 1.5px; }
+    .players { gap: 5px; }
+    .sc { font-size: 11px; }
+    .banner { font-size: 11px; padding: 3px 12px; }
+    .label-chip { font-size: 10px; padding: 4px 10px; }
+    .tl, .tr { top: 8px; }
+    .top { top: 6px; gap: 4px; }
+    .tr .btn { padding: 6px 10px; font-size: 11px; }
+    .hint { display: none; }
+  }
   @media (max-width: 640px) {
     .tr { margin-right: 44px; }
     .av { width: 28px; height: 28px; font-size: 12px; }

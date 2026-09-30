@@ -90,6 +90,10 @@ export class OnlineSession implements Session {
   private fxCtx: FxContext;
   private lastPad: number | null = null;
   private renderNow = 0;
+  /** Métricas de red (se ven en el HUD con "Mostrar FPS"): error de predicción y cadencia. */
+  readonly netStats = { predErr: 0, predErrMax: 0, snapsPerSec: 0, bufferMs: 0, pending: 0 };
+  private snapCount = 0;
+  private snapWindowT = performance.now();
 
   constructor(private engine: Engine) {
     this.unsub = net.listen((m) => this.onMessage(m));
@@ -175,6 +179,8 @@ export class OnlineSession implements Session {
     };
     if (this.buffer.length && s.n <= this.buffer[this.buffer.length - 1].n) this.buffer = [];
     this.buffer.push(entry);
+    this.snapCount++;
+    if (now - this.snapWindowT >= 1000) { this.netStats.snapsPerSec = this.snapCount; this.snapCount = 0; this.snapWindowT = now; }
     if (this.buffer.length > MAX_BUFFER) this.buffer.shift();
     if (s.e) for (const e of s.e) this.events.push({ n: s.n, e });
     this.setPhase(entry.phase);
@@ -270,6 +276,9 @@ export class OnlineSession implements Session {
     for (const [, bits] of this.pending) this.predictTick(fresh, bits, e.map, false);
     if (before) {
       const dx = before.x - fresh.x, dy = before.y - fresh.y;
+      const err = Math.hypot(dx, dy);
+      this.netStats.predErr = this.netStats.predErr * 0.9 + err * 0.1;
+      this.netStats.predErrMax = Math.max(this.netStats.predErrMax * 0.995, err);
       if (Math.abs(dx) < 90 && Math.abs(dy) < 90) { this.corrX += dx; this.corrY += dy; }
       else { this.corrX = 0; this.corrY = 0; }
     }
@@ -340,6 +349,9 @@ export class OnlineSession implements Session {
 
     this.hudT -= dt;
     if (this.hudT <= 0) { this.hudT = 100; this.pushHud(); }
+    const last = this.latest();
+    this.netStats.bufferMs = last && !Number.isNaN(this.offset) ? Math.round(last.n * TICK_MS - renderT) : 0;
+    this.netStats.pending = this.pending.length;
   }
 
   private pushHud() {

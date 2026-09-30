@@ -1,6 +1,6 @@
 import { mulberry32, type Rng } from "../rng";
 import type { BiomeId } from "../constants";
-import { ARCHETYPE_IDS, ARCHETYPE_NAMES, buildArchetype, type BuiltLayout } from "./archetypes";
+import { ARCHETYPE_IDS, ARCHETYPE_NAMES, STANDARD_ARCHETYPES, buildArchetype, type BuiltLayout } from "./archetypes";
 import { getBiome, isBiomeId, randomBiome } from "./biomes";
 import type { Hazard, MapDef, PhysicsLike, Platform } from "./types";
 
@@ -160,7 +160,8 @@ export function generateMap(
   const reach = makeReachability(consts);
   const archId = forcedArchId && ARCHETYPE_IDS.includes(forcedArchId)
     ? forcedArchId
-    : ARCHETYPE_IDS[Math.floor(rng() * ARCHETYPE_IDS.length)];
+    // el sorteo excluye los mapas de propósito específico (colina: Rey de la Colina; santuario: jefes)
+    : STANDARD_ARCHETYPES[Math.floor(rng() * STANDARD_ARCHETYPES.length)];
 
   /* Se construye en diseño, se estira y RECIÉN AHÍ se valida la conectividad: los huecos crecen
      con la escala pero el salto no. */

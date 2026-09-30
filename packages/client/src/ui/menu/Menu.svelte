@@ -18,6 +18,9 @@
   import PadCard from "./PadCard.svelte";
 
   let { joinCode = "" }: { joinCode?: string } = $props();
+  let inner: HTMLDivElement;
+  // cada pantalla nueva arranca desde arriba (en el celular el menú scrollea)
+  $effect(() => { void $menuScreen; inner?.scrollTo({ top: 0 }); });
 
   const PARENT: Partial<Record<MenuScreen, MenuScreen>> = {
     solo: "home", practiceDiff: "solo", practiceTheme: "practiceDiff", storyDiff: "solo",
@@ -40,7 +43,7 @@
 
 <div class="menu" in:fade={{ duration: 220 }} out:fade={{ duration: 160 }}>
   <div class="scrim"></div>
-  <div class="inner scroll-thin">
+  <div class="inner scroll-thin" bind:this={inner}>
     <header class:compact={$menuScreen !== "home"}>
       <h1 class="logo" aria-label="Last Stick Standing">
         <span class="l1">LAST STICK</span><span class="l2">STANDING</span>
@@ -105,5 +108,9 @@
   @keyframes sheen { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
   @media (max-width: 860px) {
     .scrim { background: linear-gradient(180deg, rgba(5,6,13,.85), rgba(5,6,13,.7) 50%, rgba(5,6,13,.85)); }
+  }
+  /* en el celular la barra de íconos de arriba a la derecha tapaba el logo */
+  @media (max-width: 640px) {
+    .inner { padding-top: 64px; }
   }
 </style>

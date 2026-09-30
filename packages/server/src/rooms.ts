@@ -14,10 +14,14 @@ import { freeCode, send, broadcastRaw, encodeMsg } from "./util";
 export const REJOIN_GRACE_MS = 30000;
 export const EMPTY_ROOM_GRACE_MS = 60000;
 const BROADCAST_EVERY = 2; // ticks → 30 Hz
-/* Buffer anti-jitter: el servidor consume un frame de input por tick. Si se acumulan más de
-   MAX_QUEUE (el cliente mandó en ráfaga), se fusionan los sobrantes; si la cola está vacía, se
-   repite lo que tenía apretado sin flancos. */
-const MAX_QUEUE = 4;
+/* Input por jugador: cada cuerpo avanza exactamente UN paso físico por frame de input consumido,
+   que es justo lo que predice el cliente. Si su cola está vacía (el paquete se demoró), ese
+   jugador espera este tick; si se juntaron más de MAX_QUEUE frames, da dos pasos para ponerse al
+   día. Tras quedarse sin frames se espera a juntar REBUFFER antes de seguir: es el buffer
+   anti-jitter (un tick de demora en vez de una corrección visible en la pantalla del jugador). */
+const MAX_QUEUE = 3;
+const REBUFFER = 2;
+const MAX_STARVE = 8;
 
 export interface RoomPlayer {
   id: number;
@@ -31,6 +35,8 @@ export interface RoomPlayer {
   queue: [number, number][];
   ack: number;
   held: number;
+  starving: boolean;
+  starveTicks: number;
 }
 
 export interface Room {
@@ -48,6 +54,7 @@ export interface Room {
   lastMapKey: string | null;
   events: SimEvent[];
   emptySince: number | null;
+  inputSub: ReturnType<typeof inputSteps>;
 }
 
 export const rooms = new Map<string, Room>();
@@ -64,7 +71,9 @@ export function createRoom(isTaken: (c: string) => boolean): Room | null {
   const room: Room = {
     code, players: new Map(), ownerId: null, sim: new Sim(), mode: "rounds", rounds: 3,
     timer: null, last: 0, acc: 0, tickCount: 0, createdAt: performance.now(), lastMapKey: null, events: [], emptySince: Date.now(),
+    inputSub: null as unknown as Room["inputSub"],
   };
+  room.inputSub = inputSteps(room);
   room.sim.setHooks({ onPhase: (info) => { if (info.t === "roundStart") onRoundStart(room, info); } });
   rooms.set(code, room);
   return room;
@@ -103,30 +112,43 @@ export function stopLoop(room: Room) {
   room.timer = null;
 }
 
-function applyInputs(room: Room) {
-  for (const p of room.players.values()) {
-    const sp = room.sim.players[p.id];
-    if (!sp) continue;
-    if (!p.connected) { p.queue.length = 0; continue; }
-    let frame: [number, number] | undefined;
-    if (p.queue.length > MAX_QUEUE) {
-      // fusionar los sobrantes: flancos con OR, estado sostenido del más nuevo
-      let edges = 0;
-      while (p.queue.length > 2) edges |= p.queue.shift()![1] & (IN_JUMP | IN_PUNCH | IN_KICK);
-      frame = p.queue.shift()!;
-      frame = [frame[0], frame[1] | edges];
-    } else frame = p.queue.shift();
-    if (frame) {
+function inputSteps(room: Room) {
+  return {
+    steps(id: number): number {
+      const p = room.players.get(id);
+      if (!p || !p.connected) return 1; // ausente: paso normal sin input (queda quieto o cae)
+      if (p.queue.length === 0 || (p.starving && p.queue.length < REBUFFER)) {
+        p.starving = true;
+        /* Si deja de mandar input (cambió de pestaña, se le colgó la conexión) no puede quedar
+           congelado en el aire: pasado MAX_STARVE ticks avanza normal con todo suelto. */
+        if (++p.starveTicks > MAX_STARVE) {
+          const sp = room.sim.players[id];
+          if (sp) { sp.input.left = false; sp.input.right = false; }
+          p.held = 0;
+          return 1;
+        }
+        return 0;
+      }
+      p.starving = false;
+      p.starveTicks = 0;
+      return p.queue.length > MAX_QUEUE ? 2 : 1;
+    },
+    beforeStep(id: number) {
+      const p = room.players.get(id);
+      const sp = room.sim.players[id];
+      if (!p || !sp || !p.connected) return;
+      const frame = p.queue.shift();
+      if (!frame) return;
       p.ack = frame[0];
-      p.held = frame[1] & (IN_LEFT | IN_RIGHT);
       const b = frame[1];
+      p.held = b & (IN_LEFT | IN_RIGHT);
+      sp.input.left = !!(b & IN_LEFT);
+      sp.input.right = !!(b & IN_RIGHT);
       if (b & IN_JUMP) sp.jumpEdge = true;
       if (b & IN_PUNCH) sp.punchEdge = true;
       if (b & IN_KICK) sp.kickEdge = true;
-    }
-    sp.input.left = !!(p.held & IN_LEFT);
-    sp.input.right = !!(p.held & IN_RIGHT);
-  }
+    },
+  };
 }
 
 function tick(room: Room) {
@@ -137,8 +159,7 @@ function tick(room: Room) {
   while (room.acc >= TICK_MS && steps < 8) {
     room.acc -= TICK_MS;
     steps++;
-    applyInputs(room);
-    room.sim.step(TICK_MS);
+    room.sim.step(TICK_MS, room.inputSub);
     room.tickCount++;
     const evs = room.sim.drainEvents();
     if (evs.length) { room.events.push(...evs); if (room.events.length > 96) room.events.splice(0, room.events.length - 96); }
@@ -230,7 +251,7 @@ export function joinRoom(room: Room, ws: WebSocket, meta: SocketMeta, nick: unkn
   if (id === null) return { err: "La sala está llena (8 jugadores).", code: "full" };
   const player: RoomPlayer = {
     id, name: cleanNick(nick), color: pickColor(room, color), hat: cleanHat(hat), ws, connected: true,
-    token: crypto.randomUUID(), goneSince: null, queue: [], ack: 0, held: 0,
+    token: crypto.randomUUID(), goneSince: null, queue: [], ack: 0, held: 0, starving: true, starveTicks: 0,
   };
   room.players.set(id, player);
   room.sim.addPlayer(id);

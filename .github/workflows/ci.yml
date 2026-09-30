@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main, v2]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Typecheck (shared, server, client)
+        run: npm run typecheck
+      - name: Tests (sim, bots, protocol, server integration)
+        run: npm test
+      - name: Build (client + server bundle)
+        run: npm run build
+      - name: Docker image builds
+        run: docker build -t lss:ci .

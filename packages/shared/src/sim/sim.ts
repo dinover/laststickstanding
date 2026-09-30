@@ -597,13 +597,26 @@ export class Sim {
     this.emit({ k: "lobby" });
   }
 
-  step(dt: number): void {
+  /**
+   * Un tick de simulación. `sub` (solo lo usa el servidor online) permite avanzar a cada jugador
+   * una cantidad distinta de pasos físicos este tick — 0 si todavía no llegó su input, 2 si se
+   * atrasó — llamando `beforeStep` antes de cada paso para aplicar el frame de input que
+   * corresponde. Así el cuerpo de cada jugador avanza exactamente un paso por frame de input, que
+   * es lo que el cliente predice.
+   */
+  step(dt: number, sub?: { steps(id: number): number; beforeStep(id: number, i: number): void }): void {
     this.tick++;
     const damageEnabled = this.phase === "fight";
     const ids = this.phase === "lobby" ? Object.keys(this.players).map(Number) : this.roster;
     for (const id of ids) {
       const p = this.players[id];
-      if (p) this.stepPlayer(p, dt, damageEnabled);
+      if (!p) continue;
+      const n = sub ? sub.steps(id) : 1;
+      if (n === 0 && !p.alive && p.deathFadeT > 0) p.deathFadeT = Math.max(0, p.deathFadeT - dt);
+      for (let i = 0; i < n; i++) {
+        sub?.beforeStep(id, i);
+        this.stepPlayer(p, dt, damageEnabled);
+      }
     }
     this.resolvePlayerCollisions(ids);
     this.updateOrbs(dt);

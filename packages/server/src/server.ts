@@ -18,6 +18,11 @@ import { destroyPadRoom, handlePadMessage, padLeave, padRooms, sweepPadRooms, ty
 
 const args = process.argv.slice(2);
 const argPort = args.includes("--port") ? Number(args[args.indexOf("--port") + 1]) : NaN;
+/* Solo para probar el netcode: --lag N agrega N ms de ida y vuelta (mitad en cada sentido) y
+   --jitter J hasta J ms extra al azar. No afecta nada si no se pasa. */
+const LAG_MS = args.includes("--lag") ? Number(args[args.indexOf("--lag") + 1]) || 0 : 0;
+const JITTER_MS = args.includes("--jitter") ? Number(args[args.indexOf("--jitter") + 1]) || 0 : 0;
+const oneWay = () => LAG_MS / 2 + Math.random() * JITTER_MS;
 const PORT = Number(process.env.PORT) || argPort || 8080;
 const MAX_MSG_BYTES = 4096;
 const MAX_MSG_PER_SEC = 240; // un cliente normal manda ~60 frames de input por segundo
@@ -69,6 +74,7 @@ interface Meta extends SocketMeta, PadMeta {
   msgCount: number;
   msgWindow: number;
   alive: boolean;
+  lagInAt?: number;
 }
 
 const metas = new WeakMap<WebSocket, Meta>();
@@ -130,6 +136,16 @@ function handleMessage(ws: WebSocket, meta: Meta, raw: Buffer) {
 const wss = new WebSocketServer({ server, maxPayload: MAX_MSG_BYTES, perMessageDeflate: false });
 
 wss.on("connection", (ws) => {
+  if (LAG_MS || JITTER_MS) {
+    // demora simulada de salida, respetando el orden (como TCP)
+    const rawSend = ws.send.bind(ws);
+    let lastAt = 0;
+    (ws as unknown as { send: (d: unknown) => void }).send = (d: unknown) => {
+      const at = Math.max(lastAt, Date.now() + oneWay());
+      lastAt = at;
+      setTimeout(() => { if (ws.readyState === 1) rawSend(d as Buffer); }, at - Date.now());
+    };
+  }
   const meta: Meta = { room: null, playerId: null, padRoom: null, padId: null, padHost: false, msgCount: 0, msgWindow: Date.now(), alive: true };
   metas.set(ws, meta);
   ws.on("pong", () => { meta.alive = true; });
@@ -138,7 +154,12 @@ wss.on("connection", (ws) => {
     const now = Date.now();
     if (now - meta.msgWindow > 1000) { meta.msgWindow = now; meta.msgCount = 0; }
     if (++meta.msgCount > MAX_MSG_PER_SEC) return;
-    handleMessage(ws, meta, data as Buffer);
+    if (LAG_MS || JITTER_MS) {
+      const at = Math.max(meta.lagInAt || 0, Date.now() + oneWay());
+      meta.lagInAt = at;
+      setTimeout(() => handleMessage(ws, meta, data as Buffer), at - Date.now());
+    }
+    else handleMessage(ws, meta, data as Buffer);
   });
   const bye = () => { leaveRoom(ws, meta); padLeave(ws, meta); };
   ws.on("close", bye);
@@ -162,7 +183,7 @@ setInterval(() => {
 }, 2000);
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Last Stick Standing V2 — escuchando en :${PORT} (estáticos: ${STATIC_DIR})`);
+  console.log(`Last Stick Standing V2 — escuchando en :${PORT} (estáticos: ${STATIC_DIR})${LAG_MS || JITTER_MS ? ` [lag simulado ${LAG_MS}ms ±${JITTER_MS}]` : ""}`);
 });
 
 function shutdown() {

@@ -116,6 +116,7 @@
 <style>
   .topbar { position: absolute; top: 14px; right: 16px; z-index: 30; display: flex; align-items: center; gap: 8px; }
   .wrap { position: relative; }
+  @media (max-height: 480px) { .topbar { top: 8px; gap: 6px; } .topbar :global(.btn-icon) { width: 32px; height: 32px; } }
   .flag :global(svg) { width: 22px; height: 22px; border-radius: 50%; }
   .btn-icon.active { color: var(--cyan); border-color: rgba(53,240,224,.6); }
   .btn-icon.logged { color: var(--cyan); border-color: var(--cyan); }

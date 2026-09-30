@@ -411,6 +411,7 @@ export class Renderer {
   }
 
   clearTransient() {
+    if (!this.ready) return;
     this.fx.clear();
     for (const d of this.debris) d.g.destroy();
     this.debris = [];

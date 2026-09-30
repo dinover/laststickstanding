@@ -1,3 +1,5 @@
 {$DOMAIN} {
+	# compresión para el HTML/JS/CSS del cliente (el WebSocket no se toca)
+	encode zstd gzip
 	reverse_proxy app:8080
 }
