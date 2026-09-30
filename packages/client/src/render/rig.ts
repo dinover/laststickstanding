@@ -26,7 +26,10 @@ export interface Rig {
   /** A = miembro de atrás (se dibuja más oscuro, detrás del torso); B = el de adelante. */
   kneeA: Pt; footA: Pt; kneeB: Pt; footB: Pt;
   elbowA: Pt; handA: Pt; elbowB: Pt; handB: Pt;
-  /** Curvatura de la columna (px hacia adelante en el medio del torso). */
+  /** Cintura: la columna tiene dos tramos (pelvis→cintura→pecho), así se curva en vez de rotar
+      entera como un palo. */
+  waist: Pt;
+  /** Curvatura extra por inercia (px hacia adelante en la cintura). */
   bend: number;
   facing: number;
   expr: Expr;
@@ -41,14 +44,18 @@ export interface Rig {
 }
 
 export interface RigState {
-  /** Resortes: ángulos actuales y velocidades (legA0, legA1, legB0, legB1, armA0, armA1, armB0, armB1, lean, head). */
+  /** Resortes: ángulos actuales y velocidades (legA0, legA1, legB0, legB1, armA0, armA1, armB0, armB1, lean, head, curl). */
   a?: number[]; v?: number[];
+  /** Patada actual: 0 = circular, 1 = lateral (se alternan) y el tiempo del ataque anterior, para detectar una nueva. */
+  kickVar?: number; prevAtkT?: number;
   lastMs?: number; prevJumps?: number; flipV0?: number; tumble?: number;
   prevFacing?: number; turnT?: number; turnFrom?: number; lastWalk?: number;
 }
 
 type Seg = [number, number];
-interface Pose { legA: Seg; legB: Seg; armA: Seg; armB: Seg; lean: number }
+/** lean = inclinación general del torso; curl = cuánto más se inclina el pecho que la pelvis
+    (+ encorvado hacia adelante, − arqueado hacia atrás). */
+interface Pose { legA: Seg; legB: Seg; armA: Seg; armB: Seg; lean: number; curl: number }
 type Key = { t: number; p: Partial<Pose>; ease?: string };
 
 const DEG = Math.PI / 180;
@@ -60,7 +67,7 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 function lerpPose(a: Pose, b: Pose, t: number): Pose {
   const s = (x: Seg, y: Seg): Seg => [lerp(x[0], y[0], t), lerp(x[1], y[1], t)];
-  return { legA: s(a.legA, b.legA), legB: s(a.legB, b.legB), armA: s(a.armA, b.armA), armB: s(a.armB, b.armB), lean: lerp(a.lean, b.lean, t) };
+  return { legA: s(a.legA, b.legA), legB: s(a.legB, b.legB), armA: s(a.armA, b.armA), armB: s(a.armB, b.armB), lean: lerp(a.lean, b.lean, t), curl: lerp(a.curl, b.curl, t) };
 }
 
 /** Completa un track: cada key hereda lo que no define de la anterior. */
@@ -90,7 +97,7 @@ function cyc(keys: Seg[], t: number): Seg {
 }
 
 /* ---------------------------------------------------------------- poses y movimientos */
-const GUARD: Pose = { armA: [12, 142], armB: [36, 152], legA: [-12, -36], legB: [28, -2], lean: 5 };
+const GUARD: Pose = { armA: [12, 142], armB: [36, 152], legA: [-12, -36], legB: [28, -2], lean: 5, curl: 9 };
 
 /* Carrera en 8 poses (pierna de adelante): contacto, carga, empuje, despegue, recogida con el talón
    arriba, rodilla al frente, estirada y bajada al contacto. La otra pierna va media vuelta
@@ -102,30 +109,46 @@ const RUN_ARM: Seg[] = [[-42, 8], [-12, 66], [52, 138], [22, 104]];
    impacto y vuelve a la guardia con un rebote. 140 ms reales en total. */
 const PUNCH = track(GUARD, [
   { t: 0.0, p: {} },
-  { t: 0.12, p: { armB: [16, 166], armA: [6, 150], lean: 0 }, ease: "power1.out" },
-  { t: 0.34, p: { armB: [90, 90], armA: [-18, 118], legB: [32, 8], legA: [-30, -36], lean: 20 }, ease: "expo.out" },
+  { t: 0.12, p: { armB: [16, 166], armA: [6, 150], lean: 0, curl: 2 }, ease: "power1.out" },
+  { t: 0.34, p: { armB: [90, 90], armA: [-18, 118], legB: [32, 8], legA: [-30, -36], lean: 18, curl: 16 }, ease: "expo.out" },
   { t: 0.54, p: { armB: [88, 88] }, ease: "none" },
-  { t: 1.0, p: { armB: GUARD.armB, armA: GUARD.armA, legB: GUARD.legB, legA: GUARD.legA, lean: GUARD.lean }, ease: "back.out(1.6)" },
+  { t: 1.0, p: { armB: GUARD.armB, armA: GUARD.armA, legB: GUARD.legB, legA: GUARD.legA, lean: GUARD.lean, curl: GUARD.curl }, ease: "back.out(1.6)" },
 ]);
 
-/* Patada: recoge la rodilla, la dispara recta, sostiene y vuelve a recoger antes de apoyar. El
-   torso contrapesa hacia atrás y los brazos se abren para el equilibrio. 280 ms. */
-const KICK = track(GUARD, [
+/* Patadas estilo kung fu (280 ms), se alternan: recogida profunda (rodilla al pecho), latigazo
+   explosivo, sostén en el impacto y re-recogida antes de apoyar (la marca de una patada bien
+   hecha). El torso se echa bien atrás arqueando la columna, el brazo de adelante queda en guardia
+   frente a la cara y el de atrás se abre para el equilibrio. La pierna de apoyo se estira: sube
+   el cuerpo, como parándose en puntas.
+   - CIRCULAR: la canilla barre en arco desde atrás hasta arriba (el swoosh dibuja la media luna).
+   - LATERAL: la rodilla sube cruzada y la pierna sale recta como un pistón, a la altura del pecho. */
+const KICK_TAIL = { legB: GUARD.legB, legA: GUARD.legA, armA: GUARD.armA, armB: GUARD.armB, lean: GUARD.lean, curl: GUARD.curl };
+const KICK_ROUND = track(GUARD, [
   { t: 0.0, p: {} },
-  { t: 0.14, p: { legB: [74, -36], legA: [-14, -24], armA: [-30, 60], armB: [50, 130], lean: -4 }, ease: "power2.out" },
-  { t: 0.34, p: { legB: [98, 96], legA: [-16, -24], armA: [-62, -14], armB: [62, 108], lean: -16 }, ease: "expo.out" },
-  { t: 0.56, p: { legB: [95, 93] }, ease: "none" },
-  { t: 0.8, p: { legB: [58, -16], lean: -6 }, ease: "power2.in" },
-  { t: 1.0, p: { legB: GUARD.legB, legA: GUARD.legA, armA: GUARD.armA, armB: GUARD.armB, lean: GUARD.lean }, ease: "power2.out" },
+  { t: 0.1, p: { legB: [86, -40], legA: [-6, -20], armA: [-50, 20], armB: [55, 150], lean: -8, curl: -4 }, ease: "power2.out" },
+  { t: 0.28, p: { legB: [128, 132], legA: [-3, -8], armA: [-112, -86], armB: [42, 160], lean: -30, curl: -22 }, ease: "expo.out" },
+  { t: 0.52, p: { legB: [125, 129] }, ease: "none" },
+  { t: 0.74, p: { legB: [96, -28], legA: [-6, -18], lean: -12, curl: -8 }, ease: "power2.in" },
+  { t: 1.0, p: KICK_TAIL, ease: "power2.out" },
 ]);
+const KICK_SIDE = track(GUARD, [
+  { t: 0.0, p: {} },
+  { t: 0.12, p: { legB: [104, -14], legA: [-8, -22], armA: [-40, 40], armB: [60, 156], lean: -10, curl: 6 }, ease: "power2.out" },
+  { t: 0.3, p: { legB: [100, 98], legA: [-5, -10], armA: [-98, -70], armB: [30, 150], lean: -26, curl: -14 }, ease: "expo.out" },
+  { t: 0.54, p: { legB: [99, 97] }, ease: "none" },
+  { t: 0.76, p: { legB: [102, -12], lean: -10, curl: 4 }, ease: "power2.in" },
+  { t: 1.0, p: KICK_TAIL, ease: "power2.out" },
+]);
+/** En el aire: patada voladora, la pierna de apoyo va recogida. */
+const FLYING_SUPPORT: Seg = [98, -34];
 
-const AIR_UP: Pose = { legA: [-3, -91], legB: [-34, -100], armA: [121, 148], armB: [-64, -26], lean: 6 };
-const AIR_DOWN: Pose = { legA: [10, -2], legB: [-14, -30], armA: [46, 74], armB: [-22, 6], lean: 8 };
-const TUCK: Pose = { legA: [96, -40], legB: [84, -52], armA: [70, 150], armB: [40, 140], lean: 0 };
-const CROUCH: Pose = { legA: [14, -46], legB: [46, -16], armA: [-62, -36], armB: [58, 84], lean: 22 };
+const AIR_UP: Pose = { legA: [-3, -91], legB: [-34, -100], armA: [121, 148], armB: [-64, -26], lean: 6, curl: -12 };
+const AIR_DOWN: Pose = { legA: [10, -2], legB: [-14, -30], armA: [46, 74], armB: [-22, 6], lean: 8, curl: 6 };
+const TUCK: Pose = { legA: [96, -40], legB: [84, -52], armA: [70, 150], armB: [40, 140], lean: 4, curl: 34 };
+const CROUCH: Pose = { legA: [14, -46], legB: [46, -16], armA: [-62, -36], armB: [58, 84], lean: 18, curl: 22 };
 /* Golpe recibido de frente: el torso se va para atrás, los brazos quedan colgando hacia el que pegó
    y los pies patinan. Si el golpe vino por la espalda, el mismo cuerpo se dobla hacia adelante. */
-const HURT: Pose = { legA: [-26, -36], legB: [24, 10], armA: [44, 84], armB: [72, 112], lean: -20 };
+const HURT: Pose = { legA: [-26, -36], legB: [24, 10], armA: [44, 84], armB: [72, 112], lean: -16, curl: -26 };
 
 /* ---------------------------------------------------------------- resortes */
 /* [frecuencia natural (rad/s), amortiguación]. Menos de 1 de amortiguación = se pasa un poco y
@@ -147,7 +170,8 @@ function stepSprings(st: RigState, target: number[], fam: string, dtMs: number) 
   const s = SPRINGS[fam] || SPRINGS.idle;
   if (!st.a || !st.v) { st.a = target.slice(); st.v = target.map(() => 0); return; }
   const a = st.a, v = st.v;
-  const params: Spring[] = [s.leg, s.leg, s.leg, s.leg, s.arm, s.arm, s.arm, s.arm, s.lean, s.head];
+  const curlSpring: Spring = [s.lean[0] * 0.85, Math.max(0.3, s.lean[1] - 0.12)];
+  const params: Spring[] = [s.leg, s.leg, s.leg, s.leg, s.arm, s.arm, s.arm, s.arm, s.lean, s.head, curlSpring];
   if (s.strike) {
     if (fam === "punch") params[6] = params[7] = s.strike;
     else params[2] = params[3] = s.strike;
@@ -183,7 +207,7 @@ const smax = (a: number, b: number, k = 1.5) => (a + b + Math.sqrt((a - b) * (a 
 
 const NO_STATE: RigState = {};
 
-export function solveRig(p: RenderPlayer & { jumpsLeft?: number; kbx?: number }, st: RigState | null, low = false): Rig {
+export function solveRig(p: RenderPlayer & { jumpsLeft?: number; kbx?: number }, st: RigState | null, low = false, kickVar?: number): Rig {
   const S = st || NO_STATE;
   // los resortes van siempre (también en calidad Liviana): cuestan casi nada y son lo que hace
   // fluido el movimiento; Liviana solo apaga detalles de dibujo
@@ -204,6 +228,10 @@ export function solveRig(p: RenderPlayer & { jumpsLeft?: number; kbx?: number },
   const fromFront = p.facing === -pushDir ? 1 : -1;
 
   if (st) {
+    // cada patada nueva alterna entre circular y lateral
+    const atkT = kicking ? p.attack!.t : -1;
+    if (kicking && (st.prevAtkT == null || st.prevAtkT < 0 || atkT > st.prevAtkT + 1)) st.kickVar = st.kickVar === 0 ? 1 : 0;
+    st.prevAtkT = atkT;
     // mortal del doble salto: se detecta cuando se gasta el segundo salto en el aire y avanza con la
     // velocidad vertical (no con un reloj), así acompaña la física, la cámara lenta y el hitstop
     if (p.jumpsLeft != null && st.prevJumps != null && !p.grounded && st.prevJumps > 0 && p.jumpsLeft === 0) st.flipV0 = Math.min(p.vy, -6);
@@ -229,11 +257,16 @@ export function solveRig(p: RenderPlayer & { jumpsLeft?: number; kbx?: number },
   // ---- pose objetivo según el estado
   let fam: string;
   let target: Pose;
-  if (kicking) { fam = "kick"; target = sample(KICK, attackLin); }
+  if (kicking) {
+    fam = "kick";
+    const kv = kickVar ?? S.kickVar ?? 0;
+    target = sample(kv === 1 ? KICK_SIDE : KICK_ROUND, attackLin);
+    if (!p.grounded) target = { ...target, legA: FLYING_SUPPORT, curl: target.curl - 6 };
+  }
   else if (launched) {
     fam = "tumble";
     const w = Math.sin(nowMs * 0.03);
-    target = { legA: [40 + w * 20, -20], legB: [-30 - w * 20, -60], armA: [150 + w * 30, 200], armB: [-140 - w * 25, -110], lean: 0 };
+    target = { legA: [40 + w * 20, -20], legB: [-30 - w * 20, -60], armA: [150 + w * 30, 200], armB: [-140 - w * 25, -110], lean: 0, curl: 14 + w * 10 };
   } else if (flipU > 0 && !punching) { fam = "flip"; target = lerpPose(TUCK, AIR_DOWN, ease("power2.in")(clamp((flipU - 0.7) / 0.3, 0, 1))); }
   else if (!p.grounded) { fam = "air"; target = lerpPose(AIR_UP, AIR_DOWN, ease("sine.inOut")((clamp(p.vy / 9, -1, 1) + 1) / 2)); }
   else if (punching) { fam = "punch"; target = sample(PUNCH, attackLin); }
@@ -241,8 +274,9 @@ export function solveRig(p: RenderPlayer & { jumpsLeft?: number; kbx?: number },
     fam = "run";
     const w = p.walkCycle || 0;
     // la carrera empieza en la pose de contacto de la pierna de adelante (legB)
-    target = { legB: cyc(RUN_LEG, w), legA: cyc(RUN_LEG, w + 0.5), armB: cyc(RUN_ARM, w), armA: cyc(RUN_ARM, w + 0.5), lean: 14 + Math.cos(w * Math.PI * 4) * 2 };
-  } else if (hurtW > 0.02) { fam = "hurt"; target = lerpPose(GUARD, { ...HURT, lean: HURT.lean * fromFront }, hurtW); }
+    // la columna acompaña cada zancada: se encorva al apoyar y se estira al empujar
+    target = { legB: cyc(RUN_LEG, w), legA: cyc(RUN_LEG, w + 0.5), armB: cyc(RUN_ARM, w), armA: cyc(RUN_ARM, w + 0.5), lean: 12 + Math.cos(w * Math.PI * 4) * 2, curl: 8 + Math.cos(w * Math.PI * 4) * 5 };
+  } else if (hurtW > 0.02) { fam = "hurt"; target = lerpPose(GUARD, { ...HURT, lean: HURT.lean * fromFront, curl: HURT.curl * fromFront }, hurtW); }
   else {
     fam = "idle";
     // guardia viva: respiración + rebote de peleador sobre las rodillas
@@ -255,24 +289,29 @@ export function solveRig(p: RenderPlayer & { jumpsLeft?: number; kbx?: number },
       armA: [GUARD.armA[0] + br * 3, GUARD.armA[1] - br * 4 + b * 3],
       armB: [GUARD.armB[0] - br * 2, GUARD.armB[1] + br * 3 + b * 3],
       lean: GUARD.lean + br * 1.5,
+      // respiración: el pecho sube y baja sobre la cintura, y el rebote encorva apenas
+      curl: GUARD.curl + br * 3 + b * 4,
     };
   }
   // flexión al aterrizar fuerte
   if (p.grounded && (p.squash || 0) > 0.05 && !p.attack && !running) target = lerpPose(target, CROUCH, clamp(p.squash * 1.2, 0, 1));
   let leanT = target.lean;
   if (!p.grounded && fam === "air") leanT += clamp(p.vy / 9, -1, 1) * 4;
-  // la cabeza latiguea un poco más que el torso al recibir
-  const headT = leanT * 0.6 + (fam === "hurt" ? -16 * fromFront * hurtW : 0);
+  const curlT = target.curl;
+  // la cabeza sigue al pecho (tramo de arriba de la columna) y latiguea más al recibir
+  const headT = (leanT + curlT * 0.5) * 0.6 + (fam === "hurt" ? -16 * fromFront * hurtW : 0);
 
   // ---- resortes: el esqueleto sigue a la pose objetivo con inercia
-  let pose = target, lean = leanT, headLean = headT;
+  let pose = target, lean = leanT, headLean = headT, curl = curlT;
   if (live) {
-    const tv = [target.legA[0], target.legA[1], target.legB[0], target.legB[1], target.armA[0], target.armA[1], target.armB[0], target.armB[1], leanT, headT];
+    const tv = [target.legA[0], target.legA[1], target.legB[0], target.legB[1], target.armA[0], target.armA[1], target.armB[0], target.armB[1], leanT, headT, curlT];
     stepSprings(st, tv, fam, dt);
     const a = st.a!;
-    pose = { legA: [a[0], a[1]], legB: [a[2], a[3]], armA: [a[4], a[5]], armB: [a[6], a[7]], lean: a[8] };
+    pose = { legA: [a[0], a[1]], legB: [a[2], a[3]], armA: [a[4], a[5]], armB: [a[6], a[7]], lean: a[8], curl: a[10] };
     lean = a[8];
     headLean = a[9];
+    // inercia de la columna: si el torso todavía no llegó a su inclinación, el pecho queda atrás
+    curl = a[10] + clamp((leanT - lean) * 0.7, -16, 16);
   }
   // la columna se curva hacia donde el torso "quiere" ir y todavía no llegó
   const bend = live ? clamp((leanT - lean) * 0.14, -3.5, 3.5) : 0;
@@ -285,7 +324,10 @@ export function solveRig(p: RenderPlayer & { jumpsLeft?: number; kbx?: number },
     hipY = feet - drop;
   } else hipY = feet - (THIGH + SHIN) * 0.86;
   const hip = { x: p.x, y: hipY };
-  const shoulder = { x: hip.x + Math.sin(lean * DEG) * TORSO * facing, y: hip.y - Math.cos(lean * DEG) * TORSO };
+  // columna en dos tramos: la pelvis se inclina menos y el pecho más (curl), así se curva
+  const lower = (lean - curl * 0.5) * DEG, upper = (lean + curl * 0.5) * DEG;
+  const waist = { x: hip.x + Math.sin(lower) * TORSO * 0.5 * facing, y: hip.y - Math.cos(lower) * TORSO * 0.5 };
+  const shoulder = { x: waist.x + Math.sin(upper) * TORSO * 0.5 * facing, y: waist.y - Math.cos(upper) * TORSO * 0.5 };
   const neck = { x: shoulder.x + Math.sin(headLean * DEG) * NECK * facing, y: shoulder.y - Math.cos(headLean * DEG) * NECK };
   const head = { x: neck.x + Math.sin(headLean * DEG) * HEAD_R * facing, y: neck.y - Math.cos(headLean * DEG) * HEAD_R };
 
@@ -317,7 +359,7 @@ export function solveRig(p: RenderPlayer & { jumpsLeft?: number; kbx?: number },
     if (rot && !noRot) { const dx = x - pivot.x, dy = y - pivot.y; x = pivot.x + dx * cr - dy * sr; y = pivot.y + dx * sr + dy * cr; }
     return { x, y };
   };
-  const pts = { hip: T(hip), shoulder: T(shoulder), neck: T(neck), head: T(head), kneeA: T(kneeA), footA: T(footA), kneeB: T(kneeB), footB: T(footB), elbowA: T(elbowA), handA: T(handA), elbowB: T(elbowB), handB: T(handB) };
+  const pts = { hip: T(hip), waist: T(waist), shoulder: T(shoulder), neck: T(neck), head: T(head), kneeA: T(kneeA), footA: T(footA), kneeB: T(kneeB), footB: T(footB), elbowA: T(elbowA), handA: T(handA), elbowB: T(elbowB), handB: T(handB) };
 
   // ---- ojos
   let expr: Expr = "open";

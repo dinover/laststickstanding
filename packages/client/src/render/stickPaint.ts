@@ -54,10 +54,12 @@ export function hexN(h: string): number {
 
 export const SWOOSH_TINT: Record<PowerType, number> = { fuego: 0xffa040, hielo: 0xbff4ff, tierra: 0xd8b47a, aire: 0xe6ffd8 };
 
-/** Cuánto baja el accesorio respecto del dibujo original (hecho para la cabeza de aro, más ancha):
-    así queda puesto y no flotando. La aureola y la órbita flotan a propósito. */
-export function hatDrop(kind: string): number {
-  return kind === "halo" || kind === "orbit" ? 0.6 : 2.8;
+/** Cuánto baja el accesorio respecto del dibujo original para que quede puesto y no flotando. Los
+    accesorios se dibujaron para la cabeza de aro de V1; con la cabeza llena (más chica por fuera)
+    bajan más. La aureola y la órbita flotan a propósito. */
+export function hatDrop(kind: string, head: HeadStyle = "ring"): number {
+  if (kind === "halo" || kind === "orbit") return 0.6;
+  return head === "ring" ? 1.3 : 2.8;
 }
 
 /* ---------------------------------------------------------------- primitivas */
@@ -143,12 +145,12 @@ function curveRim(g: Pen, a: Pt, ra: number, j: Pt, rj: number, b: Pt, rb: numbe
   g.stroke({ width: Math.min(ra, rb) * 0.6, color, alpha: alpha * Math.min(1, facing * 1.3), cap: "round", join: "round" });
 }
 
-/** Punto medio de la columna, corrido hacia adelante/atrás según la inercia del torso. */
+/** Cintura del esqueleto (la columna tiene dos tramos) más el empuje de la inercia del torso. */
 function spineMid(r: Rig): Pt {
   const vx = r.shoulder.x - r.hip.x, vy = r.shoulder.y - r.hip.y;
   const L = Math.hypot(vx, vy) || 1;
-  const off = r.bend * 1.6;
-  return { x: r.hip.x + vx * 0.5 + r.facing * (-vy / L) * off, y: r.hip.y + vy * 0.5 + r.facing * (vx / L) * off };
+  const off = r.bend * 1.2;
+  return { x: r.waist.x + r.facing * (-vy / L) * off, y: r.waist.y + r.facing * (vx / L) * off };
 }
 
 /** Punta del pie: perpendicular a la canilla, hacia adelante (o hacia arriba en una patada). */
@@ -396,7 +398,7 @@ export function paintStick(L: PaintLayers, p: RenderPlayer, r: Rig, colorHex: nu
 
 /** Silueta plana (ecos del poder de aire). */
 export function paintSilhouette(g: Pen, e: Rig, color: number, alpha: number) {
-  curveLimb(g, e.hip, 2.6, { x: (e.hip.x + e.shoulder.x) / 2, y: (e.hip.y + e.shoulder.y) / 2 }, 2.8, e.shoulder, 3);
+  curveLimb(g, e.hip, 2.6, e.waist, 2.8, e.shoulder, 3);
   curveLimb(g, e.hip, 2.6, e.kneeA, 2, e.footA, 1.6);
   curveLimb(g, e.hip, 2.6, e.kneeB, 2, e.footB, 1.6);
   curveLimb(g, e.shoulder, 2, e.elbowA, 1.8, e.handA, 1.5);

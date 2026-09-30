@@ -32,11 +32,11 @@ class HatSprite {
 
   constructor() { this.sprite.anchor.set(0.5); }
 
-  update(kind: string, head: Pt, rotDeg: number, facing: number, t: number, scale: number) {
+  update(kind: string, head: Pt, rotDeg: number, facing: number, t: number, scale: number, style: HeadStyle) {
     const visible = !!kind && kind !== "none";
     this.sprite.visible = visible;
     if (!visible) return;
-    const key = kind + ":" + facing + ":" + scale;
+    const key = kind + ":" + facing + ":" + scale + ":" + style;
     if (key !== this.key || ANIMATED_HATS.has(kind)) {
       const px = Math.ceil(HatSprite.BOX * scale);
       if (key !== this.key) {
@@ -51,7 +51,7 @@ class HatSprite {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, px, px);
       ctx.setTransform(scale, 0, 0, scale, px / 2, px / 2);
-      drawAccessory(ctx, kind, 0, hatDrop(kind), 0, facing, t);
+      drawAccessory(ctx, kind, 0, hatDrop(kind, style), 0, facing, t);
       this.source!.update();
     }
     this.sprite.position.set(head.x, head.y);
@@ -201,7 +201,7 @@ export class StickView {
     // estela del golpe: el arco real que recorrió la punta en los últimos ~70 ms de animación
     this.updateSmear(p, r, own ? SWOOSH_TINT[own] : main, o.low);
 
-    this.hat.update(hat, r.head, r.headLean * r.facing, r.facing, t, o.scale);
+    this.hat.update(hat, r.head, r.headLean * r.facing, r.facing, t, o.scale, o.head);
 
     // fundido de muerte con AlphaFilter: con alfa por forma se verían las superposiciones
     const fading = o.alpha < 1;
@@ -220,7 +220,7 @@ export class StickView {
     let len = 0, px = 0, py = 0;
     for (let i = 0; i < SMEAR_N; i++) {
       const u = Math.max(0.06, s.progress - span * (1 - i / (SMEAR_N - 1)));
-      const q = i === SMEAR_N - 1 ? r : solveRig({ ...p, attack: { ...p.attack, t: dur * (1 - u) } }, null, false);
+      const q = i === SMEAR_N - 1 ? r : solveRig({ ...p, attack: { ...p.attack, t: dur * (1 - u) } }, null, false, this.state.kickVar);
       const root = kick ? q.hip : q.shoulder, tip = kick ? q.footB : q.handB;
       const k = kick ? 0.42 : 0.55;
       v[i * 4] = tip.x; v[i * 4 + 1] = tip.y;

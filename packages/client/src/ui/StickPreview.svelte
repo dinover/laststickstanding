@@ -54,12 +54,12 @@
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(scale * dpr, 0, 0, scale * dpr, (width / 2) * dpr, feetY * dpr);
-      paintStick({ ground: pen, body: pen, front: pen }, p, r, hexN(color), { low: false, head: "face", whiten: 0, powerUp: 0 });
+      paintStick({ ground: pen, body: pen, front: pen }, p, r, hexN(color), { low: false, head: "ring", whiten: 0, powerUp: 0 });
       if (hat && hat !== "none") {
         ctx.save();
         ctx.translate(r.head.x, r.head.y);
         ctx.rotate(r.headLean * r.facing * (Math.PI / 180));
-        drawAccessory(ctx, hat, 0, hatDrop(hat), 0, r.facing, p.idleT);
+        drawAccessory(ctx, hat, 0, hatDrop(hat, "ring"), 0, r.facing, p.idleT);
         ctx.restore();
       }
       raf = requestAnimationFrame(frame);

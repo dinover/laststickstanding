@@ -133,7 +133,7 @@ const TAG_BOX = { w: 130, h: 80, ox: -65, oy: -80 };
 export class Renderer {
   app = new Application();
   readonly camera = new Camera(WORLD_W, WORLD_H);
-  settings: RenderSettings = { quality: "high", reduceMotion: false, dynamicCamera: true, stickStyle: "v2", headStyle: "face" };
+  settings: RenderSettings = { quality: "high", reduceMotion: false, dynamicCamera: true, stickStyle: "v2", headStyle: "ring" };
 
   private root = new Container();
   private bg = new Container();
