@@ -19,12 +19,19 @@
   let ready = $state(false);
   let paused = $state(false);
   let joinCode = $state("");
+  // ?lab (solo desarrollo): galería de arte con todos los estados de animación
+  const lab = import.meta.env.DEV && new URLSearchParams(location.search).has("lab");
 
   onMount(async () => {
     const params = new URLSearchParams(location.search);
     const code = (params.get("join") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
     await engine.init(stage);
     ready = true;
+    if (lab) {
+      const { LabSession } = await import("../game/sessions/lab");
+      engine.start(new LabSession(engine));
+      return;
+    }
     wireNet();
     resumeOnlineIfSaved();
     startProfileSync();
@@ -66,7 +73,9 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="stage" bind:this={stage}></div>
-{#if ready}
+{#if ready && lab}
+  <div class="lab-hint">Galería de arte · <kbd>B</kbd> bioma · <kbd>N</kbd> muñeco V1/V2 · <kbd>H</kbd> cabeza · <kbd>1</kbd>–<kbd>3</kbd> + <kbd>←</kbd><kbd>→</kbd> acercar · <kbd>0</kbd> vista completa · <kbd>S</kbd> cámara lenta · <kbd>P</kbd> pausa</div>
+{:else if ready}
   {#if !$playing}<Menu {joinCode} />{/if}
   {#if $playing}<Hud onPause={() => setPaused(true)} />{/if}
   <TopBar />
@@ -82,6 +91,7 @@
 
 <style>
   .stage { position: absolute; inset: 0; }
+  .lab-hint { position: absolute; left: 12px; bottom: 10px; z-index: 5; font-size: 12px; color: var(--muted); }
   .boot { position: absolute; inset: 0; display: grid; place-content: center; gap: 18px; text-align: center; }
   .boot-logo { font-family: var(--font-display); font-size: 40px; font-weight: 700; letter-spacing: .04em; }
   .boot-logo span { color: var(--cyan); }

@@ -30,6 +30,10 @@ export interface RenderPlayer {
   burnFlashT: number;
   hp: number;
   deathFadeT: number;
+  /** Saltos que le quedan (el rig nuevo detecta el doble salto para el mortal). */
+  jumpsLeft?: number;
+  /** Knockback horizontal actual (el rig nuevo lo usa para la voltereta al salir lanzado). */
+  kbx?: number;
   isBot?: boolean;
   isHero?: boolean;
 }

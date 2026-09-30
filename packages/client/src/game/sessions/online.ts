@@ -396,6 +396,7 @@ export class OnlineSession implements Session {
         players.push({
           ...pb, x: p.x + this.corrX, y: p.y + this.corrY, vx: p.vx, vy: p.vy, facing: p.facing, grounded: p.grounded,
           walkCycle: p.walkCycle, idleT: p.idleT, squash: p.squash, jumpAnticT: p.jumpAnticT, attack: p.attack,
+          jumpsLeft: p.jumpsLeft, kbx: p.kbx,
         });
         continue;
       }

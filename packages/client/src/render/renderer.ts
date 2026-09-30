@@ -11,13 +11,16 @@
    - Lo estático (fondo, plataformas, púas) se hornea una vez por mapa. */
 
 import { Application, CanvasSource, Container, Graphics, Sprite, Text, Texture, type TextStyleOptions } from "pixi.js";
-import { AdvancedBloomFilter, RGBSplitFilter, ShockwaveFilter } from "pixi-filters";
+import { AdvancedBloomFilter, BulgePinchFilter, RGBSplitFilter, ShockwaveFilter } from "pixi-filters";
 import { WORLD_H, WORLD_W, type GameMode, type MapDef, type Phase } from "@lss/shared";
 import { artCfg } from "./art/config";
 import { accessoryLift, drawStickman, drawStickShine, type RenderPlayer, type RigAnim, type RigInfo } from "./art/stickman";
 import { buildBackground, buildPlatformLayer, drawDecorations, makeCanvas } from "./art/world";
-import { drawHill, drawNameTag, drawOrb, drawWorldObjects, HILL_TARGET } from "./art/objects";
+import { drawNameTag, HILL_TARGET } from "./art/objects";
+import { HillView, OrbView, PortalView, VoidView } from "./objectsPixi";
 import { Camera } from "./camera";
+import { StickView, type HeadStyle } from "./stickPixi";
+import { clamp01, ease } from "./ease";
 import { hexToNum, makeDotTexture, ParticleSystem } from "./particles";
 
 export interface RenderView {
@@ -44,6 +47,9 @@ export interface RenderSettings {
   quality: "high" | "low";
   reduceMotion: boolean;
   dynamicCamera: boolean;
+  /** "v2": muñeco nuevo (rig con curvas GSAP + Pixi Graphics). "v1": el arte original en Canvas 2D. */
+  stickStyle: "v1" | "v2";
+  headStyle: HeadStyle;
 }
 
 /* ---------------------------------------------------------------- canvas → sprite */
@@ -105,6 +111,7 @@ interface PlayerGfx {
   airTrail: Ghost[];
   airT: number;
   seen: number;
+  stick: StickView | null;
 }
 
 interface Debris {
@@ -125,7 +132,7 @@ const TAG_BOX = { w: 130, h: 80, ox: -65, oy: -80 };
 export class Renderer {
   app = new Application();
   readonly camera = new Camera(WORLD_W, WORLD_H);
-  settings: RenderSettings = { quality: "high", reduceMotion: false, dynamicCamera: true };
+  settings: RenderSettings = { quality: "high", reduceMotion: false, dynamicCamera: true, stickStyle: "v2", headStyle: "face" };
 
   private root = new Container();
   private bg = new Container();
@@ -138,10 +145,13 @@ export class Renderer {
   private decoLayer = new Container();
   private decoSprites: CanvasSprite[] = [];
   private objectLayer = new Container();
-  private orbSprite = new CanvasSprite(70, 70, -35, -35);
-  private hillSprite = new CanvasSprite(250, 250, -125, -125);
-  private portalSprite = new CanvasSprite(110, 140, -55, -100);
-  private voidSprite = new CanvasSprite(110, 100, -55, -50);
+  private orbView = new OrbView();
+  private hillView = new HillView();
+  private portalView = new PortalView();
+  private voidView = new VoidView();
+  /** El agujero de vacío chupa la imagen de alrededor (lente gravitatoria). */
+  private voidPinch = new BulgePinchFilter({ strength: -0.5, radius: 80 });
+  private voidOn = false;
   private playerLayer = new Container();
   private tagLayer = new Container();
   private debrisLayer = new Container();
@@ -192,7 +202,7 @@ export class Renderer {
     this.ambient = new ParticleSystem(dot, 90, false);
 
     this.bg.addChild(this.skySprite, this.farSprite, this.nearSprite);
-    this.objectLayer.addChild(this.hillSprite.sprite, this.portalSprite.sprite, this.voidSprite.sprite, this.orbSprite.sprite);
+    this.objectLayer.addChild(this.hillView.root, this.portalView.root, this.voidView.root, this.orbView.root);
     this.glowGroup.addChild(this.platformSprite, this.decoLayer, this.ambient.container, this.objectLayer, this.shadows, this.debrisLayer, this.playerLayer, this.fx.container, this.streaks);
     this.world.addChild(this.glowGroup, this.tagLayer, this.textLayer);
     this.overlay.addChild(this.vignette, this.flash);
@@ -200,6 +210,8 @@ export class Renderer {
     this.app.stage.addChild(this.root);
 
     this.bloom = new AdvancedBloomFilter({ threshold: 0.36, bloomScale: 1.0, brightness: 1.0, blur: 6, quality: 5 });
+    // los vectores de Pixi (muñecos V2) pasan por el bloom: sin MSAA en su textura quedarían dentados
+    this.bloom.antialias = "inherit";
     this.rgb = new RGBSplitFilter({ red: { x: 0, y: 0 }, green: { x: 0, y: 0 }, blue: { x: 0, y: 0 } });
     this.applyQuality();
 
@@ -225,7 +237,8 @@ export class Renderer {
 
   private updateRootFilters() {
     if (!this.bloom) return;
-    const f = this.shockwaves.map((s) => s.f) as (ShockwaveFilter | RGBSplitFilter)[];
+    const f = this.shockwaves.map((s) => s.f) as (ShockwaveFilter | RGBSplitFilter | BulgePinchFilter)[];
+    if (this.voidOn) f.unshift(this.voidPinch);
     if (this.rgbT > 0) f.push(this.rgb);
     this.root.filters = f.length ? f : [];
   }
@@ -504,7 +517,7 @@ export class Renderer {
       g = {
         body: new CanvasSprite(BODY_BOX.w, BODY_BOX.h, BODY_BOX.ox, BODY_BOX.oy),
         tag: new CanvasSprite(TAG_BOX.w, TAG_BOX.h, TAG_BOX.ox, TAG_BOX.oy),
-        tagKey: "", anim: {}, trail: [], trailT: 0, airTrail: [], airT: 0, seen: 0,
+        tagKey: "", anim: {}, trail: [], trailT: 0, airTrail: [], airT: 0, seen: 0, stick: null,
       };
       this.playerLayer.addChild(g.body.sprite);
       this.tagLayer.addChild(g.tag.sprite);
@@ -515,7 +528,7 @@ export class Renderer {
 
   /** Olvida el estado visual de los jugadores (nueva partida / nueva sesión). */
   resetPlayers() {
-    for (const g of this.gfx.values()) { g.body.destroy(); g.tag.destroy(); }
+    for (const g of this.gfx.values()) { g.body.destroy(); g.tag.destroy(); g.stick?.destroy(); }
     this.gfx.clear();
   }
 
@@ -529,9 +542,12 @@ export class Renderer {
     g.seen = this.frameNo;
     const fading = !p.alive && p.deathFadeT > 0;
     const visible = p.alive || view.phase === "lobby" || fading;
-    g.body.sprite.visible = visible;
+    const v2 = this.settings.stickStyle === "v2";
+    g.body.sprite.visible = visible && !v2;
+    if (g.stick) g.stick.root.visible = visible && v2;
     g.tag.sprite.visible = visible && !fading && !view.hideTags;
     if (!visible) { g.trail.length = 0; g.airTrail.length = 0; return; }
+    if (v2) { this.drawPlayerV2(view, p, g, scale, fading); return; }
 
     let color = view.colorFor(p.id);
     const hat = view.hatFor(p.id);
@@ -563,8 +579,32 @@ export class Renderer {
     g.body.end();
     g.body.sprite.alpha = fading ? Math.max(0, Math.min(1, p.deathFadeT / 420)) : 1;
 
-    // cartel (nombre/vida/poderes), en su propia capa para que el bloom no lo desenfoque
-    const hudY = rig.headY - accessoryLift(hat);
+    this.drawTag(view, p, g, rig.headY - accessoryLift(hat), scale);
+  }
+
+  private drawPlayerV2(view: RenderView, p: RenderPlayer, g: PlayerGfx, scale: number, fading: boolean) {
+    if (!g.stick) { g.stick = new StickView(); this.playerLayer.addChild(g.stick.root); }
+    const hat = view.hatFor(p.id);
+    const whiten = Math.max(0, Math.min(1, (p.hitStunT - 60) / 60));
+    const rig = g.stick.draw(p, hexToNum(view.colorFor(p.id)), hat, {
+      low: artCfg.low, head: this.settings.headStyle, whiten, scale: Math.min(2.5, scale * 1.25),
+      alpha: fading ? Math.max(0, Math.min(1, p.deathFadeT / 420)) : 1,
+    });
+    if (rig.footstep && !artCfg.low) this.stepDust(rig.footstep.x, rig.footstep.y, p.facing);
+    this.drawTag(view, p, g, rig.tagY - accessoryLift(hat), scale);
+  }
+
+  private stepDust(x: number, y: number, facing: number) {
+    for (let i = 0; i < 2; i++) {
+      this.fx.spawn({
+        x: x - facing * (2 + Math.random() * 4), y: y - 1, vx: -facing * (0.3 + Math.random() * 0.6), vy: -0.15 - Math.random() * 0.3,
+        life: 200 + Math.random() * 140, size: 1.1 + Math.random(), color: 0xdde6ff, alpha: 0.4, gravity: 0.001, drag: 0.005,
+      });
+    }
+  }
+
+  /** Cartel (nombre/vida/poderes), en su propia capa para que el bloom no lo desenfoque. */
+  private drawTag(view: RenderView, p: RenderPlayer, g: PlayerGfx, hudY: number, scale: number) {
     const showHp = view.phase === "fight" || view.phase === "fightIntro" || view.phase === "roundEnd";
     let modeScore: string | null = null, modeColor = "#fff";
     if (view.gameMode === "koth") { modeScore = (view.scores[p.id] || 0) + " / " + HILL_TARGET; modeColor = "rgba(255,194,71,.95)"; }
@@ -582,6 +622,18 @@ export class Renderer {
     } else {
       g.tag.sprite.position.set(p.x + TAG_BOX.ox, anchorY + TAG_BOX.oy);
     }
+  }
+
+  private updateVoidPinch(view: RenderView, zoom: number) {
+    const on = !!view.voidHole && this.settings.quality !== "low" && !this.settings.reduceMotion;
+    if (on !== this.voidOn) { this.voidOn = on; this.updateRootFilters(); }
+    if (!on || !view.voidHole) return;
+    const p = this.worldToScreen(view.voidHole.x, view.voidHole.y);
+    const W = this.app.screen.width, H = this.app.screen.height;
+    this.voidPinch.center = { x: p.x / W, y: p.y / H };
+    const grow = ease("power2.out")(clamp01(view.voidHole.bornT / 700));
+    this.voidPinch.radius = 78 * this.viewScale * zoom * grow;
+    this.voidPinch.strength = -0.42 - Math.sin(view.voidHole.bornT * 0.004) * 0.06;
   }
 
   /** Sombra de contacto en la plataforma de abajo: ancla al muñeco al piso y deja leer la altura del salto. */
@@ -648,16 +700,16 @@ export class Renderer {
         cs.end();
       });
     }
-    const os = Math.min(2, entScale);
     const hill = view.gameMode === "koth" ? view.hill : null;
-    this.hillSprite.sprite.visible = !!hill;
-    if (hill) { const c = this.hillSprite.begin(hill.x, hill.y, Math.min(1.5, os)); drawHill(c, hill, view.timeMs); this.hillSprite.end(); }
-    this.portalSprite.sprite.visible = !!view.portal;
-    if (view.portal) { const c = this.portalSprite.begin(view.portal.x, view.portal.y, os); drawWorldObjects(c, view.portal, null); this.portalSprite.end(); }
-    this.voidSprite.sprite.visible = !!view.voidHole;
-    if (view.voidHole) { const c = this.voidSprite.begin(view.voidHole.x, view.voidHole.y, os); drawWorldObjects(c, null, view.voidHole); this.voidSprite.end(); }
-    this.orbSprite.sprite.visible = !!view.orb;
-    if (view.orb) { const c = this.orbSprite.begin(view.orb.x, view.orb.y, os); drawOrb(c, view.orb); this.orbSprite.end(); }
+    this.hillView.root.visible = !!hill;
+    if (hill) this.hillView.update(hill, view.timeMs);
+    this.portalView.root.visible = !!view.portal;
+    if (view.portal) this.portalView.update(view.portal);
+    this.voidView.root.visible = !!view.voidHole;
+    if (view.voidHole) this.voidView.update(view.voidHole);
+    this.orbView.root.visible = !!view.orb;
+    if (view.orb) this.orbView.update(view.orb);
+    this.updateVoidPinch(view, cf.zoom);
 
     this.updateAmbient(dt, view.map);
 
@@ -669,13 +721,15 @@ export class Renderer {
     });
     const now = view.timeMs;
     this.drawShadows(view);
-    ordered.forEach((p, i) => {
+    const top = () => this.playerLayer.children.length - 1;
+    for (const p of ordered) {
       this.drawPlayer(view, p, now, entScale);
       const g = this.gfx.get(p.id)!;
-      this.playerLayer.setChildIndex(g.body.sprite, Math.min(i, this.playerLayer.children.length - 1));
-    });
+      this.playerLayer.setChildIndex(g.body.sprite, top());
+      if (g.stick) this.playerLayer.setChildIndex(g.stick.root, top());
+    }
     for (const [id, g] of this.gfx) {
-      if (g.seen !== this.frameNo) { g.body.sprite.visible = false; g.tag.sprite.visible = false; if (this.frameNo - g.seen > 600) { g.body.destroy(); g.tag.destroy(); this.gfx.delete(id); } }
+      if (g.seen !== this.frameNo) { g.body.sprite.visible = false; g.tag.sprite.visible = false; if (g.stick) g.stick.root.visible = false; if (this.frameNo - g.seen > 600) { g.body.destroy(); g.tag.destroy(); g.stick?.destroy(); this.gfx.delete(id); } }
     }
 
     this.updateFx(dt);

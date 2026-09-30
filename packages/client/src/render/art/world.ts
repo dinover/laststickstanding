@@ -194,23 +194,27 @@ function drawPlatformStatic(ctx: Ctx, pl: Platform, biomeId: BiomeId) {
   ctx.fillRect(pl.x + 6, pl.y + 0.5, pl.w - 12, 1);
 }
 
+/* Púas: base de metal oscuro y dientes con dos caras (una en sombra y otra con luz) que se ponen al
+   rojo vivo hacia la punta; el bloom hace brillar solo las puntas. */
 function drawSpikes(ctx: Ctx, hz: Hazard) {
-  const n = Math.max(2, Math.floor(hz.w / 12));
+  const n = Math.max(2, Math.floor(hz.w / 11));
   const step = hz.w / n;
-  ctx.fillStyle = "#ff3c3c";
+  const h = 12;
+  ctx.fillStyle = "#1c0b10";
+  ctx.beginPath(); ctx.roundRect(hz.x - 1, hz.y - 2.5, hz.w + 2, 3.5, 1.5); ctx.fill();
   for (let i = 0; i < n; i++) {
-    const x = hz.x + i * step;
-    ctx.beginPath();
-    ctx.moveTo(x, hz.y);
-    ctx.lineTo(x + step / 2, hz.y - 10);
-    ctx.lineTo(x + step, hz.y);
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.fillStyle = "rgba(255,220,220,.8)";
-  for (let i = 0; i < n; i++) {
-    const x = hz.x + i * step + step / 2;
-    ctx.fillRect(x - 0.5, hz.y - 9, 1, 3);
+    const x0 = hz.x + i * step, x1 = x0 + step, xm = x0 + step / 2;
+    const tipH = h - ((i * 7) % 3) * 0.8;
+    const left = ctx.createLinearGradient(0, hz.y, 0, hz.y - tipH);
+    left.addColorStop(0, "#3a0d15"); left.addColorStop(0.55, "#8e1a27"); left.addColorStop(1, "#ff5a4a");
+    ctx.fillStyle = left;
+    ctx.beginPath(); ctx.moveTo(x0 + 0.6, hz.y - 1); ctx.lineTo(xm, hz.y - tipH); ctx.lineTo(xm, hz.y - 1); ctx.closePath(); ctx.fill();
+    const right = ctx.createLinearGradient(0, hz.y, 0, hz.y - tipH);
+    right.addColorStop(0, "#5c1420"); right.addColorStop(0.55, "#c42a36"); right.addColorStop(1, "#ffb09a");
+    ctx.fillStyle = right;
+    ctx.beginPath(); ctx.moveTo(xm, hz.y - tipH); ctx.lineTo(x1 - 0.6, hz.y - 1); ctx.lineTo(xm, hz.y - 1); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "rgba(255,236,220,.95)";
+    ctx.beginPath(); ctx.arc(xm, hz.y - tipH + 1.2, 0.9, 0, Math.PI * 2); ctx.fill();
   }
 }
 

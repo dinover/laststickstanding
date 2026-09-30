@@ -20,6 +20,8 @@ export class Camera {
   shakeY = 0;
   dynamicFraming = true;
   maxFramingZoom = 1.16;
+  /** Cámara fija (galería de arte): centro y zoom exactos, sin shake. */
+  override: { cx: number; cy: number; zoom: number } | null = null;
 
   private zoomVel = 0;
   private noiseX = 0;
@@ -102,6 +104,7 @@ export class Camera {
   }
 
   frame(): CameraFrame {
+    if (this.override) return { zoom: this.override.zoom, cx: this.override.cx, cy: this.override.cy, shakeX: 0, shakeY: 0 };
     const breathe = Math.sin(this.breathT) * 0.6;
     return {
       zoom: this.zoom * this.frameZoom,
