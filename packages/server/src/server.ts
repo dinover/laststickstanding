@@ -35,7 +35,7 @@ const STATIC_DIR = process.env.STATIC_DIR || path.resolve(here, "../../client/di
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8", ".json": "application/json", ".png": "image/png", ".svg": "image/svg+xml",
-  ".ico": "image/x-icon", ".webp": "image/webp", ".woff2": "font/woff2", ".map": "application/json", ".txt": "text/plain; charset=utf-8",
+  ".ico": "image/x-icon", ".webmanifest": "application/manifest+json", ".webp": "image/webp", ".woff2": "font/woff2", ".map": "application/json", ".txt": "text/plain; charset=utf-8",
 };
 
 function serveFile(res: http.ServerResponse, file: string, cache: string) {

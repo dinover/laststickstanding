@@ -634,7 +634,7 @@ export class Renderer {
     this.bg.position.set((W - W * bgZoom) / 2, (H - H * bgZoom) / 2);
 
     // resolución de los canvases por entidad: incluye el zoom para que no se vean borrosos
-    const entScale = Math.round(Math.min(3, this.renderScale * cf.zoom) * 4) / 4;
+    const entScale = Math.round(Math.min(2.25, this.renderScale * cf.zoom) * 4) / 4;
 
     // decoraciones animadas (a 30 Hz alcanza) + objetos
     this.decoLayer.visible = !artCfg.low;

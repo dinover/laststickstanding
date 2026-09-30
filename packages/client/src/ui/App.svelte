@@ -57,6 +57,8 @@
   }
 
   $effect(() => { if (!$playing && paused) setPaused(false); });
+  // al entrar (o volver) a jugar, que ningún botón quede con el foco: si no, Espacio lo "aprieta"
+  $effect(() => { if ($playing && !paused) (document.activeElement as HTMLElement | null)?.blur?.(); });
   // re-render reactivo del idioma en toda la app
   $effect(() => { void $lang; });
 </script>

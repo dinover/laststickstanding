@@ -1,0 +1,18 @@
+{
+  "name": "Last Stick Standing",
+  "short_name": "LSS",
+  "description": "Peleá contra tus amigos en tiempo real. Sin instalar nada.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#05060d",
+  "theme_color": "#05060d",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "1278x1230",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
