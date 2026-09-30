@@ -8,6 +8,9 @@
 
 import { getBiome, mulberry32, type BiomeId, type MapDef, type Platform, type Hazard } from "@lss/shared";
 import { artCfg } from "./config";
+import {
+  paintArches, paintAurora, paintFog, paintLavaGlow, paintNeonSkyline, paintPines, paintSnowMountains, paintSynthGrid, paintSynthSun, paintVolcano,
+} from "./scenery";
 
 type Ctx = CanvasRenderingContext2D;
 const TWO_PI = Math.PI * 2;
@@ -95,22 +98,6 @@ function paintColumns(ctx: Ctx, W: number, rng: () => number, baseY: number, col
   ctx.globalAlpha = 1;
 }
 
-function paintBuildings(ctx: Ctx, W: number, rng: () => number, baseY: number, color: string, n: number) {
-  for (let i = 0; i < n; i++) {
-    const w = 30 + rng() * 50;
-    const x = rng() * W;
-    const h = 40 + rng() * 160;
-    ctx.globalAlpha = 0.3 + rng() * 0.2;
-    ctx.fillStyle = color;
-    ctx.fillRect(x, baseY - h, w, h);
-    if (rng() < 0.6) {
-      ctx.fillStyle = rng() < 0.5 ? "rgba(255,46,214,.22)" : "rgba(53,240,224,.2)";
-      for (let wy = baseY - h + 10; wy < baseY - 8; wy += 14) if (rng() < 0.5) ctx.fillRect(x + 4, wy, 4, 4);
-    }
-  }
-  ctx.globalAlpha = 1;
-}
-
 /** Hornea las tres capas de un bioma a `scale` píxeles por unidad de mundo. */
 export function buildBackground(biomeId: BiomeId, seed: number, W: number, H: number, scale: number): BackgroundLayers {
   const rng = mulberry32(seed ^ 0x9e3779b9);
@@ -118,29 +105,44 @@ export function buildBackground(biomeId: BiomeId, seed: number, W: number, H: nu
   const far = makeCanvas(W * scale, H * scale);
   const near = makeCanvas(W * scale, H * scale);
 
-  const s = sky.getContext("2d")!;
-  s.scale(scale, scale);
+  const s = sky.getContext("2d")!, f = far.getContext("2d")!, n = near.getContext("2d")!;
+  s.scale(scale, scale); f.scale(scale, scale); n.scale(scale, scale);
   paintSky(s, W, H, biomeId);
-  if (biomeId === "neon" || biomeId === "ruinas" || biomeId === "volcan") {
-    paintStars(s, W, H, rng, biomeId === "volcan" ? "#ffb37a" : "#dfe6ff", 90);
+
+  if (biomeId === "neon") {
+    paintStars(s, W, H, rng, "#dfe6ff", 70);
+    paintSynthSun(s, W * (0.3 + rng() * 0.4), 300, 92);
+    paintSynthGrid(f, W, H, 392);
+    paintNeonSkyline(f, W, rng, 392, "rgba(22,14,46,.92)", 13, 0.28);
+    paintNeonSkyline(n, W, rng, 560, "rgba(8,5,20,.9)", 9, 0.07, 120);
+  } else if (biomeId === "volcan") {
+    paintStars(s, W, H, rng, "#ffb37a", 50);
+    paintVolcano(s, W, rng);
+    paintSilhouetteRange(f, W, H, rng, 380, 110, "rgba(30,8,6,.8)", 9);
+    paintLavaGlow(f, W, H);
+    paintSilhouetteRange(n, W, H, rng, 470, 60, "rgba(18,4,3,.92)", 7);
+  } else if (biomeId === "bosque") {
+    paintCelestial(s, rng, biomeId);
+    paintSilhouetteRange(s, W, H, rng, 300, 60, "rgba(20,44,30,.5)", 12);
+    paintPines(f, W, rng, 380, "rgba(10,26,16,.85)", 26, 90, 170);
+    paintFog(f, W, 390, 50, "#9dff8a", 0.06);
+    paintPines(n, W, rng, 470, "rgba(5,14,8,.95)", 16, 120, 230);
+    paintFog(n, W, 520, 60, "#b8ffc0", 0.05);
+  } else if (biomeId === "nieve") {
+    paintStars(s, W, H, rng, "#eaf4ff", 60);
+    paintAurora(s, W, rng);
+    paintSnowMountains(f, W, H, rng, 360, 170, "rgba(28,40,60,.95)", "rgba(220,236,255,.55)", 10);
+    paintFog(f, W, 380, 40, "#dbeeff", 0.08);
+    paintSnowMountains(n, W, H, rng, 470, 110, "rgba(16,24,38,.97)", "rgba(230,242,255,.4)", 8);
+  } else {
+    paintStars(s, W, H, rng, "#dfe6ff", 90);
+    paintCelestial(s, rng, biomeId);
+    paintArches(f, W, rng, 360, "rgba(90,100,150,.35)", 6);
+    paintColumns(f, W, rng, 360, "rgba(120,130,180,.4)", 8);
+    paintFog(f, W, 380, 40, "#b8c6ff", 0.05);
+    paintColumns(n, W, rng, 480, "rgba(50,58,96,.7)", 6);
+    paintArches(n, W, rng, 500, "rgba(40,46,80,.65)", 3);
   }
-  paintCelestial(s, rng, biomeId);
-
-  const f = far.getContext("2d")!;
-  f.scale(scale, scale);
-  if (biomeId === "bosque") paintSilhouetteRange(f, W, H, rng, 300, 90, "rgba(10,20,14,.55)", 10);
-  else if (biomeId === "ruinas") paintColumns(f, W, rng, 340, "rgba(120,130,180,.4)", 9);
-  else if (biomeId === "volcan") paintSilhouetteRange(f, W, H, rng, 320, 120, "rgba(40,10,8,.6)", 8);
-  else if (biomeId === "neon") paintBuildings(f, W, rng, 360, "rgba(30,20,60,.55)", 12);
-  else paintSilhouetteRange(f, W, H, rng, 300, 80, "rgba(20,30,45,.5)", 9);
-
-  const n = near.getContext("2d")!;
-  n.scale(scale, scale);
-  if (biomeId === "bosque") paintSilhouetteRange(n, W, H, rng, 400, 60, "rgba(8,16,10,.7)", 7);
-  else if (biomeId === "ruinas") paintColumns(n, W, rng, 470, "rgba(60,70,110,.6)", 6);
-  else if (biomeId === "volcan") paintSilhouetteRange(n, W, H, rng, 420, 70, "rgba(25,6,5,.75)", 6);
-  else if (biomeId === "neon") paintBuildings(n, W, rng, 460, "rgba(20,14,40,.7)", 8);
-  else paintSilhouetteRange(n, W, H, rng, 420, 50, "rgba(15,22,34,.65)", 7);
   return { sky, far, near, biome: biomeId };
 }
 

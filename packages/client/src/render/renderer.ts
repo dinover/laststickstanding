@@ -147,6 +147,7 @@ export class Renderer {
   private debrisLayer = new Container();
   private textLayer = new Container();
   private streaks = new Graphics();
+  private shadows = new Graphics();
   private overlay = new Container();
   private vignette = new Sprite(Texture.EMPTY);
   private flash = new Graphics();
@@ -192,13 +193,13 @@ export class Renderer {
 
     this.bg.addChild(this.skySprite, this.farSprite, this.nearSprite);
     this.objectLayer.addChild(this.hillSprite.sprite, this.portalSprite.sprite, this.voidSprite.sprite, this.orbSprite.sprite);
-    this.glowGroup.addChild(this.platformSprite, this.decoLayer, this.ambient.container, this.objectLayer, this.debrisLayer, this.playerLayer, this.fx.container, this.streaks);
+    this.glowGroup.addChild(this.platformSprite, this.decoLayer, this.ambient.container, this.objectLayer, this.shadows, this.debrisLayer, this.playerLayer, this.fx.container, this.streaks);
     this.world.addChild(this.glowGroup, this.tagLayer, this.textLayer);
     this.overlay.addChild(this.vignette, this.flash);
     this.root.addChild(this.bg, this.world, this.overlay);
     this.app.stage.addChild(this.root);
 
-    this.bloom = new AdvancedBloomFilter({ threshold: 0.42, bloomScale: 0.85, brightness: 1.0, blur: 5, quality: 5 });
+    this.bloom = new AdvancedBloomFilter({ threshold: 0.36, bloomScale: 1.0, brightness: 1.0, blur: 6, quality: 5 });
     this.rgb = new RGBSplitFilter({ red: { x: 0, y: 0 }, green: { x: 0, y: 0 }, blue: { x: 0, y: 0 } });
     this.applyQuality();
 
@@ -583,6 +584,23 @@ export class Renderer {
     }
   }
 
+  /** Sombra de contacto en la plataforma de abajo: ancla al muñeco al piso y deja leer la altura del salto. */
+  private drawShadows(view: RenderView) {
+    const g = this.shadows.clear();
+    for (const p of view.players) {
+      if (!p.alive) continue;
+      let top = Infinity;
+      for (const pl of view.map.platforms) {
+        if (p.x + 6 < pl.x || p.x - 6 > pl.x + pl.w || pl.y < p.y - 2) continue;
+        if (pl.y < top) top = pl.y;
+      }
+      const d = top - p.y;
+      if (!(d < 260)) continue;
+      const k = 1 - d / 260;
+      g.ellipse(p.x, top + 1, 15 * (0.5 + k * 0.5), 3.6 * (0.6 + k * 0.4)).fill({ color: 0x000000, alpha: 0.42 * k });
+    }
+  }
+
   render(view: RenderView | null, dt: number) {
     if (!this.ready) return;
     this.frameNo++;
@@ -650,6 +668,7 @@ export class Renderer {
       return ka - kb;
     });
     const now = view.timeMs;
+    this.drawShadows(view);
     ordered.forEach((p, i) => {
       this.drawPlayer(view, p, now, entScale);
       const g = this.gfx.get(p.id)!;
