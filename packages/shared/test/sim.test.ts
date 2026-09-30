@@ -126,7 +126,9 @@ describe("netcode helpers", () => {
   it("client prediction matches the authoritative sim for pure movement", () => {
     const sim = new Sim();
     sim.addPlayer(1);
-    sim.startMatch(1, { mode: "infinite" });
+    // sin orbes: si aparece uno al azar y lo agarra, el poder de aire cambia la velocidad y el test
+    // fallaba de vez en cuando por 1.5 px (un cuadro con aire)
+    sim.startMatch(1, { mode: "infinite", noOrbs: true });
     const p = sim.players[1];
     // clon "predicho"
     const clone = (): Player => JSON.parse(JSON.stringify(p));
