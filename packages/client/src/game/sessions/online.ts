@@ -58,8 +58,14 @@ interface Pred {
   attack: { type: "punch" | "kick"; t: number; dur: number } | null; attackCooldown: number;
 }
 
-const INTERP_DELAY_MS = 100;
-const MAX_BUFFER = 40;
+/* Buffer de interpolación ADAPTATIVO: cuánto en el pasado se dibuja a los demás. Con conexión
+   estable alcanza con ~60 ms; con WiFi o datos móviles (paquetes que llegan con demora variable)
+   hace falta más, o los demás se congelan y saltan. Se mide la demora de cada snapshot respecto
+   del mejor caso y se usa su percentil 95: los picos raros no inflan la demora para siempre. */
+const INTERP_MIN_MS = 60;
+const INTERP_MAX_MS = 260;
+const SNAP_INTERVAL_MS = 34;
+const MAX_BUFFER = 60;
 
 function wrapLerp(a: number, b: number, t: number): number {
   let d = b - a;
@@ -94,8 +100,10 @@ export class OnlineSession implements Session {
   private fxCtx: FxContext;
   private lastPad: number | null = null;
   private renderNow = 0;
+  private interpDelay = 100;
+  private lateness: number[] = [];
   /** Métricas de red (se ven en el HUD con "Mostrar FPS"): error de predicción y cadencia. */
-  readonly netStats = { predErr: 0, predErrMax: 0, snapsPerSec: 0, bufferMs: 0, pending: 0 };
+  readonly netStats = { predErr: 0, predErrMax: 0, snapsPerSec: 0, bufferMs: 0, pending: 0, interpMs: 100 };
   private snapCount = 0;
   private snapWindowT = performance.now();
 
@@ -156,6 +164,7 @@ export class OnlineSession implements Session {
   private resetMatchState() {
     this.buffer = [];
     this.events = [];
+    this.lateness = [];
     this.pred = null;
     this.pending = [];
     this.corrX = this.corrY = 0;
@@ -169,9 +178,13 @@ export class OnlineSession implements Session {
     if (s.m) this.map = s.m;
     if (!this.map) return; // todavía no llegó el mapa
     const sample = s.n * TICK_MS - now;
-    if (Number.isNaN(this.offset) || Math.abs(sample - this.offset) > 400) this.offset = sample;
+    // el reloj sigue al snapshot que llegó más rápido; uno demorado (pico de la conexión) ya no lo
+    // resetea — antes un pico de >400 ms hacía saltar el tiempo para atrás y después para adelante
+    if (Number.isNaN(this.offset) || sample - this.offset > 400) this.offset = sample;
     else if (sample > this.offset) this.offset += (sample - this.offset) * 0.5;
     else this.offset += (sample - this.offset) * 0.03;
+    this.lateness.push(Math.max(0, this.offset - sample));
+    if (this.lateness.length > 120) this.lateness.shift();
 
     const players = new Map<number, NetPlayer>();
     for (const tu of s.p) { const np = unpackPlayer(tu); players.set(np.id, np); }
@@ -221,7 +234,7 @@ export class OnlineSession implements Session {
       x: np.x, y: np.y, vx: np.vx, vy: np.vy, kbx: np.kbx, grounded: np.grounded, facing: np.facing,
       jumpsLeft: np.jumpsLeft, jumpBufT: np.jumpBufT, hitStunT: np.hitStunT, slowT: np.slowT,
       power: np.power ? { ...np.power } : null,
-      input: { left: false, right: false }, jumpEdge: false,
+      input: { left: false, right: false }, jumpEdge: np.jumpEdge,
       walkCycle: np.walkCycle, idleT: np.idleT, squash: np.squash, jumpAnticT: np.jumpAnticT,
       attack: np.attack ? { ...np.attack } : null, attackCooldown: np.attackCooldown,
     };
@@ -344,9 +357,19 @@ export class OnlineSession implements Session {
     if (Math.abs(this.corrX) < 0.05) this.corrX = 0;
     if (Math.abs(this.corrY) < 0.05) this.corrY = 0;
 
+    // buffer de interpolación: intervalo entre snapshots + demora variable medida (p95)
+    if (this.lateness.length >= 10) {
+      const sorted = this.lateness.slice().sort((x, y) => x - y);
+      const p95 = sorted[Math.floor(sorted.length * 0.95)];
+      const target = Math.max(INTERP_MIN_MS, Math.min(INTERP_MAX_MS, SNAP_INTERVAL_MS + 12 + p95));
+      // se acomoda de a poco (≈1 s): el reloj de dibujo se estira o se apura apenas, sin saltos
+      this.interpDelay += (target - this.interpDelay) * Math.min(1, dt / 1000);
+      this.netStats.interpMs = Math.round(this.interpDelay);
+    }
+
     // eventos: se reproducen cuando se ve el snapshot que los trajo
     this.renderNow = performance.now();
-    const renderT = this.renderNow + this.offset - INTERP_DELAY_MS;
+    const renderT = this.renderNow + this.offset - this.interpDelay;
     while (this.events.length && (Number.isNaN(this.offset) || this.events[0].n * TICK_MS <= renderT + 8)) {
       playSimEvent(this.events.shift()!.e, this.engine.renderer, this.fxCtx);
     }
@@ -383,7 +406,7 @@ export class OnlineSession implements Session {
   view(): RenderView | null {
     const e = this.latest();
     if (!e || e.phase === "lobby") return null;
-    const renderT = this.renderNow + this.offset - INTERP_DELAY_MS;
+    const renderT = this.renderNow + this.offset - this.interpDelay;
     // snapshots a y b alrededor del tiempo de render
     let a = this.buffer[0], b = this.buffer[0];
     for (let i = this.buffer.length - 1; i >= 0; i--) {

@@ -105,6 +105,8 @@ export interface NetPlayer {
   burnT: number; burnFlashT: number; slowT: number;
   attack: { type: "punch" | "kick"; t: number; dur: number } | null;
   jumpsLeft: number; attackCooldown: number; jumpBufT: number;
+  /** Hay un salto pendiente para el próximo paso (salto guardado que se dispara al aterrizar). */
+  jumpEdge: boolean;
   /** Último frame de input de ESTE jugador que el servidor ya aplicó (para reconciliar). */
   ack: number;
 }
@@ -120,6 +122,9 @@ export function packPlayer(p: Player, ack: number): PlayerTuple {
   if (p.facing > 0) flags |= 4;
   if (p.isBot) flags |= 8;
   if (p.isHero) flags |= 16;
+  // salto pendiente: pedido en el aire y guardado para el paso siguiente al aterrizar. Si no viaja,
+  // el cliente lo pierde al reconciliar y el muñeco propio da un tirón de ~100 px.
+  if (p.jumpEdge) flags |= 32;
   let pBits = 0;
   if (p.power) POWER_TYPES.forEach((k, i) => { if (p.power![k]) pBits |= 1 << i; });
   const atk = p.attack;
@@ -142,7 +147,7 @@ export function unpackPlayer(t: PlayerTuple): NetPlayer {
   }
   return {
     id: t[0], x: t[1] / 10, y: t[2] / 10, vx: t[3] / 100, vy: t[4] / 100, kbx: t[5] / 100,
-    alive: !!(flags & 1), grounded: !!(flags & 2), facing: flags & 4 ? 1 : -1, isBot: !!(flags & 8), isHero: !!(flags & 16),
+    alive: !!(flags & 1), grounded: !!(flags & 2), facing: flags & 4 ? 1 : -1, isBot: !!(flags & 8), isHero: !!(flags & 16), jumpEdge: !!(flags & 32),
     hp: t[7], walkCycle: t[8] / 1000, idleT: t[9] / 100, squash: t[10] / 1000, hitStunT: t[11], hitDir: t[12],
     jumpAnticT: t[13], deathFadeT: t[14], power, burnT: t[17], burnFlashT: t[18], slowT: t[19],
     attack: t[20] ? { type: t[20] === 1 ? "punch" : "kick", t: t[21], dur: t[22] } : null,

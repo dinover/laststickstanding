@@ -16,12 +16,17 @@ export const EMPTY_ROOM_GRACE_MS = 60000;
 const BROADCAST_EVERY = 2; // ticks → 30 Hz
 /* Input por jugador: cada cuerpo avanza exactamente UN paso físico por frame de input consumido,
    que es justo lo que predice el cliente. Si su cola está vacía (el paquete se demoró), ese
-   jugador espera este tick; si se juntaron más de MAX_QUEUE frames, da dos pasos para ponerse al
-   día. Tras quedarse sin frames se espera a juntar REBUFFER antes de seguir: es el buffer
-   anti-jitter (un tick de demora en vez de una corrección visible en la pantalla del jugador). */
+   jugador espera este tick; si se le juntaron frames de más, da dos pasos por tick para ponerse al
+   día. Tras quedarse sin frames se espera a juntar REBUFFER antes de seguir (buffer anti-jitter).
+
+   MAX_STARVE: recién después de ~750 ms sin input se lo sigue simulando "sin teclas" (cambió de
+   pestaña, se cortó). Antes eran 133 ms: cualquier microcorte de WiFi hacía que el servidor lo
+   moviera sin sus teclas y después su pantalla recibía correcciones de hasta ~35 px (medido con
+   scripts/netsim.ts). */
 const MAX_QUEUE = 3;
 const REBUFFER = 2;
-const MAX_STARVE = 8;
+const MAX_STARVE = 45;
+const MAX_QUEUE_FRAMES = 120;
 
 export interface RoomPlayer {
   id: number;
@@ -350,7 +355,7 @@ export function handleRoomMessage(room: Room, player: RoomPlayer, msg: { t: stri
         if (last && fr[0] <= last[0]) continue;
         player.queue.push(fr);
       }
-      if (player.queue.length > 24) player.queue.splice(0, player.queue.length - 24);
+      if (player.queue.length > MAX_QUEUE_FRAMES) player.queue.splice(0, player.queue.length - MAX_QUEUE_FRAMES);
       return;
     }
     case "setMode": {

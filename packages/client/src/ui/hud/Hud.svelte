@@ -20,9 +20,9 @@
   let netLine = $state("");
   onMount(() => {
     const iv = setInterval(() => {
-      const s = engine.session as unknown as { netStats?: { predErr: number; predErrMax: number; snapsPerSec: number; bufferMs: number; pending: number } } | null;
+      const s = engine.session as unknown as { netStats?: { predErr: number; predErrMax: number; snapsPerSec: number; bufferMs: number; pending: number; interpMs: number } } | null;
       const n = s && s.netStats;
-      netLine = n ? ` · ${n.snapsPerSec} snap/s · buffer ${n.bufferMs} ms · pred ±${n.predErr.toFixed(1)}px (máx ${n.predErrMax.toFixed(0)})` : "";
+      netLine = n ? ` · ${n.snapsPerSec} snap/s · buffer ${n.bufferMs} ms (interp ${n.interpMs}) · pred ±${n.predErr.toFixed(1)}px (máx ${n.predErrMax.toFixed(0)})` : "";
     }, 250);
     return () => clearInterval(iv);
   });

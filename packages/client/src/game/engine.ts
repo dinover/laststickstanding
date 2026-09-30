@@ -7,7 +7,8 @@ import { Renderer } from "../render/renderer";
 import { input, type InputSink, type Slot } from "./input";
 import type { Session } from "./session";
 import { AttractSession } from "./sessions/attract";
-import { fps, playing } from "../app/ui";
+import { fps, playing, showToast } from "../app/ui";
+import { t } from "../app/i18n";
 import { settings } from "../app/persist";
 
 export class Engine implements InputSink {
@@ -17,6 +18,14 @@ export class Engine implements InputSink {
   private last = 0;
   private fpsAcc = 0;
   private fpsFrames = 0;
+  /* Calidad automática: si en plena partida el juego no sostiene ~45 fps durante dos ventanas
+     seguidas de 3 s, pasa a calidad Liviana (una sola vez por sesión, y avisa). En una PC o un
+     celular que no llega, todo se ve a los saltos y además los mensajes de red esperan a que
+     termine cada cuadro. */
+  private perfAcc = 0;
+  private perfFrames = 0;
+  private perfSlow = 0;
+  private autoLowDone = false;
 
   async init(parent: HTMLElement) {
     await this.renderer.init(parent);
@@ -64,6 +73,22 @@ export class Engine implements InputSink {
     this.session?.onInput(slot, key, down);
   }
 
+  private watchPerformance(dt: number) {
+    if (this.autoLowDone || !get(playing) || get(settings).quality !== "high" || document.hidden) { this.perfAcc = 0; this.perfFrames = 0; return; }
+    this.perfAcc += dt;
+    this.perfFrames++;
+    if (this.perfAcc < 3000) return;
+    const avg = this.perfAcc / this.perfFrames;
+    this.perfAcc = 0;
+    this.perfFrames = 0;
+    this.perfSlow = avg > 22 ? this.perfSlow + 1 : 0;
+    if (this.perfSlow >= 2) {
+      this.autoLowDone = true;
+      settings.update((s) => ({ ...s, quality: "low" }));
+      showToast(t("perf.autoLow"));
+    }
+  }
+
   private frame(now: number) {
     const dt = Math.min(100, Math.max(0, now - this.last));
     this.last = now;
@@ -80,6 +105,7 @@ export class Engine implements InputSink {
       view = this.attract.view();
     } else if (this.attract) this.attract.suspended = true;
     this.renderer.render(view, dt);
+    this.watchPerformance(dt);
     if (get(settings).showFps) {
       this.fpsAcc += dt;
       this.fpsFrames++;

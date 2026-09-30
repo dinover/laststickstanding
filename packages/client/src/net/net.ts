@@ -37,7 +37,7 @@ class NetClient {
       const sess = this.savedSession();
       if (sess && sess.token) this.sock.send({ t: "rejoin", code: sess.code, token: sess.token });
       this.sendPing();
-      if (!this.pingTimer) this.pingTimer = window.setInterval(() => this.sendPing(), 2000);
+      if (!this.pingTimer) this.pingTimer = window.setInterval(() => this.sendPing(), 1000);
     };
     this.sock.onClose = () => {
       ping.set(null);
@@ -47,18 +47,27 @@ class NetClient {
       if (s === "reconnecting" && this.token) this.onReconnecting(attempt || 0, max || 12);
       if (s === "failed" && this.token) this.onGaveUp();
     };
-    this.sock.onMessage = (msg) => this.handle(msg);
+    this.sock.onMessage = (msg, at) => this.handle(msg, at);
   }
 
   private sendPing() {
     if (this.sock.isOpen) this.sock.send({ t: "ping", ts: performance.now() });
   }
 
-  private handle(msg: ServerMsg) {
+  private pings: number[] = [];
+
+  private handle(msg: ServerMsg, at = performance.now()) {
     switch (msg.t) {
-      case "pong":
-        ping.set(Math.max(0, Math.round(performance.now() - msg.ts)));
+      case "pong": {
+        /* ida y vuelta: se toma el timeStamp del evento (lo más cerca de la llegada que expone el
+           navegador) y se muestra la mediana de los últimos 5, así un cuadro lento o un pico aislado
+           no dispara el número. */
+        this.pings.push(Math.max(0, at - msg.ts));
+        if (this.pings.length > 5) this.pings.shift();
+        const sorted = this.pings.slice().sort((a, b) => a - b);
+        ping.set(Math.round(sorted[Math.floor(sorted.length / 2)]));
         return;
+      }
       case "joined":
         room.update((r) => ({ ...r, code: msg.code, myId: msg.id, owner: msg.owner }));
         if (msg.token) { this.token = msg.token; this.saveSession(msg.code, msg.token); }

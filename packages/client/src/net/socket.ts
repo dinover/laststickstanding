@@ -11,7 +11,8 @@ export function wsUrl(): string {
 }
 
 export class GameSocket {
-  onMessage: (msg: ServerMsg) => void = () => {};
+  /** `at`: cuándo llegó el mensaje (timeStamp del evento), no cuándo se pudo procesar. */
+  onMessage: (msg: ServerMsg, at: number) => void = () => {};
   onOpen: () => void = () => {};
   onClose: () => void = () => {};
   onStatus: (s: SocketStatus, attempt?: number, max?: number) => void = () => {};
@@ -55,7 +56,7 @@ export class GameSocket {
       if (typeof ev.data === "string") return;
       let msg: ServerMsg;
       try { msg = decode<ServerMsg>(ev.data as ArrayBuffer); } catch { return; }
-      if (msg && typeof (msg as { t?: unknown }).t === "string") this.onMessage(msg);
+      if (msg && typeof (msg as { t?: unknown }).t === "string") this.onMessage(msg, ev.timeStamp || performance.now());
     };
     ws.onclose = () => {
       if (this.ws === ws) this.ws = null;

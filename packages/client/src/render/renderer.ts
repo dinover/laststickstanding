@@ -192,7 +192,7 @@ export class Renderer {
       resizeTo: parent,
       antialias: true,
       backgroundColor: 0x05060d,
-      resolution: Math.min(2, window.devicePixelRatio || 1),
+      resolution: this.pickResolution(parent.clientWidth, parent.clientHeight),
       autoDensity: true,
       preference: "webgl",
       powerPreference: "high-performance",
@@ -225,9 +225,21 @@ export class Renderer {
   }
 
   applySettings(s: Partial<RenderSettings>) {
+    const qualityChanged = s.quality !== undefined && s.quality !== this.settings.quality;
     this.settings = { ...this.settings, ...s };
     this.camera.dynamicFraming = this.settings.dynamicCamera;
     this.applyQuality();
+    if (qualityChanged && this.ready) this.onResize();
+  }
+
+  /* Resolución de dibujo con tope de píxeles: en pantallas HiDPI grandes (notebooks con escala
+     150%, monitores 2K/4K) dibujar a resolución nativa multiplica el costo del bloom y del
+     antialiasing sin que se note. Alta: hasta ~2.8 MP (≈ 1080p nativo); Liviana: 1x. */
+  private pickResolution(w: number, h: number): number {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (this.settings.quality === "low") return 1;
+    const budget = 2.8e6;
+    return Math.max(1, Math.min(dpr, Math.sqrt(budget / Math.max(1, w * h))));
   }
 
   private applyQuality() {
@@ -248,6 +260,11 @@ export class Renderer {
 
   private onResize() {
     const W = this.app.screen.width, H = this.app.screen.height;
+    const wantRes = Math.round(this.pickResolution(W, H) * 100) / 100;
+    if (Math.abs(wantRes - this.app.renderer.resolution) > 0.01) {
+      this.app.renderer.resize(W, H, wantRes); // vuelve a disparar "resize" con la resolución nueva
+      return;
+    }
     this.viewScale = Math.min(W / WORLD_W, H / WORLD_H);
     this.viewX = (W - WORLD_W * this.viewScale) / 2;
     this.viewY = (H - WORLD_H * this.viewScale) / 2;
