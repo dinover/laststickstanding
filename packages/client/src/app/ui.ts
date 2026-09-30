@@ -83,3 +83,13 @@ function emptyErrors() { return { main: "", join: "", origin: "", room: "", loca
 export function clearErrors() { errors.set(emptyErrors()); }
 
 export const fps = writable(0);
+
+let fightPulseAt = -1e9;
+/** Dispara la animación de "¡A PELEAR!" (y recuerda cuándo, por si el HUD se monta un instante después). */
+export function pulseFight() {
+  fightPulseAt = performance.now();
+  fightPulse.update((n) => n + 1);
+}
+export function msSinceFightPulse() {
+  return performance.now() - fightPulseAt;
+}

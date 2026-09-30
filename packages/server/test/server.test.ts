@@ -47,7 +47,7 @@ afterAll(() => { proc?.kill(); });
 describe("game server", () => {
   it("serves /health", async () => {
     const r = await fetch(`http://127.0.0.1:${PORT}/health`);
-    const j = await r.json();
+    const j = (await r.json()) as { ok: boolean; version: number };
     expect(j.ok).toBe(true);
     expect(j.version).toBe(2);
   });

@@ -4,7 +4,7 @@
 
 import type { InputKey } from "@lss/shared";
 
-export type Slot = "kb1" | "kb2" | "mouse" | `gp${number}`;
+export type Slot = "kb1" | "kb2" | "mouse" | "touch" | `gp${number}`;
 
 export interface InputSink {
   onInput(slot: Slot, key: InputKey, down: boolean): void;

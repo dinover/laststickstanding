@@ -28,7 +28,7 @@ import type { RenderPlayer } from "../../render/art/stickman";
 import { playSimEvent, type FxContext } from "../fx";
 import { net, ping, room } from "../../net/net";
 import { settings } from "../../app/persist";
-import { banner, fightPulse, hud, type HudPlayer } from "../../app/ui";
+import { banner, pulseFight, hud, type HudPlayer } from "../../app/ui";
 import { t, translateMapName } from "../../app/i18n";
 import { showFinal, hideFinal } from "../../app/final";
 import { showScoreReveal, hideScoreReveal } from "../reveal";
@@ -135,7 +135,7 @@ export class OnlineSession implements Session {
         else if (msg.mode === "orbking") banner.set(t("hud.orbking", { map }));
         else if (msg.mode === "wins") banner.set(t("hud.round", { n: msg.round }));
         else banner.set(t("hud.roundOf", { n: msg.round, total: msg.totalRounds == null ? "∞" : msg.totalRounds, map }));
-        fightPulse.update((n) => n + 1);
+        pulseFight();
         if (msg.infinite && msg.round % 5 === 0) {
           const e = this.latest();
           showScoreReveal(e ? e.roster : [], e ? e.scores : {}, msg.stats, (id) => this.nameFor(id), (id) => this.colorFor(id));

@@ -7,7 +7,7 @@ import { BOT_DIFFICULTY, STANDARD_ARCHETYPES, getBiome, type BiomeId } from "@ls
 import { get } from "svelte/store";
 import { SoloSession, ME } from "./solo";
 import type { Engine } from "../engine";
-import { banner, fightPulse, storyMsg, type HudState } from "../../app/ui";
+import { banner, pulseFight, storyMsg, type HudState } from "../../app/ui";
 import { t } from "../../app/i18n";
 import { storyState, type StoryDifficulty, type StoryRun } from "../../app/persist";
 import { formatRunTime, submitRun, type Board } from "../../services/supabase";
@@ -108,7 +108,7 @@ export class StorySession extends SoloSession {
     const arch = STANDARD_ARCHETYPES[Math.floor(Math.random() * STANDARD_ARCHETYPES.length)];
     this.sim.startMatch(1, { mode: "infinite", biome, mapArchetype: arch });
     banner.set(this.inSecret ? t("story.secretBanner") : t("story.levelBanner", { biome: t("biome." + biome), n: this.level, total: STORY_LEVELS[this.difficulty] }));
-    fightPulse.update((n) => n + 1);
+    pulseFight();
   }
 
   private startLevel() {

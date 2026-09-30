@@ -4,7 +4,19 @@ import { resolve } from "node:path";
 
 // En dev, Vite sirve el cliente con HMR y deriva el WebSocket al servidor de juego (:8080).
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [
+    svelte(),
+    {
+      // en producción el servidor sirve /pad; en dev lo reescribimos a la página del control
+      name: "pad-rewrite",
+      configureServer(server) {
+        server.middlewares.use((req, _res, next) => {
+          if (req.url && /^\/pad(\?|$)/.test(req.url)) req.url = req.url.replace(/^\/pad/, "/pad.html");
+          next();
+        });
+      },
+    },
+  ],
   server: {
     port: 5174,
     strictPort: true,

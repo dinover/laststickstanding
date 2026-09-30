@@ -5,7 +5,7 @@ import type { InputKey, PhaseInfo, RoomMode } from "@lss/shared";
 import { SimSession } from "../session";
 import type { Engine } from "../engine";
 import { input, type Slot } from "../input";
-import { banner, fightPulse, type HudState } from "../../app/ui";
+import { banner, pulseFight, type HudState } from "../../app/ui";
 import { t, translateMapName } from "../../app/i18n";
 import { showScoreReveal, hideScoreReveal } from "../reveal";
 
@@ -60,7 +60,7 @@ export class LocalSession extends SimSession {
   private playerForSlot(slot: Slot): number | null {
     for (const p of this.players) {
       const s = p.source;
-      if (s.type === "kb" && ((slot === "kb1" || slot === "mouse") ? s.slot === 1 : slot === "kb2" && s.slot === 2)) return p.id;
+      if (s.type === "kb" && ((slot === "kb1" || slot === "mouse" || slot === "touch") ? s.slot === 1 : slot === "kb2" && s.slot === 2)) return p.id;
       if (s.type === "gp" && slot === `gp${s.index}`) return p.id;
     }
     return null;
@@ -92,7 +92,7 @@ export class LocalSession extends SimSession {
       else if (this.mode === "orbking") banner.set(t("hud.orbking", { map }));
       else if (this.mode === "wins") banner.set(t("hud.round", { n: info.round }));
       else banner.set(t("hud.roundOf", { n: info.round, total: Number.isFinite(info.totalRounds) ? info.totalRounds : "∞", map }));
-      fightPulse.update((n) => n + 1);
+      pulseFight();
       if (info.infinite && info.round % 5 === 0) showScoreReveal(this.sim.roster, this.sim.scores, this.sim.matchStats, (id) => this.nameFor(id), (id) => this.colorFor(id));
     } else if (info.t === "final" && !this.finalShown) {
       this.finalShown = true;

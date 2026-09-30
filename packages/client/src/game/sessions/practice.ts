@@ -3,7 +3,7 @@
 import { BOT_DIFFICULTY, type BiomeId, type BotDifficultyId, type PhaseInfo } from "@lss/shared";
 import { SoloSession, ME } from "./solo";
 import type { Engine } from "../engine";
-import { banner, fightPulse, type HudState } from "../../app/ui";
+import { banner, pulseFight, type HudState } from "../../app/ui";
 import { t, translateMapName } from "../../app/i18n";
 import { showScoreReveal, hideScoreReveal } from "../reveal";
 
@@ -30,7 +30,7 @@ export class PracticeSession extends SoloSession {
     if (info.t === "roundStart") {
       hideScoreReveal();
       banner.set(t("hud.roundSimple", { n: info.round, map: translateMapName(info.mapName) }));
-      fightPulse.update((n) => n + 1);
+      pulseFight();
       if (info.infinite && info.round % 5 === 0) showScoreReveal(this.sim.roster, this.sim.scores, this.sim.matchStats, (id) => this.nameFor(id), (id) => this.colorFor(id));
     }
   }

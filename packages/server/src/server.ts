@@ -8,7 +8,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
-import { ClientMsg, decode } from "@lss/shared";
+import { decode } from "@lss/shared";
+import { ClientMsgSchema } from "@lss/shared/schemas";
 import { send } from "./util";
 import {
   countPlayers, createRoom, destroyRoom, handleRoomMessage, joinRoom, leaveRoom, rejoinRoom, rooms, sweepRooms, type SocketMeta,
@@ -82,7 +83,7 @@ function detachGame(ws: WebSocket) {
 function handleMessage(ws: WebSocket, meta: Meta, raw: Buffer) {
   let parsed: unknown;
   try { parsed = decode(raw); } catch { return; }
-  const res = ClientMsg.safeParse(parsed);
+  const res = ClientMsgSchema.safeParse(parsed);
   if (!res.success) return;
   const msg = res.data;
 

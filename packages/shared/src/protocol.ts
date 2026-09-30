@@ -6,7 +6,6 @@
    mensaje por mensaje). */
 
 import { Packr } from "msgpackr";
-import { z } from "zod";
 import { INPUT_KEYS, POWER_TYPES } from "./constants";
 import type { GameMode, Phase, Player, SimEvent } from "./sim/types";
 import type { MapDef } from "./world/types";
@@ -33,36 +32,28 @@ export interface InputFrame {
 }
 
 /* ---------------------------------------------------------------- cliente → servidor */
-const nick = z.string().max(40).optional();
-const color = z.string().max(16).nullish();
-const hat = z.string().max(16).nullish();
-const code = z.string().max(8);
-const anyData = z.unknown();
-
-export const ClientMsg = z.discriminatedUnion("t", [
-  z.object({ t: z.literal("ping"), ts: z.number() }),
-  z.object({ t: z.literal("create"), nick, color, hat }),
-  z.object({ t: z.literal("join"), code, nick, color, hat }),
-  z.object({ t: z.literal("rejoin"), code, token: z.string().max(64) }),
-  // Frames de input en lote: el cliente puede mandar más de uno por paquete si se atrasó.
-  z.object({ t: z.literal("in"), f: z.array(z.tuple([z.number().int(), z.number().int().min(0).max(31)])).max(12) }),
-  z.object({ t: z.literal("setMode"), mode: z.string().max(16) }),
-  z.object({ t: z.literal("setRounds"), rounds: z.number() }),
-  z.object({ t: z.literal("start") }),
-  z.object({ t: z.literal("again") }),
-  z.object({ t: z.literal("endMatch") }),
-  z.object({ t: z.literal("leave") }),
-  // Sala de mandos (celulares como control del modo Local)
-  z.object({ t: z.literal("padCreate"), token: z.string().max(64).optional() }),
-  z.object({ t: z.literal("padTo"), pad: z.number().int(), data: anyData }),
-  z.object({ t: z.literal("padAll"), data: anyData }),
-  z.object({ t: z.literal("padKick"), pad: z.number().int(), reason: z.string().max(32).nullish() }),
-  z.object({ t: z.literal("padClose") }),
-  z.object({ t: z.literal("padJoin"), code, nick, token: z.string().max(64).optional() }),
-  z.object({ t: z.literal("padInput"), k: z.enum(INPUT_KEYS), d: z.boolean() }),
-  z.object({ t: z.literal("padMsg"), data: anyData }),
-]);
-export type ClientMsg = z.infer<typeof ClientMsg>;
+/* Tipo de los mensajes del cliente. El esquema zod que los valida vive aparte (./schemas.ts,
+   solo lo importa el servidor) para que zod no entre en el bundle del navegador. */
+export type ClientMsg =
+  | { t: "ping"; ts: number }
+  | { t: "create"; nick?: string; color?: string | null; hat?: string | null }
+  | { t: "join"; code: string; nick?: string; color?: string | null; hat?: string | null }
+  | { t: "rejoin"; code: string; token: string }
+  | { t: "in"; f: [number, number][] }
+  | { t: "setMode"; mode: string }
+  | { t: "setRounds"; rounds: number }
+  | { t: "start" }
+  | { t: "again" }
+  | { t: "endMatch" }
+  | { t: "leave" }
+  | { t: "padCreate"; token?: string }
+  | { t: "padTo"; pad: number; data?: unknown }
+  | { t: "padAll"; data?: unknown }
+  | { t: "padKick"; pad: number; reason?: string | null }
+  | { t: "padClose" }
+  | { t: "padJoin"; code: string; nick?: string; token?: string }
+  | { t: "padInput"; k: (typeof INPUT_KEYS)[number]; d: boolean }
+  | { t: "padMsg"; data?: unknown };
 
 /* ---------------------------------------------------------------- servidor → cliente */
 export interface LobbyPlayer {

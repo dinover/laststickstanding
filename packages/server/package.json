@@ -6,7 +6,7 @@
   "description": "Authoritative game server: rooms, fixed-tick simulation, binary snapshots, phone-pad relay, static hosting.",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/server.ts --port 8090 --dev",
-    "build": "esbuild src/server.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/server.mjs --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
+    "build": "esbuild src/server.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/server.mjs --banner:js=\"import { createRequire as __lssRequire } from 'module'; const require = __lssRequire(import.meta.url);\"",
     "start": "node dist/server.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },

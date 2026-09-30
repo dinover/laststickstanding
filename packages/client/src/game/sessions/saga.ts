@@ -7,7 +7,7 @@ import { BOT_DIFFICULTY, STANDARD_ARCHETYPES, getBiome, POWER_TYPES, type BiomeI
 import { get } from "svelte/store";
 import { SoloSession, ME } from "./solo";
 import type { Engine } from "../engine";
-import { banner, crawl, fightPulse, storyMsg, showToast, type HudState } from "../../app/ui";
+import { banner, crawl, pulseFight, storyMsg, showToast, type HudState } from "../../app/ui";
 import { t } from "../../app/i18n";
 import { sagaState, type SagaRun } from "../../app/persist";
 import { formatRunTime, submitRun } from "../../services/supabase";
@@ -100,7 +100,7 @@ export class SagaSession extends SoloSession {
     if (isBoss) this.sim.players[this.botIds[0]].power = { t: 1e9, ...this.bossPowers(this.zoneIdx) };
     const zoneName = t("biome." + zone);
     banner.set(isBoss ? t("saga.bossBanner", { biome: zoneName }) : t("saga.levelBanner", { biome: zoneName, n: this.level }));
-    fightPulse.update((x) => x + 1);
+    pulseFight();
     this.saveRun();
   }
 
