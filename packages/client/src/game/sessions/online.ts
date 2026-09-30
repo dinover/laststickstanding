@@ -14,6 +14,7 @@
      momento en que se ven, con sus partículas, sacudón y sonido. En V1 los invitados no veían
      ningún efecto de impacto. */
 
+import { lerpAnim, snapAnim, type AnimSnap } from "../animLerp";
 import {
   ATTACKS, IN_JUMP, IN_KICK, IN_LEFT, IN_PUNCH, IN_RIGHT, GAME_MODES, PHASES, PHYS, TICK_MS, POWER_COLORS,
   applyMoveInput, collidePlatforms, integrateBody, orbFromTuple, tickMoveTimers, unpackPlayer,
@@ -82,6 +83,9 @@ export class OnlineSession implements Session {
   private held = new Map<string, boolean>();
   private edgeBits = 0;
   private corrX = 0;
+  /** Predicción propia en el tick anterior + fracción de tick transcurrida, para dibujarla suave. */
+  private predPrev: AnimSnap | null = null;
+  private predAlpha = 1;
   private corrY = 0;
   private lastPhase: Phase | null = null;
   private finalShown = false;
@@ -326,8 +330,9 @@ export class OnlineSession implements Session {
       this.pending.push([seq, bits]);
       if (this.pending.length > 120) this.pending.shift();
       this.outbox.push([seq, bits]);
-      if (this.pred && e) this.predictTick(this.pred, bits, e.map, true);
+      if (this.pred && e) { this.predPrev = snapAnim(this.pred); this.predictTick(this.pred, bits, e.map, true); }
     }
+    this.predAlpha = Math.max(0, Math.min(1, this.acc / TICK_MS));
     if (steps >= 6) this.acc = 0;
     if (this.outbox.length) {
       net.send({ t: "in", f: this.outbox.slice(-12) });
@@ -393,10 +398,12 @@ export class OnlineSession implements Session {
       if (!pb) continue;
       if (id === me && this.pred && pb.alive) {
         const p = this.pred;
+        const cur = snapAnim(p);
+        const pr = this.predPrev;
+        const s = pr && Math.abs(pr.x - p.x) < 80 && Math.abs(pr.y - p.y) < 80 ? lerpAnim(pr, cur, this.predAlpha) : cur;
         players.push({
-          ...pb, x: p.x + this.corrX, y: p.y + this.corrY, vx: p.vx, vy: p.vy, facing: p.facing, grounded: p.grounded,
-          walkCycle: p.walkCycle, idleT: p.idleT, squash: p.squash, jumpAnticT: p.jumpAnticT, attack: p.attack,
-          jumpsLeft: p.jumpsLeft, kbx: p.kbx,
+          ...pb, ...s, x: s.x + this.corrX, y: s.y + this.corrY, facing: p.facing, grounded: p.grounded,
+          jumpsLeft: p.jumpsLeft, hitStunT: pb.hitStunT, deathFadeT: pb.deathFadeT, burnFlashT: pb.burnFlashT,
         });
         continue;
       }

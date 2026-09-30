@@ -2,6 +2,7 @@
    "attract mode" de fondo del menú). El motor le da tiempo y la dibuja; la sesión decide todo lo
    demás. SimSession es la base de todos los modos donde la simulación corre en el navegador. */
 
+import { lerpAnim, snapAnim, type AnimSnap } from "./animLerp";
 import {
   BotAI, PLAYER_COLORS, Sim, TICK_MS, type InputKey, type PhaseInfo, type SimEvent,
 } from "@lss/shared";
@@ -41,7 +42,8 @@ export abstract class SimSession implements Session {
 
   protected acc = 0;
   private hitStopMs = 0;
-  private prev = new Map<number, { x: number; y: number }>();
+  /** Estado de animación de cada jugador en el tick anterior (para interpolar pose, no solo posición). */
+  private prev = new Map<number, AnimSnap>();
   private alpha = 0;
   private hudT = 0;
   protected fxCtx: FxContext;
@@ -106,7 +108,7 @@ export abstract class SimSession implements Session {
       this.prev.clear();
       for (const id of this.sim.activeIds()) {
         const p = this.sim.players[id];
-        if (p) this.prev.set(id, { x: p.x, y: p.y });
+        if (p) this.prev.set(id, snapAnim(p));
       }
       this.preStep(TICK_MS);
       this.sim.step(TICK_MS);
@@ -156,12 +158,8 @@ export abstract class SimSession implements Session {
       const p = this.sim.players[id];
       if (!p) continue;
       const pr = this.prev.get(id);
-      let x = p.x, y = p.y;
-      if (pr && Math.abs(pr.x - p.x) < 80 && Math.abs(pr.y - p.y) < 80) {
-        x = pr.x + (p.x - pr.x) * a;
-        y = pr.y + (p.y - pr.y) * a;
-      }
-      players.push({ ...p, x, y });
+      if (pr && Math.abs(pr.x - p.x) < 80 && Math.abs(pr.y - p.y) < 80) players.push({ ...p, ...lerpAnim(pr, snapAnim(p), a) });
+      else players.push({ ...p });
     }
     const s = this.sim;
     return {
