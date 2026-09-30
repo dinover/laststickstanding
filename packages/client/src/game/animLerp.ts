@@ -30,17 +30,18 @@ function wrap01(a: number, b: number, f: number): number {
   return (((a + d * f) % 1) + 1) % 1;
 }
 
-/** Estado de animación a una fracción `f` (0..1) entre el tick anterior `a` y el actual `b`. */
-export function lerpAnim(a: AnimSnap, b: AnimSnap, f: number): AnimSnap {
+/** Estado de animación a una fracción `f` (0..1) entre el estado anterior `a` y el actual `b`,
+    separados `span` ms (un tick en las partidas locales; dos entre snapshots online). */
+export function lerpAnim(a: AnimSnap, b: AnimSnap, f: number, span = TICK_MS): AnimSnap {
   let attack: Attack = b.attack;
-  if (a.attack && b.attack && a.attack.type === b.attack.type && b.attack.t <= a.attack.t) {
+  if (a.attack && b.attack && a.attack.type === b.attack.type && b.attack.t <= a.attack.t && a.attack.t - b.attack.t <= span + 1) {
     attack = { ...b.attack, t: L(a.attack.t, b.attack.t, f) };
   } else if (!a.attack && b.attack) {
     // empezó en este tick: se reconstruye el tramo que ya pasó en vez de saltarlo
-    attack = { ...b.attack, t: Math.min(b.attack.dur, b.attack.t + TICK_MS * (1 - f)) };
+    attack = { ...b.attack, t: Math.min(b.attack.dur, b.attack.t + span * (1 - f)) };
   } else if (a.attack && !b.attack) {
     // terminó en este tick: se muestra el final que faltaba
-    const t = a.attack.t - TICK_MS * f;
+    const t = a.attack.t - span * f;
     attack = t > 0 ? { ...a.attack, t } : null;
   }
   return {

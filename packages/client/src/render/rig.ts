@@ -185,7 +185,9 @@ const NO_STATE: RigState = {};
 
 export function solveRig(p: RenderPlayer & { jumpsLeft?: number; kbx?: number }, st: RigState | null, low = false): Rig {
   const S = st || NO_STATE;
-  const live = !!st && !low;
+  // los resortes van siempre (también en calidad Liviana): cuestan casi nada y son lo que hace
+  // fluido el movimiento; Liviana solo apaga detalles de dibujo
+  const live = !!st;
   const nowMs = (p.idleT || 0) * 1000;
   const dt = S.lastMs != null ? clamp(nowMs - S.lastMs, 0, 60) : 16.667;
   if (st) st.lastMs = nowMs;

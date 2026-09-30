@@ -192,13 +192,18 @@ export class Renderer {
       resizeTo: parent,
       antialias: true,
       backgroundColor: 0x05060d,
-      resolution: this.pickResolution(parent.clientWidth, parent.clientHeight),
+      resolution: Math.min(2, window.devicePixelRatio || 1),
       autoDensity: true,
       preference: "webgl",
       powerPreference: "high-performance",
     });
     parent.appendChild(this.app.canvas);
     this.app.canvas.classList.add("game-canvas");
+    /* Si el navegador o la placa de video pierden el contexto WebGL (driver que se reinicia, poca
+       memoria de video), el canvas queda negro para siempre. Se pide recuperarlo y, cuando vuelve,
+       se recarga la página (la sala online se retoma sola con el token de sesión). */
+    this.app.canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); console.warn("[lss] contexto WebGL perdido"); });
+    this.app.canvas.addEventListener("webglcontextrestored", () => location.reload());
 
     const dot = makeDotTexture(this.app.renderer, 16);
     this.fx = new ParticleSystem(dot, 2400, true);
@@ -225,21 +230,9 @@ export class Renderer {
   }
 
   applySettings(s: Partial<RenderSettings>) {
-    const qualityChanged = s.quality !== undefined && s.quality !== this.settings.quality;
     this.settings = { ...this.settings, ...s };
     this.camera.dynamicFraming = this.settings.dynamicCamera;
     this.applyQuality();
-    if (qualityChanged && this.ready) this.onResize();
-  }
-
-  /* Resolución de dibujo con tope de píxeles: en pantallas HiDPI grandes (notebooks con escala
-     150%, monitores 2K/4K) dibujar a resolución nativa multiplica el costo del bloom y del
-     antialiasing sin que se note. Alta: hasta ~2.8 MP (≈ 1080p nativo); Liviana: 1x. */
-  private pickResolution(w: number, h: number): number {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    if (this.settings.quality === "low") return 1;
-    const budget = 2.8e6;
-    return Math.max(1, Math.min(dpr, Math.sqrt(budget / Math.max(1, w * h))));
   }
 
   private applyQuality() {
@@ -260,11 +253,6 @@ export class Renderer {
 
   private onResize() {
     const W = this.app.screen.width, H = this.app.screen.height;
-    const wantRes = Math.round(this.pickResolution(W, H) * 100) / 100;
-    if (Math.abs(wantRes - this.app.renderer.resolution) > 0.01) {
-      this.app.renderer.resize(W, H, wantRes); // vuelve a disparar "resize" con la resolución nueva
-      return;
-    }
     this.viewScale = Math.min(W / WORLD_W, H / WORLD_H);
     this.viewX = (W - WORLD_W * this.viewScale) / 2;
     this.viewY = (H - WORLD_H * this.viewScale) / 2;

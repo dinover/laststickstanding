@@ -59,9 +59,8 @@ class NetClient {
   private handle(msg: ServerMsg, at = performance.now()) {
     switch (msg.t) {
       case "pong": {
-        /* ida y vuelta: se toma el timeStamp del evento (lo más cerca de la llegada que expone el
-           navegador) y se muestra la mediana de los últimos 5, así un cuadro lento o un pico aislado
-           no dispara el número. */
+        /* ida y vuelta, mostrando la mediana de los últimos 5: un cuadro lento o un pico aislado no
+           dispara el número. */
         this.pings.push(Math.max(0, at - msg.ts));
         if (this.pings.length > 5) this.pings.shift();
         const sorted = this.pings.slice().sort((a, b) => a - b);

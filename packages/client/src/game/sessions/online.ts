@@ -58,20 +58,15 @@ interface Pred {
   attack: { type: "punch" | "kick"; t: number; dur: number } | null; attackCooldown: number;
 }
 
-/* Buffer de interpolación ADAPTATIVO: cuánto en el pasado se dibuja a los demás. Con conexión
-   estable alcanza con ~60 ms; con WiFi o datos móviles (paquetes que llegan con demora variable)
-   hace falta más, o los demás se congelan y saltan. Se mide la demora de cada snapshot respecto
-   del mejor caso y se usa su percentil 95: los picos raros no inflan la demora para siempre. */
-const INTERP_MIN_MS = 60;
+/* Buffer de interpolación: cuánto en el pasado se dibuja a los demás. Base 100 ms (lo que ya
+   andaba bien con buena conexión) y crece solo si la conexión lo necesita: con WiFi o datos
+   móviles los snapshots llegan con demora variable y con 100 ms los demás se congelan y saltan.
+   Se mide la demora de cada snapshot respecto del mejor caso y se usa su percentil 95, así los
+   picos raros no inflan la demora para siempre. */
+const INTERP_MIN_MS = 100;
 const INTERP_MAX_MS = 260;
 const SNAP_INTERVAL_MS = 34;
 const MAX_BUFFER = 60;
-
-function wrapLerp(a: number, b: number, t: number): number {
-  let d = b - a;
-  if (d > 0.5) d -= 1; else if (d < -0.5) d += 1;
-  return (((a + d * t) % 1) + 1) % 1;
-}
 
 export class OnlineSession implements Session {
   readonly kind = "online";
@@ -432,17 +427,10 @@ export class OnlineSession implements Session {
       }
       const pa = a.players.get(id);
       if (!pa || pa.alive !== pb.alive || Math.abs(pa.x - pb.x) > 120 || Math.abs(pa.y - pb.y) > 160) { players.push({ ...pb }); continue; }
-      const L = (x: number, y: number) => x + (y - x) * f;
       const near = f < 0.5 ? pa : pb;
-      let attack = near.attack;
-      if (pa.attack && pb.attack && pa.attack.type === pb.attack.type && pb.attack.t <= pa.attack.t) attack = { ...pb.attack, t: L(pa.attack.t, pb.attack.t) };
-      players.push({
-        ...near,
-        x: L(pa.x, pb.x), y: L(pa.y, pb.y), vx: L(pa.vx, pb.vx), vy: L(pa.vy, pb.vy),
-        walkCycle: wrapLerp(pa.walkCycle, pb.walkCycle, f), idleT: L(pa.idleT, pb.idleT), squash: L(pa.squash, pb.squash),
-        hitStunT: L(pa.hitStunT, pb.hitStunT), deathFadeT: L(pa.deathFadeT, pb.deathFadeT), burnFlashT: L(pa.burnFlashT, pb.burnFlashT),
-        jumpAnticT: L(pa.jumpAnticT, pb.jumpAnticT), attack,
-      });
+      // misma interpolación de animación que las partidas locales: un golpe que empezó entre dos
+      // snapshots se reconstruye desde el principio en vez de aparecer ya por la mitad
+      players.push({ ...near, ...lerpAnim(snapAnim(pa), snapAnim(pb), f, span || TICK_MS * 2) });
     }
     const orb = b.orb && a.orb ? { ...b.orb, bornT: a.orb.bornT + (b.orb.bornT - a.orb.bornT) * f } : b.orb;
     return {
