@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BOT_DIFFICULTY, BotAI, PHYS, Sim, TICK_MS, decode, encode, generateMap, makeReachability,
-  packPlayer, predictStep, unpackPlayer, ARCHETYPE_IDS, type Player,
+  BODY_CONTACT_DX, packPlayer, predictStep, resolveBodyCollisions, unpackPlayer, ARCHETYPE_IDS, type Player,
 } from "../src";
 
 describe("world generation", () => {
@@ -148,5 +148,35 @@ describe("netcode helpers", () => {
       expect(pred.x).toBeCloseTo(p.x, 6);
       expect(pred.y).toBeCloseTo(p.y, 6);
     }
+  });
+
+  it("client prediction reproduces the push between players (own body + ghost of the other)", () => {
+    const sim = new Sim();
+    sim.addPlayer(1);
+    sim.addPlayer(2);
+    sim.startMatch(1, { mode: "infinite", noOrbs: true });
+    for (let t = 0; t < 120; t++) sim.step(TICK_MS); // que caigan y aterricen
+    const a = sim.players[1], b = sim.players[2];
+    // los dos en el piso, a 60 px; el 1 camina contra el 2, que no toca nada
+    b.x = a.x + 60; b.y = a.y; b.vy = 0; b.grounded = true;
+    const clone = (p: Player): Player => JSON.parse(JSON.stringify(p));
+    const pred = clone(a), ghost = clone(b);
+    const bodies = sim.roster.map((id) => (id === 1 ? pred : ghost));
+    let touched = false;
+    for (let t = 0; t < 120; t++) {
+      sim.handleInput(1, "right", true);
+      pred.input.right = true;
+      sim.step(TICK_MS);
+      predictStep(pred, TICK_MS, sim.currentMap.platforms);
+      predictStep(ghost, TICK_MS, sim.currentMap.platforms);
+      resolveBodyCollisions(bodies);
+      if (b.x - a.x < BODY_CONTACT_DX) touched = true;
+      expect(pred.x).toBeCloseTo(a.x, 6);
+      expect(ghost.x).toBeCloseTo(b.x, 6);
+    }
+    expect(touched).toBe(true);
+    // el empujado se movió y quedaron pegados, no uno adentro del otro
+    expect(b.x - a.x).toBeGreaterThan(18);
+    expect(b.x - a.x).toBeLessThan(BODY_CONTACT_DX);
   });
 });

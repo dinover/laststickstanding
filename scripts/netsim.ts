@@ -21,7 +21,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import WebSocket from "ws";
 import {
-  ATTACKS, IN_JUMP, IN_LEFT, IN_RIGHT, PHYS, TICK_MS,
+  ATTACKS, IN_JUMP, IN_LEFT, IN_RIGHT, NET_TUNING, PHYS, TICK_MS,
   applyMoveInput, collidePlatforms, decode, encode, integrateBody, tickMoveTimers, unpackPlayer,
   type MapDef, type NetPlayer, type ServerMsg, type Snapshot,
 } from "@lss/shared";
@@ -214,7 +214,7 @@ class SimClient {
     this.s.frames++;
     if (ADAPTIVE && this.lateness.length >= 10) {
       const sorted = this.lateness.slice().sort((x, y) => x - y);
-      const target = Math.max(60, Math.min(260, 34 + 12 + sorted[Math.floor(sorted.length * 0.95)]));
+      const target = Math.max(NET_TUNING.INTERP_MIN_MS, Math.min(NET_TUNING.INTERP_MAX_MS, NET_TUNING.SNAP_INTERVAL_MS + 12 + sorted[Math.floor(sorted.length * 0.95)]));
       this.interpDelay += (target - this.interpDelay) * Math.min(1, 16.7 / 1000);
     }
     this.delaySum += this.interpDelay;

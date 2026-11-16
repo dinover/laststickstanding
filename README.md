@@ -29,7 +29,7 @@ packages/
   shared/   Sim (clase, sin globals), física compartida, generador de mapas, IA de bots,
             balance, protocolo binario. Sin DOM ni Node: corre igual en el navegador y en el server.
   server/   HTTP (sirve el cliente compilado + /health) y WebSocket: salas de juego a 60 Hz con
-            input por jugador, snapshots a 30 Hz, salas de mandos para celulares.
+            input por jugador, snapshots a 60 Hz, salas de mandos para celulares.
   client/   Motor (loop, entrada, sesiones), renderer Pixi, audio procedural, netcode y UI Svelte.
             Dos páginas: index.html (el juego) y pad.html (el control del celular).
 legacy/     V1 completa, sin tocar, como referencia.
@@ -56,19 +56,41 @@ npm run dev --workspace @lss/server -- --lag 120 --jitter 20
 Con **Ajustes → Mostrar FPS** el HUD muestra además snapshots/s, profundidad del buffer de
 interpolación y el error de predicción.
 
+Para medir lo que se ve con dos ventanas lado a lado (demora entre pantallas y si los muñecos se
+enciman al empujarse), contra el servidor real:
+
+```bash
+npx tsx scripts/twoview.ts local      # o "internet" (40 ms de ida y vuelta + variación)
+TV_OLD=1 npx tsx scripts/twoview.ts   # replica el cliente anterior, para comparar
+```
+
+En Windows los timers de Node tienen ~15,6 ms de resolución; el script los reemplaza por unos
+precisos (`scripts/precise-timers.mjs`) para que los números se parezcan a los de la VM (Linux).
+
 ## Netcode
 
 - **Input por tick.** El cliente corre su propio reloj a 60 Hz y manda un frame por tick
   (izquierda/derecha sostenidos + flancos de salto/piña/patada) con número de secuencia.
 - **Un paso físico por frame.** El servidor avanza el cuerpo de cada jugador exactamente un paso
   por frame consumido: si todavía no llegó, ese jugador espera ese tick; si se atrasó, da dos
-  pasos. Así la simulación del servidor y la predicción del cliente nunca se desfasan.
+  pasos. Así la simulación del servidor y la predicción del cliente nunca se desfasan. Si la cola
+  de un jugador pasó un segundo entero sin bajar de 2 frames, se descarta ese colchón de más
+  (un paso doble): en una conexión estable la demora queda en ~1 frame.
 - **Predicción + reconciliación.** El muñeco propio se mueve al instante con el mismo integrador
   que el servidor (`shared/src/sim/physics.ts`). Con cada snapshot se toma el estado confirmado
   (`ack`), se re-simulan los frames pendientes y el residuo se corrige suavizado.
   Medido con 120 ms de ida y vuelta + jitter: error medio 0,01 px, corrección visual máxima 0,05 px.
-- **Interpolación con buffer** para el resto de los jugadores (~100 ms en el pasado, entre dos
-  snapshots reales, con un reloj de servidor estimado).
+- **Empuje entre jugadores predicho.** La predicción repite el empuje del servidor
+  (`resolveBodyCollisions`) contra "fantasmas" de los demás, avanzados con sus últimas teclas
+  conocidas. Antes tu muñeco atravesaba al otro en tu pantalla y cada snapshot lo corregía.
+- **Interpolación con buffer** para el resto de los jugadores (≥50 ms en el pasado, entre dos
+  snapshots reales a 60 Hz, con un reloj de servidor estimado; crece solo si la conexión tiene
+  variación). Mientras dos se empujan, al otro se lo dibuja a la distancia que dice la
+  predicción, así no se ven encimados aunque esté dibujado en el pasado.
+- **Medido** (`scripts/twoview.ts`, dos ventanas en la misma PC): lo que hace uno se ve en la otra
+  pantalla en ~75 ms (antes ~130 ms; ~127 ms con 40 ms de ida y vuelta, antes ~165 ms). Al
+  empujarse, las dos pantallas muestran la misma distancia que el servidor (antes uno se metía
+  adentro del otro).
 - **Eventos.** Golpes, KOs, aterrizajes, saltos y orbes viajan en el snapshot y se reproducen
   cuando se ven, con partículas, sacudón y sonido. En V1 los invitados no veían ningún efecto.
 - **Binario.** MessagePack con jugadores como tuplas cuantizadas: un snapshot de 2 jugadores

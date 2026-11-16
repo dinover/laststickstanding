@@ -1,11 +1,11 @@
 /* Salas de juego online: una instancia de Sim por sala (ya no hace falta el contexto `vm` de V1),
    paso fijo de 60 Hz con acumulador, cola de input por jugador con buffer anti-jitter y snapshots
-   binarios a 30 Hz. */
+   binarios a 60 Hz (NET_TUNING). */
 
 import crypto from "node:crypto";
 import type { WebSocket } from "ws";
 import {
-  IN_JUMP, IN_KICK, IN_LEFT, IN_PUNCH, IN_RIGHT, MAX_PLAYERS, PLAYER_COLORS, GAME_MODES, PHASES, TICK_MS,
+  IN_JUMP, IN_KICK, IN_LEFT, IN_PUNCH, IN_RIGHT, MAX_PLAYERS, NET_TUNING, PLAYER_COLORS, GAME_MODES, PHASES, TICK_MS,
   Sim, cleanColor, cleanHat, cleanNick, normalizeMode, orbTuple, packPlayer,
   type LobbyPlayer, type RoomMode, type ServerMsg, type SimEvent, type Snapshot,
 } from "@lss/shared";
@@ -13,7 +13,7 @@ import { freeCode, send, broadcastRaw, encodeMsg } from "./util";
 
 export const REJOIN_GRACE_MS = 30000;
 export const EMPTY_ROOM_GRACE_MS = 60000;
-const BROADCAST_EVERY = 2; // ticks → 30 Hz
+const BROADCAST_EVERY = NET_TUNING.SNAPSHOT_EVERY;
 /* Input por jugador: cada cuerpo avanza exactamente UN paso físico por frame de input consumido,
    que es justo lo que predice el cliente. Si su cola está vacía (el paquete se demoró), ese
    jugador espera este tick; si se le juntaron frames de más, da dos pasos por tick para ponerse al
@@ -27,6 +27,12 @@ const MAX_QUEUE = 3;
 const REBUFFER = 2;
 const MAX_STARVE = 45;
 const MAX_QUEUE_FRAMES = 120;
+/* Colchón sobrante: la cola solo bajaba al pasar de MAX_QUEUE, así que después de cualquier tirón
+   quedaba en 2–3 frames para siempre (~40 ms más de demora para todo lo que hace ese jugador,
+   medido con scripts/twoview.ts). Si durante DRAIN_WINDOW ticks nunca tuvo menos de 2 frames
+   esperando, uno sobra: se da un paso doble y la demora baja sola en conexiones estables. En una
+   conexión con variación la cola sí llega a 1 y no se toca. */
+const DRAIN_WINDOW = 60;
 
 export interface RoomPlayer {
   id: number;
@@ -42,6 +48,9 @@ export interface RoomPlayer {
   held: number;
   starving: boolean;
   starveTicks: number;
+  /** Mínimo de frames en cola visto en la ventana actual de DRAIN_WINDOW ticks. */
+  minQ: number;
+  qTicks: number;
 }
 
 export interface Room {
@@ -109,6 +118,7 @@ export function startLoop(room: Room) {
   if (room.timer) return;
   room.last = performance.now();
   room.acc = 0;
+  syncClock(room);
   room.timer = setInterval(() => tick(room), 4);
 }
 
@@ -124,6 +134,8 @@ function inputSteps(room: Room) {
       if (!p || !p.connected) return 1; // ausente: paso normal sin input (queda quieto o cae)
       if (p.queue.length === 0 || (p.starving && p.queue.length < REBUFFER)) {
         p.starving = true;
+        p.minQ = Infinity;
+        p.qTicks = 0;
         /* Si deja de mandar input (cambió de pestaña, se le colgó la conexión) no puede quedar
            congelado en el aire: pasado MAX_STARVE ticks avanza normal con todo suelto. */
         if (++p.starveTicks > MAX_STARVE) {
@@ -136,7 +148,16 @@ function inputSteps(room: Room) {
       }
       p.starving = false;
       p.starveTicks = 0;
-      return p.queue.length > MAX_QUEUE ? 2 : 1;
+      const q = p.queue.length;
+      if (q > MAX_QUEUE) return 2;
+      if (q < p.minQ) p.minQ = q;
+      if (++p.qTicks >= DRAIN_WINDOW) {
+        const surplus = p.minQ >= 2;
+        p.minQ = Infinity;
+        p.qTicks = 0;
+        if (surplus) return 2;
+      }
+      return 1;
     },
     beforeStep(id: number) {
       const p = room.players.get(id);
@@ -175,12 +196,21 @@ function tick(room: Room) {
       return;
     }
   }
-  if (steps >= 8) room.acc = 0;
+  if (steps >= 8) { room.acc = 0; syncClock(room); }
 }
 
-/** Reloj de sala en ticks (no se frena cuando la sim está parada entre partidas). */
+/** Reloj de pared de la sala en ticks (corre aunque la sim esté parada entre partidas). */
 function roomClock(room: Room): number {
   return Math.round((performance.now() - room.createdAt) / TICK_MS);
+}
+
+/* El `n` de cada snapshot es el número de paso de la sim (tickCount): exactamente +1 por paso, así
+   el cliente interpola en tiempo de simulación. Antes era el reloj de pared redondeado, que con
+   los pasos sueltos del setInterval podía repetir o saltear un número entre dos snapshots
+   (a 60 Hz eso vaciaba el buffer del cliente). Cuando la sim estuvo parada (entre partidas) o
+   se salteó tiempo, se lo vuelve a alinear hacia adelante con el reloj de pared. */
+function syncClock(room: Room) {
+  room.tickCount = Math.max(room.tickCount, roomClock(room));
 }
 
 export function buildSnapshot(room: Room, forceMap = false): Snapshot {
@@ -190,7 +220,7 @@ export function buildSnapshot(room: Room, forceMap = false): Snapshot {
   room.lastMapKey = key;
   const snap: Snapshot = {
     t: "s",
-    n: roomClock(room),
+    n: room.timer ? room.tickCount : Math.max(room.tickCount, roomClock(room)),
     ph: PHASES.indexOf(sim.phase),
     r: sim.currentRound,
     tr: Number.isFinite(sim.totalRounds) ? sim.totalRounds : null,
@@ -257,6 +287,7 @@ export function joinRoom(room: Room, ws: WebSocket, meta: SocketMeta, nick: unkn
   const player: RoomPlayer = {
     id, name: cleanNick(nick), color: pickColor(room, color), hat: cleanHat(hat), ws, connected: true,
     token: crypto.randomUUID(), goneSince: null, queue: [], ack: 0, held: 0, starving: true, starveTicks: 0,
+    minQ: Infinity, qTicks: 0,
   };
   room.players.set(id, player);
   room.sim.addPlayer(id);

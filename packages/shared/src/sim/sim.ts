@@ -4,7 +4,7 @@ import { clamp } from "../rng";
 import { getBiome } from "../world/biomes";
 import { checkHazards, cloneMap, generateMap, makeStartMap } from "../world/generate";
 import type { MapDef, Platform, Hazard } from "../world/types";
-import { applyMoveInput, collidePlatforms, integrateBody, tickMoveTimers } from "./physics";
+import { applyMoveInput, collidePlatforms, integrateBody, resolveBodyCollisions, tickMoveTimers } from "./physics";
 import type {
   GameMode, Hill, MatchStats, Orb, Phase, PhaseInfo, Player, RoundsMode, SimEvent, StartOptions, WorldObject,
 } from "./types";
@@ -15,11 +15,7 @@ export interface SimHooks {
   onVoidEnter?: () => void;
 }
 
-const W = PHYS.W, H = PHYS.H, PW = PHYS.PW, PH = PHYS.PH;
-const COLLIDE_HW = PW + 4;
-/* Solo se corrige una fracción del solapamiento por frame: caminar contra alguien lo empuja
-   suave en vez de arrastrarlo como si fuera parte de tu cuerpo. */
-const COLLIDE_PUSH = 0.18;
+const W = PHYS.W, H = PHYS.H, PW = PHYS.PW;
 const WORLD_OBJECT_R = 34;
 
 export function newPlayer(id: number): Player {
@@ -409,26 +405,12 @@ export class Sim {
 
   /* ---------------------------------------------------------------- colisión entre jugadores */
   private resolvePlayerCollisions(ids: number[]): void {
-    for (let pass = 0; pass < 2; pass++) {
-      for (let i = 0; i < ids.length; i++) {
-        const a = this.players[ids[i]];
-        if (!a || !a.alive) continue;
-        for (let j = i + 1; j < ids.length; j++) {
-          const b = this.players[ids[j]];
-          if (!b || !b.alive) continue;
-          let dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const xOverlap = COLLIDE_HW * 2 - Math.abs(dx);
-          const yOverlap = PH - Math.abs(dy);
-          if (xOverlap <= 0 || yOverlap <= 0) continue;
-          if (dx === 0) dx = ids[i] < ids[j] ? -0.01 : 0.01;
-          const dir = dx > 0 ? 1 : -1;
-          const half = (xOverlap / 2) * COLLIDE_PUSH;
-          a.x = clamp(a.x - dir * half, 14, W - 14);
-          b.x = clamp(b.x + dir * half, 14, W - 14);
-        }
-      }
+    const bodies: Player[] = [];
+    for (const id of ids) {
+      const p = this.players[id];
+      if (p && p.alive) bodies.push(p);
     }
+    if (bodies.length > 1) resolveBodyCollisions(bodies);
   }
 
   /* ---------------------------------------------------------------- física + combate */

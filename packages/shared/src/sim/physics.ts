@@ -109,6 +109,41 @@ export function collidePlatforms(b: Body, prevFeet: number, wasGrounded: boolean
   return landedV;
 }
 
+/* Empuje entre jugadores. Vive acá (y no adentro de la Sim) porque la predicción del cliente
+   online lo tiene que repetir igual: si no, el muñeco propio atraviesa al otro en tu pantalla, el
+   servidor lo empuja para atrás y cada snapshot trae una corrección (se ven encimados y temblando). */
+const COLLIDE_HW = PHYS.PW + 4;
+/* Solo se corrige una fracción del solapamiento por frame: caminar contra alguien lo empuja
+   suave en vez de arrastrarlo como si fuera parte de tu cuerpo. */
+const COLLIDE_PUSH = 0.18;
+/** Distancia horizontal a la que dos cuerpos (a la misma altura) empiezan a empujarse. */
+export const BODY_CONTACT_DX = COLLIDE_HW * 2;
+
+export interface PushBody { id: number; x: number; y: number }
+
+/** Separa los cuerpos que se solapan (dos pasadas). `bodies`: solo los vivos, en orden de roster. */
+export function resolveBodyCollisions(bodies: PushBody[]): void {
+  const W = PHYS.W;
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < bodies.length; i++) {
+      const a = bodies[i];
+      for (let j = i + 1; j < bodies.length; j++) {
+        const b = bodies[j];
+        let dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const xOverlap = BODY_CONTACT_DX - Math.abs(dx);
+        const yOverlap = PHYS.PH - Math.abs(dy);
+        if (xOverlap <= 0 || yOverlap <= 0) continue;
+        if (dx === 0) dx = a.id < b.id ? -0.01 : 0.01;
+        const dir = dx > 0 ? 1 : -1;
+        const half = (xOverlap / 2) * COLLIDE_PUSH;
+        a.x = clamp(a.x - dir * half, 14, W - 14);
+        b.x = clamp(b.x + dir * half, 14, W - 14);
+      }
+    }
+  }
+}
+
 /**
  * Un paso completo de movimiento, en el mismo orden que Sim.stepPlayer. Lo usa la predicción del
  * cliente; no resuelve ataques, daño, púas ni caídas al vacío (eso es autoridad del servidor).

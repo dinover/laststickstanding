@@ -90,6 +90,22 @@ export type ServerMsg =
   | { t: "padHostGone" }
   | { t: "padHostBack" };
 
+/* ---------------------------------------------------------------- ritmo de red */
+/* Lo que tarda en verse en otra pantalla lo que hace un jugador es, sobre todo, la espera hasta el
+   próximo snapshot más el buffer de interpolación del que mira. Con snapshots a 30 Hz el buffer
+   tenía que cubrir 33 ms entre paquetes y estaba fijo en ≥100 ms: con dos ventanas lado a lado
+   un muñeco se movía ~150 ms después que en la otra (medido con scripts/twoview.ts). A 60 Hz los
+   paquetes siguen siendo de unos pocos cientos de bytes. */
+export const NET_TUNING = {
+  /** Cada cuántos ticks de simulación sale un snapshot (1 = 60 Hz). */
+  SNAPSHOT_EVERY: 1,
+  /** Intervalo entre snapshots, en ms. */
+  SNAP_INTERVAL_MS: 1000 / 60,
+  /** Piso del buffer de interpolación: ~3 snapshots. Crece solo si la conexión tiene variación. */
+  INTERP_MIN_MS: 50,
+  INTERP_MAX_MS: 260,
+} as const;
+
 /* ---------------------------------------------------------------- snapshot */
 export const PHASES: Phase[] = ["lobby", "fightIntro", "fight", "roundEnd", "final"];
 export const GAME_MODES: GameMode[] = ["normal", "koth", "orbking"];

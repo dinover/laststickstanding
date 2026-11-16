@@ -7,8 +7,11 @@
      se toma el estado autoritativo en el último frame que el servidor confirmó (ack) y se
      re-simulan los frames que todavía no confirmó. Tu muñeco responde con 0 ms de lag; el error
      residual se corrige suavizado en unos pocos cuadros.
-   - INTERPOLACIÓN con buffer para el resto: se dibujan ~100 ms en el pasado entre dos snapshots
-     reales, con un reloj de servidor estimado. Sin extrapolar a ciegas como V1 (que dibujaba entre
+   - COLISIÓN PREDICHA: el servidor empuja a los jugadores entre sí; la predicción repite ese
+     empuje contra una copia de los demás (avanzada con lo último que se sabe de ellos). Sin esto
+     tu muñeco atravesaba al otro en tu pantalla y cada snapshot lo corregía para atrás.
+   - INTERPOLACIÓN con buffer para el resto: se dibujan ~50 ms en el pasado entre dos snapshots
+     reales (60 Hz), con un reloj de servidor estimado. Sin extrapolar a ciegas como V1 (que dibujaba entre
      los dos últimos snapshots y se pasaba hasta un 40%), así que un paquete tarde no da tirones.
    - EVENTOS: golpes, KOs, aterrizajes, saltos... llegan dentro del snapshot y se reproducen en el
      momento en que se ven, con sus partículas, sacudón y sonido. En V1 los invitados no veían
@@ -16,9 +19,9 @@
 
 import { lerpAnim, snapAnim, type AnimSnap } from "../animLerp";
 import {
-  ATTACKS, IN_JUMP, IN_KICK, IN_LEFT, IN_PUNCH, IN_RIGHT, GAME_MODES, PHASES, PHYS, TICK_MS, POWER_COLORS,
-  applyMoveInput, collidePlatforms, integrateBody, orbFromTuple, tickMoveTimers, unpackPlayer,
-  type GameMode, type InputKey, type MapDef, type NetPlayer, type Phase, type ServerMsg, type SimEvent, type Snapshot,
+  ATTACKS, BODY_CONTACT_DX, IN_JUMP, IN_KICK, IN_LEFT, IN_PUNCH, IN_RIGHT, GAME_MODES, NET_TUNING, PHASES, PHYS, TICK_MS, POWER_COLORS,
+  applyMoveInput, collidePlatforms, integrateBody, orbFromTuple, predictStep, resolveBodyCollisions, tickMoveTimers, unpackPlayer,
+  type Body, type GameMode, type InputKey, type MapDef, type NetPlayer, type Phase, type PushBody, type ServerMsg, type SimEvent, type Snapshot,
 } from "@lss/shared";
 import { get } from "svelte/store";
 import type { Session } from "../session";
@@ -50,23 +53,47 @@ interface Entry {
 }
 
 interface Pred {
+  id: number;
   x: number; y: number; vx: number; vy: number; kbx: number; grounded: boolean; facing: 1 | -1;
   jumpsLeft: number; jumpBufT: number; hitStunT: number; slowT: number;
   power: { t: number; aire?: boolean; [k: string]: unknown } | null;
   input: { left: boolean; right: boolean }; jumpEdge: boolean;
   walkCycle: number; idleT: number; squash: number; jumpAnticT: number;
   attack: { type: "punch" | "kick"; t: number; dur: number } | null; attackCooldown: number;
+  /** Copias de los demás jugadores vivos, para predecir el empuje entre cuerpos. */
+  ghosts: Ghost[];
+  /** Todos los cuerpos (el propio y los fantasmas) en orden de roster, como los recorre la Sim. */
+  bodies: PushBody[];
 }
 
-/* Buffer de interpolación: cuánto en el pasado se dibuja a los demás. Base 100 ms (lo que ya
-   andaba bien con buena conexión) y crece solo si la conexión lo necesita: con WiFi o datos
-   móviles los snapshots llegan con demora variable y con 100 ms los demás se congelan y saltan.
-   Se mide la demora de cada snapshot respecto del mejor caso y se usa su percentil 95, así los
-   picos raros no inflan la demora para siempre. */
-const INTERP_MIN_MS = 100;
-const INTERP_MAX_MS = 260;
-const SNAP_INTERVAL_MS = 34;
-const MAX_BUFFER = 60;
+type Ghost = Body & { id: number };
+
+/** Otro jugador visto desde la predicción: se asume que sigue con las mismas teclas que mostraba. */
+function ghostFrom(np: NetPlayer): Ghost {
+  return {
+    id: np.id, x: np.x, y: np.y, vx: np.vx, vy: np.vy, kbx: np.kbx, grounded: np.grounded, facing: np.facing,
+    jumpsLeft: np.jumpsLeft, jumpBufT: 0, hitStunT: np.hitStunT, slowT: np.slowT,
+    power: np.power ? { t: np.power.t, aire: !!np.power.aire } : null,
+    input: { left: np.vx < 0, right: np.vx > 0 }, jumpEdge: false,
+  };
+}
+
+/* Buffer de interpolación: cuánto en el pasado se dibuja a los demás. Piso de ~3 snapshots
+   (NET_TUNING) y crece solo si la conexión lo necesita: con WiFi o datos móviles los snapshots
+   llegan con demora variable y con un buffer corto los demás se congelan y saltan. Se mide la
+   demora de cada snapshot respecto del mejor caso y se usa su percentil 95, así los picos raros
+   no inflan la demora para siempre. Antes el piso era 100 ms con snapshots a 30 Hz: sumado al
+   resto, lo que hacía uno se veía ~150 ms tarde en la otra pantalla. */
+const { INTERP_MIN_MS, INTERP_MAX_MS, SNAP_INTERVAL_MS } = NET_TUNING;
+const MAX_BUFFER = 90;
+/** Muestras de demora para el p95 (~4 s de snapshots). */
+const LATENESS_WINDOW = 240;
+/* Contacto entre muñecos (ver separateFromMe). Medido con scripts/twoview.ts: acercar más fuerte
+   (18 px en 60 ms) dejaba la distancia perfecta pero el otro llegaba al contacto a 2,5x su
+   velocidad, un tirón visible; así llega a ~1,4x y el hueco casi no se ve. */
+const CONTACT_PULL_MAX = 10;
+const CONTACT_PULL_EASE_MS = 150;
+const CONTACT_RELEASE_MS = 60;
 
 export class OnlineSession implements Session {
   readonly kind = "online";
@@ -95,10 +122,13 @@ export class OnlineSession implements Session {
   private fxCtx: FxContext;
   private lastPad: number | null = null;
   private renderNow = 0;
-  private interpDelay = 100;
+  private interpDelay: number = INTERP_MIN_MS;
+  /** Corrimiento visual de cada uno de los demás para no dibujarlo encimado con el propio. */
+  private sepOff = new Map<number, number>();
+  private frameDt: number = TICK_MS;
   private lateness: number[] = [];
   /** Métricas de red (se ven en el HUD con "Mostrar FPS"): error de predicción y cadencia. */
-  readonly netStats = { predErr: 0, predErrMax: 0, snapsPerSec: 0, bufferMs: 0, pending: 0, interpMs: 100 };
+  readonly netStats = { predErr: 0, predErrMax: 0, snapsPerSec: 0, bufferMs: 0, pending: 0, interpMs: INTERP_MIN_MS as number };
   private snapCount = 0;
   private snapWindowT = performance.now();
 
@@ -163,6 +193,7 @@ export class OnlineSession implements Session {
     this.pred = null;
     this.pending = [];
     this.corrX = this.corrY = 0;
+    this.sepOff.clear();
     this.finalShown = false;
     this.engine.renderer.resetPlayers();
     this.engine.renderer.clearTransient();
@@ -179,7 +210,7 @@ export class OnlineSession implements Session {
     else if (sample > this.offset) this.offset += (sample - this.offset) * 0.5;
     else this.offset += (sample - this.offset) * 0.03;
     this.lateness.push(Math.max(0, this.offset - sample));
-    if (this.lateness.length > 120) this.lateness.shift();
+    if (this.lateness.length > LATENESS_WINDOW) this.lateness.shift();
 
     const players = new Map<number, NetPlayer>();
     for (const tu of s.p) { const np = unpackPlayer(tu); players.set(np.id, np); }
@@ -224,15 +255,25 @@ export class OnlineSession implements Session {
   }
 
   /* ---------------------------------------------------------------- predicción */
-  private predFrom(np: NetPlayer): Pred {
-    return {
-      x: np.x, y: np.y, vx: np.vx, vy: np.vy, kbx: np.kbx, grounded: np.grounded, facing: np.facing,
+  private predFrom(np: NetPlayer, e: Entry): Pred {
+    const p: Pred = {
+      id: np.id, x: np.x, y: np.y, vx: np.vx, vy: np.vy, kbx: np.kbx, grounded: np.grounded, facing: np.facing,
       jumpsLeft: np.jumpsLeft, jumpBufT: np.jumpBufT, hitStunT: np.hitStunT, slowT: np.slowT,
       power: np.power ? { ...np.power } : null,
       input: { left: false, right: false }, jumpEdge: np.jumpEdge,
       walkCycle: np.walkCycle, idleT: np.idleT, squash: np.squash, jumpAnticT: np.jumpAnticT,
       attack: np.attack ? { ...np.attack } : null, attackCooldown: np.attackCooldown,
+      ghosts: [], bodies: [],
     };
+    for (const id of e.roster) {
+      if (id === np.id) { p.bodies.push(p); continue; }
+      const o = e.players.get(id);
+      if (!o || !o.alive) continue;
+      const g = ghostFrom(o);
+      p.ghosts.push(g);
+      p.bodies.push(g);
+    }
+    return p;
   }
 
   /** Un tick de predicción. `live` = es el frame de ahora (dispara sonidos/efectos propios). */
@@ -267,6 +308,11 @@ export class OnlineSession implements Session {
     }
     if (p.attack) { p.attack.t -= dt; if (p.attack.t <= 0) p.attack = null; }
     if (p.attackCooldown > 0) p.attackCooldown -= dt;
+    // los demás avanzan con sus últimas teclas conocidas y después se empujan, como en la Sim
+    if (p.ghosts.length) {
+      for (const g of p.ghosts) predictStep(g, dt, map.platforms);
+      resolveBodyCollisions(p.bodies);
+    }
   }
 
   private canPredict(e: Entry, np: NetPlayer | undefined): boolean {
@@ -282,7 +328,7 @@ export class OnlineSession implements Session {
     while (i < this.pending.length && this.pending[i][0] <= np.ack) i++;
     if (i) this.pending.splice(0, i);
     const before = this.pred ? { x: this.pred.x, y: this.pred.y } : null;
-    const fresh = this.predFrom(np);
+    const fresh = this.predFrom(np, e);
     // el ataque propio que ya se está viendo no se "reinicia" por diferencias de un cuadro
     if (this.pred && this.pred.attack && fresh.attack && fresh.attack.type === this.pred.attack.type) fresh.attack = this.pred.attack;
     for (const [, bits] of this.pending) this.predictTick(fresh, bits, e.map, false);
@@ -322,6 +368,7 @@ export class OnlineSession implements Session {
 
   /* ---------------------------------------------------------------- loop */
   update(dt: number) {
+    this.frameDt = dt;
     this.fxCtx.damageNumbers = get(settings).damageNumbers;
     this.fxCtx.meId = this.myId();
     const e = this.latest();
@@ -432,6 +479,7 @@ export class OnlineSession implements Session {
       // snapshots se reconstruye desde el principio en vez de aparecer ya por la mitad
       players.push({ ...near, ...lerpAnim(snapAnim(pa), snapAnim(pb), f, span || TICK_MS * 2) });
     }
+    this.separateFromMe(players, me);
     const orb = b.orb && a.orb ? { ...b.orb, bornT: a.orb.bornT + (b.orb.bornT - a.orb.bornT) * f } : b.orb;
     return {
       map: b.map,
@@ -450,6 +498,44 @@ export class OnlineSession implements Session {
       hatFor: (id) => this.hatFor(id),
       maxHpFor: () => 100,
     };
+  }
+
+  /* CONTACTO. Los demás se dibujan en el pasado (buffer de interpolación) y el propio en el
+     presente, así que cuando dos se empujan cada pantalla mostraba otra cosa que el servidor:
+     - el que empuja se le metía adentro al otro (que en su pantalla todavía no se había movido);
+     - el empujado se veía empujado por alguien que todavía no había llegado.
+     Mientras la predicción dice que están en contacto (fantasma vs. propio), al otro se lo dibuja
+     a la distancia que la predicción dice que hay ahora. Separar es inmediato (nunca se llega a ver
+     encimado); acercar es suave y con tope, para que no pegue un tirón al llegar ni le crea de más
+     al fantasma, que solo adivina las teclas del otro. Al terminar el contacto se suelta suave y el
+     buffer lo alcanza solo. */
+  private separateFromMe(players: RenderPlayer[], me: number | null) {
+    const p = this.pred;
+    const mine = me !== null && p ? players.find((q) => q.id === me) : undefined;
+    const release = 1 - Math.exp(-this.frameDt / CONTACT_RELEASE_MS);
+    const pull = 1 - Math.exp(-this.frameDt / CONTACT_PULL_EASE_MS);
+    for (const r of players) {
+      if (r.id === me) continue;
+      let target = 0, side = 0;
+      const g = mine && p && r.alive ? p.ghosts.find((q) => q.id === r.id) : undefined;
+      if (g && mine && p) {
+        const gdx = g.x - p.x;
+        const need = Math.abs(gdx);
+        if (need < BODY_CONTACT_DX && Math.abs(g.y - p.y) < PHYS.PH && Math.abs(r.y - mine.y) < PHYS.PH) {
+          const s = gdx >= 0 ? 1 : -1;
+          const drawn = (r.x - mine.x) * s;
+          // del mismo lado que en la predicción (si te saltó por encima, no se toca)
+          if (drawn > -6) { side = s; target = s * Math.max(-CONTACT_PULL_MAX, need - drawn); }
+        }
+      }
+      let off = this.sepOff.get(r.id) || 0;
+      if (side && target * side > 0 && target * side > off * side) off = target;
+      else if (side && target * side < off * side) off += (target - off) * pull;
+      else off += (target - off) * release;
+      if (Math.abs(off) < 0.05) { this.sepOff.delete(r.id); continue; }
+      this.sepOff.set(r.id, off);
+      r.x += off;
+    }
   }
 
   dispose() {
