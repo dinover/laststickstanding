@@ -157,8 +157,12 @@ describe("netcode helpers", () => {
     sim.startMatch(1, { mode: "infinite", noOrbs: true });
     for (let t = 0; t < 120; t++) sim.step(TICK_MS); // que caigan y aterricen
     const a = sim.players[1], b = sim.players[2];
-    // los dos en el piso, a 60 px; el 1 camina contra el 2, que no toca nada
-    b.x = a.x + 60; b.y = a.y; b.vy = 0; b.grounded = true;
+    // los dos en el piso (la plataforma más ancha), lejos del borde y a 60 px; el 1 camina contra
+    // el 2, que no toca nada. Posiciones fijas: con las del spawn a veces el 2 caía por el borde.
+    const ground = sim.currentMap.platforms.reduce((w, pl) => (pl.w > w.w ? pl : w));
+    for (const [p, x] of [[a, ground.x + 200], [b, ground.x + 260]] as const) {
+      p.x = x; p.y = ground.y; p.vx = 0; p.vy = 0; p.kbx = 0; p.grounded = true;
+    }
     const clone = (p: Player): Player => JSON.parse(JSON.stringify(p));
     const pred = clone(a), ghost = clone(b);
     const bodies = sim.roster.map((id) => (id === 1 ? pred : ghost));
